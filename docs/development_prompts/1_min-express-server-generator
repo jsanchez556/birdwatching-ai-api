@@ -1,0 +1,11 @@
+Create a minimal Express server in JavaScript with one POST endpoint `/chat`.
+
+The endpoint should:
+- Accept a JSON body with `message`
+- Call OpenAI API (gpt-4.1 or latest available)
+- Return the AI response
+
+Use dotenv for API key
+Use async/await
+Add basic error handling
+- Use ES modules and `.js` files

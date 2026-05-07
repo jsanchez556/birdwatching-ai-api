@@ -1,0 +1,89 @@
+# Project Context
+
+AI-agent entry point for the Birdwatching AI API. Read this file first, then follow links for deeper details.
+
+## What This Is
+This repository is a single Express API for Costa Rica birdwatching assistance. It supports:
+- conversational chat with short-term PostgreSQL memory
+- structured trip recommendations from OpenAI function tool calls
+- normalized JSON responses and centralized error handling
+- Railway-oriented deployment with environment-driven configuration
+
+## Source Of Truth Map
+- Human overview and setup: [README.md](./README.md)
+- Agent rules and coding conventions: [AGENTS.md](./AGENTS.md)
+- Architecture and flow diagrams: [docs/architecture.md](./docs/architecture.md)
+- Endpoint contracts: [docs/api.md](./docs/api.md)
+- Prompt assets and versioning: [docs/prompting.md](./docs/prompting.md)
+- Conversation memory behavior: [docs/memory.md](./docs/memory.md)
+- Deployment and environment: [docs/deployment.md](./docs/deployment.md)
+- Backend implementation rules: [docs/backend-guidelines.md](./docs/backend-guidelines.md)
+
+## Current Architecture
+The app uses a controller-service-query split:
+- `src/routes/*` binds HTTP paths to middleware and controllers.
+- `src/controllers/*` extracts request data, logs request metadata, and returns response envelopes.
+- `src/services/*` owns orchestration, AI calls, memory construction, and persistence decisions.
+- `src/db/queries/*` owns SQL access through `src/db/pool.js`.
+- `src/ai/*` owns OpenAI client calls, prompt assets, and structured recommendation schema.
+- `src/middleware/*` owns validation, rate limiting, errors, and future auth hooks.
+
+## Runtime Flows
+Chat:
+```text
+POST /chat
+  -> validateChatBody
+  -> chat.controller.handleChat
+  -> chat.service.processMessage
+  -> conversation.service.buildConversationContext
+  -> openai.service.generateResponse
+  -> openai.client.createChatCompletion
+  -> conversation.service.saveExchange
+  -> { success, data: { conversationId, response }, meta }
+```
+
+Recommendation:
+```text
+POST /recommend
+  -> validateRecommendationBody
+  -> recommendation.controller.handleRecommendation
+  -> recommendation.service.getRecommendations
+  -> openai.client.createStructuredRecommendation
+  -> OpenAI function tool: get_bird_recommendation
+  -> { success, data, meta }
+```
+
+Conversation lookup:
+```text
+GET /chat/:conversationId
+  -> chat.controller.handleGetConversation
+  -> chat.service.getConversationMessages
+  -> conversation.service.getConversationMessages
+  -> conversation.queries.getByConversationId
+```
+
+## Important Implementation Facts
+- ESM is enabled through `"type": "module"` in `package.json`.
+- Express JSON payloads are limited to `64kb`.
+- CORS is manually implemented in `src/app.js` from `CORS_ORIGINS`.
+- Rate limiting is an in-memory per-IP bucket: 60 requests per minute.
+- `optionalAuth` exists as a placeholder; active routes are currently public.
+- `NODE_ENV=test` bypasses required `OPENAI_API_KEY` and `DATABASE_URL` validation.
+- OpenAI retry behavior lives in `src/utils/asyncRetry.js` and is used for transient OpenAI statuses.
+- Database writes for chat memory are best-effort; save failures are logged but do not fail the chat response.
+
+## Testing
+Tests live in `__tests__/` and cover routes, services, and query helpers with ESM module mocks.
+
+Run:
+```bash
+npm test
+```
+
+## When Extending
+1. Add or update validators in `src/validators/`.
+2. Keep controllers thin and request-focused.
+3. Put orchestration in `src/services/`.
+4. Put SQL in `src/db/queries/` and use parameterized queries.
+5. Put prompt text and schemas in `src/ai/`.
+6. Update the relevant docs link above when behavior changes.

@@ -1,0 +1,14 @@
+Create a recommendation engine using OpenAI:
+
+Input (JSON):
+- location
+- budget
+- days
+
+Output (JSON):
+- bird species
+- best spots
+- suggested itinerary
+
+Return structured JSON
+Force JSON output using function calling or JSON schema

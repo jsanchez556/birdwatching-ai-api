@@ -1,0 +1,10 @@
+Create:
+.github/copilot-instructions.md
+
+Include:
+- coding conventions
+- architecture rules
+- preferred patterns
+- forbidden patterns
+- AI-first development principles
+- response style expectations

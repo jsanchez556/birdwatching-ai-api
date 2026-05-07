@@ -1,0 +1,5 @@
+Add PostgreSQL integration:
+
+- Save each chat interaction
+- Create a repository layer
+- Use async/await
