@@ -20,6 +20,7 @@ class OpenAIClient {
       apiKey: env.openAiApiKey,
     });
     this.model = env.openAiModel;
+    this.embeddingModel = env.openAiEmbeddingModel;
   }
 
   async createChatCompletion(messages) {
@@ -33,6 +34,35 @@ class OpenAIClient {
 
     this.logCompletionUsage('chat_completion', completion);
     return completion.choices[0]?.message?.content;
+  }
+
+  async generateEmbedding(input) {
+    const embeddingResponse = await asyncRetry(() => this.client.embeddings.create({
+      model: this.embeddingModel,
+      input,
+    }), {
+      retries: 2,
+      shouldRetry: isRetryableOpenAIError,
+    });
+
+    logger.info('OpenAI embeddings finished', {
+      event: 'embeddings',
+      model: embeddingResponse.model || this.embeddingModel,
+      requestId: embeddingResponse.id,
+      promptTokens: embeddingResponse.usage?.prompt_tokens,
+      totalTokens: embeddingResponse.usage?.total_tokens,
+      inputCount: Array.isArray(input) ? input.length : 1,
+    });
+
+    const embeddings = [...embeddingResponse.data]
+      .sort((left, right) => left.index - right.index)
+      .map((item) => item.embedding);
+
+    if (embeddings.length !== (Array.isArray(input) ? input.length : 1)) {
+      throw new Error('OpenAI returned an unexpected number of embeddings');
+    }
+
+    return embeddings;
   }
 
   async createStructuredRecommendation(location, budget, days) {

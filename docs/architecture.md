@@ -45,8 +45,14 @@ HTTP request
 ## Main Flows
 Chat context is assembled from:
 1. `CHAT_SYSTEM_PROMPT`
-2. up to 10 recent exchanges from the same `conversation_id`
-3. the current user message
+2. optional retrieved context from `birds.json` through in-memory vector search
+3. up to 10 recent exchanges from the same `conversation_id`
+4. the current user message
+
+RAG uses:
+1. `embeddings.service.js` to load `birds.json`, generate OpenAI `text-embedding-3-small` embeddings, and cache embedded documents in memory
+2. `vectorSearch.service.js` to normalize vectors and rank documents with cosine similarity
+3. `rag.service.js` to retrieve top matches and inject a compact system context message into chat prompts
 
 Recommendations use:
 1. `RECOMMENDATION_PROMPT`

@@ -1,0 +1,27 @@
+[
+  {
+    "name": "Resplendent Quetzal",
+    "locations": "Monteverde, San Gerardo de Dota",
+    "description": "One of the most iconic birds in Costa Rica. Best seen in cloud forest habitat, especially around wild avocado fruiting trees."
+  },
+  {
+    "name": "Keel-billed Toucan",
+    "locations": "Sarapiqui, Tortuguero, Arenal",
+    "description": "Colorful tropical bird commonly seen in rainforest areas, forest edges, and fruiting trees."
+  },
+  {
+    "name": "Scarlet Macaw",
+    "locations": "Carara National Park, Osa Peninsula, Tarcoles",
+    "description": "Large red, yellow, and blue parrot often seen flying in pairs near Pacific lowland forest and mangrove edges."
+  },
+  {
+    "name": "Three-wattled Bellbird",
+    "locations": "Monteverde, San Ramon, Tilaran Mountains",
+    "description": "A distinctive cloud forest species known for its loud metallic call. Seasonal movements can affect viewing chances."
+  },
+  {
+    "name": "Snowcap",
+    "locations": "Rancho Naturalista, Caribbean foothills",
+    "description": "Tiny hummingbird with a striking white cap on males. Often sought at flowering shrubs and forest edge feeders."
+  }
+]

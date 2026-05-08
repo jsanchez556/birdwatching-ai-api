@@ -1,0 +1,26 @@
+# Iteration 1
+Implement a simple RAG system for the birdwatching chatbot.
+
+Requirements:
+
+- Load birds.json knowledge base
+- Generate embeddings for each document using OpenAI embeddings API
+- Store embeddings in memory initially
+- Create similarity search using cosine similarity
+- Retrieve top relevant documents based on user question
+- Inject retrieved context into the final OpenAI prompt
+
+Architecture:
+- embeddings service
+- vector search service
+- rag service
+
+Keep implementation simple and production-oriented.
+
+# Iteration 2
+
+Add similarity score to retrieved documents and log results for debugging
+
+# Iteration 3
+
+Use OpenAI text-embedding-3-small model and normalize vectors before cosine similarity

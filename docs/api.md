@@ -45,13 +45,21 @@ Success data:
 ```json
 {
   "conversationId": "uuid-or-provided-id",
-  "response": "AI response text"
+  "response": "AI response text",
+  "sources": [
+    {
+      "name": "Resplendent Quetzal",
+      "location": "Monteverde, San Gerardo de Dota",
+      "similarityScore": 0.9123
+    }
+  ]
 }
 ```
 
 Behavior:
 - Creates a UUID conversation ID when none is provided.
 - Loads recent history for that conversation.
+- Retrieves relevant bird knowledge sources from `birds.json` and returns them as `sources` for frontend display.
 - Sends role-based messages to OpenAI.
 - Saves the exchange to PostgreSQL on a best-effort basis.
 

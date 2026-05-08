@@ -5,6 +5,7 @@ AI-agent entry point for the Birdwatching AI API. Read this file first, then fol
 ## What This Is
 This repository is a single Express API for Costa Rica birdwatching assistance. It supports:
 - conversational chat with short-term PostgreSQL memory
+- simple in-memory RAG over `birds.json`
 - structured trip recommendations from OpenAI function tool calls
 - normalized JSON responses and centralized error handling
 - Railway-oriented deployment with environment-driven configuration
@@ -36,6 +37,7 @@ POST /chat
   -> chat.controller.handleChat
   -> chat.service.processMessage
   -> conversation.service.buildConversationContext
+  -> rag.service.buildContext
   -> openai.service.generateResponse
   -> openai.client.createChatCompletion
   -> conversation.service.saveExchange
@@ -70,6 +72,7 @@ GET /chat/:conversationId
 - `optionalAuth` exists as a placeholder; active routes are currently public.
 - `NODE_ENV=test` bypasses required `OPENAI_API_KEY` and `DATABASE_URL` validation.
 - OpenAI retry behavior lives in `src/utils/asyncRetry.js` and is used for transient OpenAI statuses.
+- RAG loads `birds.json`, embeds documents on first use, stores vectors in memory, and falls back to normal chat if retrieval fails.
 - Database writes for chat memory are best-effort; save failures are logged but do not fail the chat response.
 
 ## Testing

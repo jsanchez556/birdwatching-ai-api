@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import openaiService from '../ai/openai.service.js';
 import conversationService from './conversation.service.js';
+import ragService from './rag.service.js';
 import logger from '../utils/logger.js';
 import HttpError from '../utils/httpError.js';
 
@@ -24,7 +25,12 @@ class ChatService {
       activeConversationId
     );
 
-    const response = await openaiService.generateResponse(conversationMessages, {
+    const ragContext = await ragService.buildContext(conversationMessages, message, {
+      clientIP,
+      conversationId: activeConversationId,
+    });
+
+    const response = await openaiService.generateResponse(ragContext.messages, {
       clientIP,
       conversationId: activeConversationId,
     });
@@ -34,6 +40,7 @@ class ChatService {
     return {
       conversationId: activeConversationId,
       response,
+      sources: ragContext.sources,
     };
   }
 

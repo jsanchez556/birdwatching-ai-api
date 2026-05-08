@@ -32,8 +32,14 @@ Common optional variables:
 - `PORT` defaults to `3000`
 - `NODE_ENV` defaults to `development`
 - `OPENAI_MODEL` defaults to `gpt-4o`
+- `OPENAI_EMBEDDING_MODEL` defaults to `text-embedding-3-small`
 - `CORS_ORIGINS` accepts a comma-separated allowlist
 - `LOG_FILES_ENABLED` accepts `true` or `false`
+
+## Bird Knowledge Base
+Chat responses use a simple in-memory RAG flow. Documents are loaded from
+`birds.json`, embedded with the OpenAI embeddings API on first use, ranked with
+cosine similarity, and injected into the chat prompt when relevant.
 
 ## Scripts
 ```bash

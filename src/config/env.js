@@ -39,6 +39,7 @@ const env = {
   nodeEnv,
   openAiApiKey: process.env.OPENAI_API_KEY,
   openAiModel: process.env.OPENAI_MODEL || 'gpt-4o',
+  openAiEmbeddingModel: process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small',
   databaseUrl: process.env.DATABASE_URL,
   corsOrigins,
   logFilesEnabled: process.env.LOG_FILES_ENABLED === 'true',

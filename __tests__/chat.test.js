@@ -48,6 +48,13 @@ describe('POST /chat', () => {
     mockProcessMessage.mockResolvedValue({
       conversationId: 'conversation-123',
       response: 'Hello from AI',
+      sources: [
+        {
+          name: 'Keel-billed Toucan',
+          location: 'Sarapiqui',
+          similarityScore: 0.92,
+        },
+      ],
     });
 
     const res = await request(app)
@@ -60,6 +67,13 @@ describe('POST /chat', () => {
       data: {
         conversationId: 'conversation-123',
         response: 'Hello from AI',
+        sources: [
+          {
+            name: 'Keel-billed Toucan',
+            location: 'Sarapiqui',
+            similarityScore: 0.92,
+          },
+        ],
       },
       meta: {},
     });

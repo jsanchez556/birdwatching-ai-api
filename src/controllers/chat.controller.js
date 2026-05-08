@@ -16,6 +16,7 @@ class ChatController {
     return sendSuccess(res, {
       conversationId: result.conversationId,
       response: result.response,
+      sources: result.sources || [],
     });
   }
 
