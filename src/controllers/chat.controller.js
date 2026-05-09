@@ -17,7 +17,7 @@ class ChatController {
       conversationId: result.conversationId,
       response: result.response,
       sources: result.sources || [],
-    });
+    }, result.meta || {});
   }
 
   async handleGetConversation(req, res) {

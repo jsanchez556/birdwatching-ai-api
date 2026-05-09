@@ -17,11 +17,34 @@ function normalizeLocations(document) {
 function documentToText(document) {
   return [
     `Name: ${document.name}`,
+    `Family: ${document.family}`,
     `Locations: ${normalizeLocations(document)}`,
     `Description: ${document.description}`,
   ]
     .filter((line) => !line.endsWith(': undefined') && !line.endsWith(': '))
     .join('\n');
+}
+
+function normalizeKnowledgeBase(documents) {
+  if (Array.isArray(documents)) {
+    return documents;
+  }
+
+  if (!documents || typeof documents !== 'object') {
+    throw new Error('birds.json must contain an array or family-keyed object of documents');
+  }
+
+  return Object.entries(documents).flatMap(([family, birds]) => {
+    if (!Array.isArray(birds)) {
+      logger.warn('Skipping invalid bird family entry', { family });
+      return [];
+    }
+
+    return birds.map((bird) => ({
+      ...bird,
+      family,
+    }));
+  });
 }
 
 class EmbeddingsService {
@@ -71,11 +94,7 @@ class EmbeddingsService {
 
   async loadKnowledgeBase() {
     const rawData = await readFile(KNOWLEDGE_BASE_PATH, 'utf8');
-    const documents = JSON.parse(rawData);
-
-    if (!Array.isArray(documents)) {
-      throw new Error('birds.json must contain an array of documents');
-    }
+    const documents = normalizeKnowledgeBase(JSON.parse(rawData));
 
     return documents.filter((document) => document?.name && document?.description);
   }
@@ -86,5 +105,5 @@ class EmbeddingsService {
   }
 }
 
-export { documentToText, normalizeLocations };
+export { documentToText, normalizeKnowledgeBase, normalizeLocations };
 export default new EmbeddingsService();

@@ -6,7 +6,18 @@ import { CHAT_SYSTEM_PROMPT_VERSION } from './prompts/system.prompt.js';
 class ChatCompletionService {
   async generateResponse(messages, metadata = {}) {
     const response = await openaiClient.createChatCompletion(messages);
+    return this.handleResponse(response, messages, metadata);
+  }
 
+  async generateResponseWithTools(messages, metadata = {}) {
+    const response = await openaiClient.createChatCompletionWithTools(messages, {
+      metadata,
+    });
+
+    return this.handleResponse(response, messages, metadata);
+  }
+
+  handleResponse(response, messages, metadata = {}) {
     if (!response) {
       logger.error('No response from OpenAI', {
         ip: metadata.clientIP,

@@ -53,7 +53,7 @@ Success data:
 ```json
 {
   "conversationId": "uuid-or-provided-id",
-  "response": "AI response text",
+  "response": "I found 2 tours that match your preferences.",
   "sources": [
     {
       "name": "Resplendent Quetzal",
@@ -64,12 +64,43 @@ Success data:
 }
 ```
 
+Success meta may include frontend-ready tour and reservation data collected from tool calls:
+```json
+{
+  "toolsCalled": ["recommendTours"],
+  "tours": [
+    {
+      "tourId": 1,
+      "name": "Monteverde Quetzal Tour",
+      "location": "Monteverde",
+      "pricePerPerson": 120,
+      "availableSlots": 5,
+      "durationHours": 4,
+      "difficulty": "moderate"
+    }
+  ]
+}
+```
+
 Behavior:
 - Creates a UUID conversation ID when none is provided.
 - Loads recent history for that conversation.
 - Retrieves relevant bird knowledge sources from `src/db/data/birds.json` and returns them as `sources` for frontend display.
-- Sends role-based messages to OpenAI.
+- Sends role-based messages to OpenAI with tour tools enabled.
+- May execute tour tools for listing, recommending, selecting, pricing, or reserving tours, then return a natural-language response plus structured metadata.
+- When tour listing or recommendation tools return tours, the assistant text should stay short, for example `I found 2 tours that match your preferences.` Tour details belong in `meta.tours`.
 - Saves the exchange to PostgreSQL on a best-effort basis.
+
+Tour tool notes:
+- Tour and reservation state comes from PostgreSQL.
+- Available tour tools are `getAvailableTours`, `recommendTours`, `selectTour`, `checkTourAvailability`, `calculateTourPrice`, and `createReservation`.
+- Users should receive available or recommended tours through response metadata and explicitly select one before pricing or reservation creation.
+- `selectTour` accepts a selected `tourId` or a clear/partial `tourName`; the service resolves matching tour names before validating availability.
+- `calculateTourPrice` supports optional `discountCode`. Recognized codes are currently `EARLYBIRD`, `STUDENT`, and `LOCAL`; group discounts can also apply.
+- `createReservation` requires `tourId`, `participants`, and `customerName`; it accepts optional `customerEmail` and `discountCode`.
+- Successful reservation tool results include `id`, `reservationId`, `customer_name`, `customerName`, `customerEmail`, `conversationId`, `tour_id`, `tourId`, `tourName`, `participants`, `confirmation_code`, `confirmationCode`, `created_at`, `createdAt`, `total_price`, `totalPrice`, `currency`, `remainingSlots`, `discountRate`, and `discountReason`.
+- Reservations are associated with the active chat `conversationId` internally.
+- The public `/chat` response shape does not expose raw tool messages, but safe structured tool data is returned in the top-level `meta` envelope for frontend rendering.
 
 ## `GET /chat/:conversationId`
 Returns up to 100 persisted messages for one conversation as alternating user and assistant messages.

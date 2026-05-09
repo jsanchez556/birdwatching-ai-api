@@ -5,6 +5,16 @@ import ragService from './rag.service.js';
 import logger from '../utils/logger.js';
 import HttpError from '../utils/httpError.js';
 
+function buildToolMeta(metadata = {}) {
+  return {
+    ...(metadata.toolsCalled?.length ? { toolsCalled: metadata.toolsCalled } : {}),
+    ...(metadata.tours ? { tours: metadata.tours } : {}),
+    ...(metadata.selectedTour ? { selectedTour: metadata.selectedTour } : {}),
+    ...(metadata.selectedTourId ? { selectedTourId: metadata.selectedTourId } : {}),
+    ...(metadata.reservation ? { reservation: metadata.reservation } : {}),
+  };
+}
+
 class ChatService {
   async processMessage(message, conversationId, clientIP) {
     const activeConversationId = conversationId?.trim() || randomUUID();
@@ -30,10 +40,12 @@ class ChatService {
       conversationId: activeConversationId,
     });
 
-    const response = await openaiService.generateResponse(ragContext.messages, {
+    const openAiMetadata = {
       clientIP,
       conversationId: activeConversationId,
-    });
+    };
+
+    const response = await openaiService.generateResponseWithTools(ragContext.messages, openAiMetadata);
 
     await conversationService.saveExchange(activeConversationId, message, response);
 
@@ -41,6 +53,7 @@ class ChatService {
       conversationId: activeConversationId,
       response,
       sources: ragContext.sources,
+      meta: buildToolMeta(openAiMetadata),
     };
   }
 
@@ -49,4 +62,5 @@ class ChatService {
   }
 }
 
+export { buildToolMeta };
 export default new ChatService();

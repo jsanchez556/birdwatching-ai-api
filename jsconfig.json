@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "ignoreDeprecations": "6.0",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2022"
+  },
+  "include": [
+    "src/**/*.js",
+    "__tests__/**/*.js"
+  ],
+  "exclude": [
+    "node_modules",
+    "coverage",
+    "dist",
+    "build"
+  ]
+}

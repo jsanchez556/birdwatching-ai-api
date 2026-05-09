@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 
 const mockBuildConversationContext = jest.fn();
-const mockGenerateResponse = jest.fn();
+const mockGenerateResponseWithTools = jest.fn();
 const mockGetConversationMessages = jest.fn();
 const mockSaveExchange = jest.fn();
 const mockBuildContext = jest.fn();
@@ -16,7 +16,7 @@ await jest.unstable_mockModule('../src/services/conversation.service.js', () => 
 
 await jest.unstable_mockModule('../src/ai/openai.service.js', () => ({
   default: {
-    generateResponse: mockGenerateResponse,
+    generateResponseWithTools: mockGenerateResponseWithTools,
   },
 }));
 
@@ -51,7 +51,7 @@ describe('ChatService orchestration', () => {
       { role: 'user', content: 'Where should I look for quetzals?' },
     ];
     mockBuildConversationContext.mockResolvedValue(conversationMessages);
-    mockGenerateResponse.mockResolvedValue('Look for quetzals near Monteverde at dawn.');
+    mockGenerateResponseWithTools.mockResolvedValue('Look for quetzals near Monteverde at dawn.');
 
     const result = await chatService.processMessage(
       'Where should I look for quetzals?',
@@ -63,6 +63,7 @@ describe('ChatService orchestration', () => {
       conversationId: 'conversation-123',
       response: 'Look for quetzals near Monteverde at dawn.',
       sources: [],
+      meta: {},
     });
     expect(mockBuildConversationContext).toHaveBeenCalledWith(
       'Where should I look for quetzals?',
@@ -76,7 +77,7 @@ describe('ChatService orchestration', () => {
         conversationId: 'conversation-123',
       }
     );
-    expect(mockGenerateResponse).toHaveBeenCalledWith(conversationMessages, {
+    expect(mockGenerateResponseWithTools).toHaveBeenCalledWith(conversationMessages, {
       clientIP: '127.0.0.1',
       conversationId: 'conversation-123',
     });
@@ -109,7 +110,7 @@ describe('ChatService orchestration', () => {
         },
       ],
     });
-    mockGenerateResponse.mockResolvedValue('Toucans are common near Sarapiqui.');
+    mockGenerateResponseWithTools.mockResolvedValue('Toucans are common near Sarapiqui.');
 
     const result = await chatService.processMessage(
       'Tell me about toucans.',
@@ -117,7 +118,7 @@ describe('ChatService orchestration', () => {
       '127.0.0.1'
     );
 
-    expect(mockGenerateResponse).toHaveBeenCalledWith(augmentedMessages, {
+    expect(mockGenerateResponseWithTools).toHaveBeenCalledWith(augmentedMessages, {
       clientIP: '127.0.0.1',
       conversationId: 'conversation-123',
     });
@@ -128,6 +129,37 @@ describe('ChatService orchestration', () => {
         similarityScore: 0.98,
       },
     ]);
+  });
+
+  it('returns frontend metadata collected during tool calling', async () => {
+    const conversationMessages = [
+      { role: 'system', content: 'System prompt' },
+      { role: 'user', content: 'Recommend Monteverde tours.' },
+    ];
+    const tours = [
+      {
+        tourId: 1,
+        name: 'Monteverde Quetzal Tour',
+      },
+    ];
+
+    mockBuildConversationContext.mockResolvedValue(conversationMessages);
+    mockGenerateResponseWithTools.mockImplementation(async (messages, metadata) => {
+      metadata.toolsCalled = ['recommendTours'];
+      metadata.tours = tours;
+      return 'I found a Monteverde tour.';
+    });
+
+    const result = await chatService.processMessage(
+      'Recommend Monteverde tours.',
+      'conversation-123',
+      '127.0.0.1'
+    );
+
+    expect(result.meta).toEqual({
+      toolsCalled: ['recommendTours'],
+      tours,
+    });
   });
 
   it('delegates conversation loading to the memory service', async () => {

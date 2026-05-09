@@ -55,6 +55,10 @@ describe('POST /chat', () => {
           similarityScore: 0.92,
         },
       ],
+      meta: {
+        toolsCalled: ['recommendTours'],
+        tours: [{ tourId: 1, name: 'Monteverde Quetzal Tour' }],
+      },
     });
 
     const res = await request(app)
@@ -75,7 +79,10 @@ describe('POST /chat', () => {
           },
         ],
       },
-      meta: {},
+      meta: {
+        toolsCalled: ['recommendTours'],
+        tours: [{ tourId: 1, name: 'Monteverde Quetzal Tour' }],
+      },
     });
     expect(mockProcessMessage).toHaveBeenCalledTimes(1);
     expect(mockProcessMessage).toHaveBeenCalledWith(

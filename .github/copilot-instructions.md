@@ -19,6 +19,8 @@ Use this file as repository-specific guidance for GitHub Copilot. For fuller con
 - SQL access lives in `src/db/queries/` and must use parameterized queries.
 - SQL helper functions and table definitions live in ordered migrations under `src/db/migrations/`.
 - OpenAI clients, prompts, prompt versions, and schemas live in `src/ai/`.
+- Chat tool schemas live in `src/ai/schemas/`; execution and tool adapters live in `src/ai/tools/`.
+- Future tool groups must register schemas and handlers by matching `function.name`.
 - Middleware owns validation, rate limiting, error handling, and authentication hooks.
 - Environment parsing and validation belong in `src/config/env.js`.
 
@@ -30,6 +32,7 @@ Use this file as repository-specific guidance for GitHub Copilot. For fuller con
 - Keep OpenAI calls behind `openai.client.js` or `openai.service.js`.
 - Keep prompt text centralized in `src/ai/prompts/`.
 - Keep runtime bird knowledge in `src/db/data/birds.json`; RAG embeddings are cached in memory at runtime.
+- Keep tour data and reservation availability in PostgreSQL; do not reintroduce JSON-backed tour state.
 - Log structured metadata through `src/utils/logger.js`.
 - Mock OpenAI and PostgreSQL in tests.
 - Add or update tests under `__tests__/` when changing behavior.

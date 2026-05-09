@@ -35,11 +35,17 @@ The app expects tables and SQL helper functions from:
 ```text
 src/db/migrations/001_create_chat_interactions.sql
 src/db/migrations/002_create_functions.sql
+src/db/migrations/003_create_tour_reservations.sql
 ```
 
-Run migrations in order with `psql`, Railway shell, or your deployment platform's database tooling before using chat memory.
+Run migrations in order with `psql`, Railway shell, or your deployment platform's database tooling before using chat memory or reservations.
 
 Production database connections use SSL with `rejectUnauthorized: false`.
+
+## Runtime Data
+- Bird RAG data loads from `src/db/data/birds.json`.
+- Tour seed data is stored in `003_create_tour_reservations.sql` and runtime tour data is PostgreSQL-backed.
+- Tour reservation availability is durable PostgreSQL state and is updated transactionally by PostgreSQL functions.
 
 ## CORS
 `CORS_ORIGINS` is parsed as a comma-separated allowlist. If it includes `*`,
@@ -55,6 +61,9 @@ npm install
 npm start
 ```
 
+The current Railway config sets `build.buildCommand` to `npm install` and
+`deploy.startCommand` to `npm start`.
+
 ## Docker And Vercel
 No `Dockerfile`, `docker-compose.yml`, or `vercel.json` exists in the current tree. Add those only when there is an actual deployment target to support.
 
@@ -68,4 +77,4 @@ Also verify:
 - `CORS_ORIGINS` matches the frontend origin
 - OpenAI model access is available for `OPENAI_MODEL`
 - OpenAI embedding model access is available for `OPENAI_EMBEDDING_MODEL`
-- the database migration has run
+- all database migrations have run

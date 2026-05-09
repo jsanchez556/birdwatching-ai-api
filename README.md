@@ -40,13 +40,33 @@ Run database migrations before using chat memory:
 ```bash
 psql "$DATABASE_URL" -f src/db/migrations/001_create_chat_interactions.sql
 psql "$DATABASE_URL" -f src/db/migrations/002_create_functions.sql
+psql "$DATABASE_URL" -f src/db/migrations/003_create_tour_reservations.sql
 ```
 
 ## Bird Knowledge Base
 Chat responses use a simple in-memory RAG flow. Documents are loaded from
-`src/db/data/birds.json`, embedded with the OpenAI embeddings API on first use,
-ranked with cosine similarity, and injected into the chat prompt when relevant.
-The embedded document cache is process-local and resets when the app restarts.
+`src/db/data/birds.json`, whose current shape is a family-keyed object of bird
+arrays. The embedding service flattens those family groups into documents,
+embeds them with the OpenAI embeddings API on first use, ranks with cosine
+similarity, and injects relevant matches into the chat prompt. The embedded
+document cache is process-local and resets when the app restarts.
+
+## Tour Tools
+Chat can use OpenAI tool calling for tour listing, tour recommendations,
+explicit tour selection, availability checks, price calculations, discounts, and
+durable reservation creation. Tool schemas and dispatch live in
+`src/ai/schemas/` and `src/ai/tools/`. Tour listing, recommendations,
+selection, and reservation state are stored in PostgreSQL through
+`src/db/queries/tour.queries.js` and `src/db/queries/reservation.queries.js`.
+
+Tour listing and recommendation results are returned through the `/chat`
+response `meta` envelope for frontend rendering, while assistant text stays
+short. Explicit selection can use a tour ID or a clear/partial tour name before
+pricing or reservation.
+
+Reservations can include an optional customer email and discount code. The
+backend calculates group or code-based discounts before calling the transactional
+PostgreSQL reservation function.
 
 ## Scripts
 ```bash
@@ -65,5 +85,8 @@ Responses use the normalized envelope from `src/utils/apiResponse.js`.
 
 ## Persistence
 PostgreSQL stores one `conversations` row per conversation ID and one
-`messages` row per user/assistant exchange. Query modules call SQL helper
-functions from `002_create_functions.sql`, so deploy both migrations in order.
+`messages` row per user/assistant exchange. Query modules call PostgreSQL
+functions from migrations instead of embedding persistence SQL in JavaScript.
+Tour reservations use PostgreSQL `tours` and `reservations` tables from
+`003_create_tour_reservations.sql`, including database functions for tour lookup
+and transactional reservation creation.

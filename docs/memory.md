@@ -61,5 +61,6 @@ If adding long-term memory or retrieval:
 - keep the existing short-term exchange table as the source of chat transcript truth
 - add separate tables for user preferences or retrieved documents
 - include source references for any retrieved birding/location content
+- keep reservation `conversation_id` as a linkage field for booking context, not as a replacement for chat transcript storage
 - update prompt construction in `conversation.service.js`, not controllers
 - add tests that prove cross-conversation leakage is impossible

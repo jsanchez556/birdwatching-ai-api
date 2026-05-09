@@ -1,27 +1,1523 @@
-[
-  {
-    "name": "Resplendent Quetzal",
-    "locations": "Monteverde, San Gerardo de Dota",
-    "description": "One of the most iconic birds in Costa Rica. Best seen in cloud forest habitat, especially around wild avocado fruiting trees."
-  },
-  {
-    "name": "Keel-billed Toucan",
-    "locations": "Sarapiqui, Tortuguero, Arenal",
-    "description": "Colorful tropical bird commonly seen in rainforest areas, forest edges, and fruiting trees."
-  },
-  {
-    "name": "Scarlet Macaw",
-    "locations": "Carara National Park, Osa Peninsula, Tarcoles",
-    "description": "Large red, yellow, and blue parrot often seen flying in pairs near Pacific lowland forest and mangrove edges."
-  },
-  {
-    "name": "Three-wattled Bellbird",
-    "locations": "Monteverde, San Ramon, Tilaran Mountains",
-    "description": "A distinctive cloud forest species known for its loud metallic call. Seasonal movements can affect viewing chances."
-  },
-  {
-    "name": "Snowcap",
-    "locations": "Rancho Naturalista, Caribbean foothills",
-    "description": "Tiny hummingbird with a striking white cap on males. Often sought at flowering shrubs and forest edge feeders."
-  }
-]
+{
+  "Trogonidae": [
+    {
+      "name": "Resplendent Quetzal",
+      "description": "Iconic cloud forest species, often searched for near wild avocado fruiting trees.",
+      "location": "Monteverde, San Gerardo de Dota, Los Quetzales National Park"
+    },
+    {
+      "name": "Slaty-tailed Trogon",
+      "description": "Large lowland forest trogon with a calm posture and deep calls.",
+      "location": "Sarapiquí, Tortuguero, La Selva Biological Station"
+    },
+    {
+      "name": "Black-throated Trogon",
+      "description": "Lowland rainforest trogon often found perched quietly in shaded forest.",
+      "location": "Sarapiquí, Tortuguero, Braulio Carrillo"
+    },
+    {
+      "name": "Gartered Trogon",
+      "description": "Colorful forest-edge trogon seen in humid and transitional forests.",
+      "location": "Carara, Sarapiquí, Bijagua de Upala"
+    },
+    {
+      "name": "Baird's Trogon",
+      "description": "Regional specialty of the South Pacific rainforest and mature forest edges.",
+      "location": "Osa Peninsula, Corcovado, Golfito"
+    },
+    {
+      "name": "Collared Trogon",
+      "description": "Widespread trogon of foothill and montane forests.",
+      "location": "Monteverde, Bijagua de Upala, Braulio Carrillo"
+    }
+  ],
+  "Ramphastidae": [
+    {
+      "name": "Keel-billed Toucan",
+      "description": "Bright-billed toucan commonly seen in Caribbean lowland and foothill forests.",
+      "location": "Sarapiquí, Tortuguero, Bijagua de Upala"
+    },
+    {
+      "name": "Yellow-throated Toucan",
+      "description": "Large toucan with a far-carrying yelping call in mature tropical forest.",
+      "location": "Osa Peninsula, Carara, Sarapiquí"
+    },
+    {
+      "name": "Collared Aracari",
+      "description": "Social toucan relative often seen in small groups at fruiting trees.",
+      "location": "Carara, Sarapiquí, Bijagua de Upala"
+    },
+    {
+      "name": "Fiery-billed Aracari",
+      "description": "South Pacific specialty with a striking multicolored bill.",
+      "location": "Osa Peninsula, Golfito, Dominical"
+    },
+    {
+      "name": "Northern Emerald-Toucanet",
+      "description": "Small green toucan of highland and cloud forest habitats.",
+      "location": "Monteverde, San Gerardo de Dota, Braulio Carrillo"
+    }
+  ],
+  "Psittacidae": [
+    {
+      "name": "Scarlet Macaw",
+      "description": "Large, spectacular macaw often seen flying in pairs over coastal forest.",
+      "location": "Carara, Osa Peninsula, Tarcoles"
+    },
+    {
+      "name": "Great Green Macaw",
+      "description": "Endangered macaw associated with lowland rainforest and almendro trees.",
+      "location": "Sarapiquí, Boca Tapada, Maquenque"
+    },
+    {
+      "name": "Orange-chinned Parakeet",
+      "description": "Small green parakeet often found in noisy flocks around forest edges.",
+      "location": "Carara, Sarapiquí, La Fortuna"
+    },
+    {
+      "name": "Crimson-fronted Parakeet",
+      "description": "Common parakeet in towns, gardens, farms, and dry-to-humid forest edges.",
+      "location": "Central Valley, San José, Carara"
+    },
+    {
+      "name": "White-crowned Parrot",
+      "description": "Compact parrot seen in pairs or groups in forests and semi-open areas.",
+      "location": "Bijagua de Upala, Sarapiquí, Monteverde"
+    },
+    {
+      "name": "Red-lored Parrot",
+      "description": "Common lowland parrot with loud calls and red facial markings.",
+      "location": "Sarapiquí, Tortuguero, Carara"
+    },
+    {
+      "name": "Mealy Parrot",
+      "description": "Large green parrot of mature humid forest and forested reserves.",
+      "location": "Osa Peninsula, Sarapiquí, Tortuguero"
+    },
+    {
+      "name": "Brown-hooded Parrot",
+      "description": "Forest parrot often detected by its calls in foothill rainforest.",
+      "location": "Bijagua de Upala, Sarapiquí, Braulio Carrillo"
+    }
+  ],
+  "Cotingidae": [
+    {
+      "name": "Three-wattled Bellbird",
+      "description": "Famous for its loud metallic call, breeding in cloud forest and moving seasonally.",
+      "location": "Monteverde, San Gerardo de Dota, Braulio Carrillo"
+    },
+    {
+      "name": "Snowy Cotinga",
+      "description": "White cotinga often seen perched high in Caribbean lowland forest.",
+      "location": "Sarapiquí, Tortuguero, Boca Tapada"
+    },
+    {
+      "name": "Turquoise Cotinga",
+      "description": "Brilliant blue South Pacific species found around mature forest and fruiting trees.",
+      "location": "Osa Peninsula, Golfito, Coto Brus"
+    },
+    {
+      "name": "Bare-necked Umbrellabird",
+      "description": "Rare and impressive cotinga of humid foothill and montane forests.",
+      "location": "Braulio Carrillo, Sarapiquí, Arenal"
+    },
+    {
+      "name": "Rufous Piha",
+      "description": "Plain-looking forest bird with loud vocalizations in mature rainforest.",
+      "location": "Braulio Carrillo, Sarapiquí, Bijagua de Upala"
+    }
+  ],
+  "Trochilidae": [
+    {
+      "name": "Snowcap",
+      "description": "Tiny hummingbird, famous for the male's white cap and purple body.",
+      "location": "Braulio Carrillo, Rancho Naturalista, Turrialba"
+    },
+    {
+      "name": "Violet Sabrewing",
+      "description": "Large purple hummingbird common at cloud forest edges and feeders.",
+      "location": "Monteverde, Bijagua de Upala, San Gerardo de Dota"
+    },
+    {
+      "name": "Green-crowned Brilliant",
+      "description": "Robust hummingbird seen at feeders and forest flowers in highland areas.",
+      "location": "Monteverde, San Gerardo de Dota, Braulio Carrillo"
+    },
+    {
+      "name": "Fiery-throated Hummingbird",
+      "description": "Highland hummingbird with brilliant throat colors when seen in good light.",
+      "location": "Cerro de la Muerte, San Gerardo de Dota, Irazú"
+    },
+    {
+      "name": "Talamanca Hummingbird",
+      "description": "Large highland hummingbird frequenting cloud forest flowers and feeders.",
+      "location": "San Gerardo de Dota, Cerro de la Muerte, Savegre"
+    },
+    {
+      "name": "Volcano Hummingbird",
+      "description": "Tiny high-elevation hummingbird of páramo, volcano slopes, and highland scrub.",
+      "location": "Poás, Irazú, Cerro de la Muerte"
+    },
+    {
+      "name": "Coppery-headed Emerald",
+      "description": "Costa Rica and Panama regional endemic often seen at gardens and feeders.",
+      "location": "Monteverde, Bijagua de Upala, Arenal"
+    },
+    {
+      "name": "Stripe-tailed Hummingbird",
+      "description": "Small hummingbird of cloud forest edges and flowering vegetation.",
+      "location": "Monteverde, San Gerardo de Dota, Braulio Carrillo"
+    },
+    {
+      "name": "White-necked Jacobin",
+      "description": "Common and striking hummingbird of humid lowland forest and gardens.",
+      "location": "Sarapiquí, Tortuguero, Bijagua de Upala"
+    },
+    {
+      "name": "Purple-throated Mountain-gem",
+      "description": "Cloud forest hummingbird often visiting feeders and flowering shrubs.",
+      "location": "Monteverde, San Gerardo de Dota, Braulio Carrillo"
+    },
+    {
+      "name": "Black-crested Coquette",
+      "description": "Tiny crested hummingbird found around flowering shrubs in humid lowlands.",
+      "location": "Sarapiquí, Bijagua de Upala, Boca Tapada"
+    },
+    {
+      "name": "Green Thorntail",
+      "description": "Small canopy hummingbird with a distinctive tail and rapid flight.",
+      "location": "Braulio Carrillo, Sarapiquí, Bijagua de Upala"
+    }
+  ],
+  "Momotidae": [
+    {
+      "name": "Lesson's Motmot",
+      "description": "Colorful motmot often seen in gardens, forest edges, and shaded ravines.",
+      "location": "Central Valley, Monteverde, Carara"
+    },
+    {
+      "name": "Rufous Motmot",
+      "description": "Large rainforest motmot with a deep call and secretive behavior.",
+      "location": "Sarapiquí, Tortuguero, Braulio Carrillo"
+    },
+    {
+      "name": "Broad-billed Motmot",
+      "description": "Humid forest motmot usually found in shaded understory and ravines.",
+      "location": "Sarapiquí, Tortuguero, Bijagua de Upala"
+    },
+    {
+      "name": "Turquoise-browed Motmot",
+      "description": "Dry forest species with vivid colors and racket-tipped tail feathers.",
+      "location": "Guanacaste, Palo Verde, Santa Rosa"
+    }
+  ],
+  "Alcedinidae": [
+    {
+      "name": "Ringed Kingfisher",
+      "description": "Large kingfisher often perched near rivers, canals, and wetlands.",
+      "location": "Tortuguero, Sarapiquí, Caño Negro"
+    },
+    {
+      "name": "Amazon Kingfisher",
+      "description": "Medium-sized green kingfisher common along rivers and mangrove channels.",
+      "location": "Tortuguero, Sarapiquí, Carara"
+    },
+    {
+      "name": "Green Kingfisher",
+      "description": "Small kingfisher found along streams, ponds, and forested waterways.",
+      "location": "Sarapiquí, Caño Negro, Bijagua de Upala"
+    },
+    {
+      "name": "American Pygmy Kingfisher",
+      "description": "Tiny kingfisher of quiet mangroves, canals, and lowland wetlands.",
+      "location": "Tortuguero, Caño Negro, Carara"
+    }
+  ],
+  "Bucconidae": [
+    {
+      "name": "White-necked Puffbird",
+      "description": "Large puffbird often perched motionless in humid lowland forest.",
+      "location": "Sarapiquí, Tortuguero, Boca Tapada"
+    },
+    {
+      "name": "White-whiskered Puffbird",
+      "description": "Understory puffbird usually found along shaded trails in tropical forest.",
+      "location": "Carara, Osa Peninsula, Sarapiquí"
+    },
+    {
+      "name": "Pied Puffbird",
+      "description": "Small black-and-white puffbird of lowland forest edges and canopy gaps.",
+      "location": "Sarapiquí, Tortuguero, Caño Negro"
+    },
+    {
+      "name": "Lanceolated Monklet",
+      "description": "Scarce foothill species prized by birdwatchers in humid forest.",
+      "location": "Braulio Carrillo, Arenal, Bijagua de Upala"
+    }
+  ],
+  "Capitonidae": [
+    {
+      "name": "Red-headed Barbet",
+      "description": "Colorful barbet found in cloud forest and foothill forest fruiting trees.",
+      "location": "Monteverde, Braulio Carrillo, San Gerardo de Dota"
+    },
+    {
+      "name": "Prong-billed Barbet",
+      "description": "Cloud forest barbet with a distinctive call and strong association with fruiting trees.",
+      "location": "Monteverde, San Gerardo de Dota, Braulio Carrillo"
+    }
+  ],
+  "Picidae": [
+    {
+      "name": "Acorn Woodpecker",
+      "description": "Social highland woodpecker known for storing acorns in granary trees.",
+      "location": "San Gerardo de Dota, Cerro de la Muerte, Irazú"
+    },
+    {
+      "name": "Hoffmann's Woodpecker",
+      "description": "Common dry forest and garden woodpecker of the Pacific side.",
+      "location": "Guanacaste, Central Valley, Carara"
+    },
+    {
+      "name": "Lineated Woodpecker",
+      "description": "Large crested woodpecker often seen on trunks in forest edges.",
+      "location": "Carara, Sarapiquí, Bijagua de Upala"
+    },
+    {
+      "name": "Pale-billed Woodpecker",
+      "description": "Powerful woodpecker of mature forest, often detected by loud drumming.",
+      "location": "Osa Peninsula, Sarapiquí, Braulio Carrillo"
+    },
+    {
+      "name": "Golden-olive Woodpecker",
+      "description": "Widespread forest woodpecker from foothills to montane habitats.",
+      "location": "Monteverde, Bijagua de Upala, Braulio Carrillo"
+    },
+    {
+      "name": "Black-cheeked Woodpecker",
+      "description": "Common Caribbean lowland woodpecker of humid forest and plantations.",
+      "location": "Sarapiquí, Tortuguero, Bijagua de Upala"
+    },
+    {
+      "name": "Rufous-winged Woodpecker",
+      "description": "Lowland Caribbean woodpecker found in humid forest and tall second growth.",
+      "location": "Sarapiquí, Boca Tapada, Tortuguero"
+    },
+    {
+      "name": "Smoky-brown Woodpecker",
+      "description": "Subtle woodpecker usually found in forest interiors and edges.",
+      "location": "Monteverde, Braulio Carrillo, Bijagua de Upala"
+    }
+  ],
+  "Falconidae": [
+    {
+      "name": "Crested Caracara",
+      "description": "Open-country raptor often seen walking or soaring over fields and roadsides.",
+      "location": "Guanacaste, Palo Verde, Tarcoles"
+    },
+    {
+      "name": "Yellow-headed Caracara",
+      "description": "Adaptable small caracara of pastures, towns, and open habitats.",
+      "location": "Carara, Sarapiquí, Central Valley"
+    },
+    {
+      "name": "Laughing Falcon",
+      "description": "Snake-hunting falcon known for its loud laughing call.",
+      "location": "Carara, Sarapiquí, Bijagua de Upala"
+    },
+    {
+      "name": "Bat Falcon",
+      "description": "Small fast falcon often perched on snags near forest and rivers.",
+      "location": "Sarapiquí, Carara, La Fortuna"
+    },
+    {
+      "name": "Collared Forest-Falcon",
+      "description": "Secretive forest raptor more often heard than seen in mature woodland.",
+      "location": "Osa Peninsula, Braulio Carrillo, Sarapiquí"
+    }
+  ],
+  "Accipitridae": [
+    {
+      "name": "King Vulture",
+      "description": "Large, colorful forest vulture often soaring over extensive rainforest.",
+      "location": "Osa Peninsula, Boca Tapada, Sarapiquí"
+    },
+    {
+      "name": "Black Hawk-Eagle",
+      "description": "Powerful forest eagle usually seen soaring above mature rainforest.",
+      "location": "Osa Peninsula, Braulio Carrillo, Sarapiquí"
+    },
+    {
+      "name": "Ornate Hawk-Eagle",
+      "description": "Rare and impressive eagle of large forested landscapes.",
+      "location": "Braulio Carrillo, Osa Peninsula, Arenal"
+    },
+    {
+      "name": "Roadside Hawk",
+      "description": "Common small hawk frequently perched along roads and forest edges.",
+      "location": "Central Valley, Carara, Bijagua de Upala"
+    },
+    {
+      "name": "Gray Hawk",
+      "description": "Pacific lowland hawk often found in dry forest and open woodland.",
+      "location": "Guanacaste, Palo Verde, Carara"
+    },
+    {
+      "name": "Common Black Hawk",
+      "description": "Coastal and wetland hawk usually associated with mangroves and rivers.",
+      "location": "Tarcoles, Carara, Tortuguero"
+    },
+    {
+      "name": "Great Black Hawk",
+      "description": "Large dark hawk of lowland forest, rivers, and wetlands.",
+      "location": "Osa Peninsula, Tortuguero, Sarapiquí"
+    },
+    {
+      "name": "Swallow-tailed Kite",
+      "description": "Elegant soaring raptor with a deeply forked tail, often seen during movements.",
+      "location": "Monteverde, Braulio Carrillo, Bijagua de Upala"
+    },
+    {
+      "name": "White Hawk",
+      "description": "Striking white raptor of humid forests and foothills.",
+      "location": "Braulio Carrillo, Sarapiquí, Osa Peninsula"
+    },
+    {
+      "name": "Double-toothed Kite",
+      "description": "Small forest raptor often following monkey groups for disturbed prey.",
+      "location": "Carara, Sarapiquí, Bijagua de Upala"
+    }
+  ],
+  "Strigidae": [
+    {
+      "name": "Spectacled Owl",
+      "description": "Large tropical owl often found in mature lowland and foothill forest.",
+      "location": "Sarapiquí, Osa Peninsula, Bijagua de Upala"
+    },
+    {
+      "name": "Crested Owl",
+      "description": "Distinctive forest owl with long ear tufts and a deep call.",
+      "location": "Sarapiquí, Braulio Carrillo, Osa Peninsula"
+    },
+    {
+      "name": "Mottled Owl",
+      "description": "Adaptable owl found in wooded areas, gardens, and forest edges.",
+      "location": "Central Valley, Monteverde, Carara"
+    },
+    {
+      "name": "Ferruginous Pygmy-Owl",
+      "description": "Small diurnal owl often detected by mobbing songbirds.",
+      "location": "Guanacaste, Palo Verde, Carara"
+    },
+    {
+      "name": "Costa Rican Pygmy-Owl",
+      "description": "Highland specialty of oak forest and cloud forest.",
+      "location": "San Gerardo de Dota, Cerro de la Muerte, Monteverde"
+    },
+    {
+      "name": "Bare-shanked Screech-Owl",
+      "description": "Montane owl of highland forests, usually found by night birding.",
+      "location": "San Gerardo de Dota, Monteverde, Cerro de la Muerte"
+    }
+  ],
+  "Tytonidae": [
+    {
+      "name": "Barn Owl",
+      "description": "Nocturnal owl of open country, farms, and agricultural landscapes.",
+      "location": "Central Valley, Guanacaste, Palo Verde"
+    }
+  ],
+  "Cracidae": [
+    {
+      "name": "Great Curassow",
+      "description": "Large ground-dwelling forest bird found in protected mature rainforest.",
+      "location": "Osa Peninsula, Corcovado, Boca Tapada"
+    },
+    {
+      "name": "Crested Guan",
+      "description": "Large arboreal bird often seen in forest canopy and fruiting trees.",
+      "location": "Sarapiquí, Bijagua de Upala, Osa Peninsula"
+    },
+    {
+      "name": "Black Guan",
+      "description": "Cloud forest guan commonly seen along quiet trails and forest roads.",
+      "location": "Monteverde, San Gerardo de Dota, Braulio Carrillo"
+    },
+    {
+      "name": "Gray-headed Chachalaca",
+      "description": "Noisy social bird of forest edges, gardens, and secondary growth.",
+      "location": "Carara, Sarapiquí, Bijagua de Upala"
+    }
+  ],
+  "Odontophoridae": [
+    {
+      "name": "Spotted Wood-Quail",
+      "description": "Secretive ground bird of cloud forest, often detected by group calls.",
+      "location": "Monteverde, San Gerardo de Dota, Braulio Carrillo"
+    },
+    {
+      "name": "Black-breasted Wood-Quail",
+      "description": "Highland specialty of dense forest understory.",
+      "location": "Cerro de la Muerte, San Gerardo de Dota, Savegre"
+    },
+    {
+      "name": "Marbled Wood-Quail",
+      "description": "South Pacific forest quail, shy and usually heard more than seen.",
+      "location": "Osa Peninsula, Corcovado, Golfito"
+    }
+  ],
+  "Anatidae": [
+    {
+      "name": "Black-bellied Whistling-Duck",
+      "description": "Common wetland duck often seen in noisy flocks.",
+      "location": "Palo Verde, Caño Negro, Tarcoles"
+    },
+    {
+      "name": "Muscovy Duck",
+      "description": "Large native duck of forested wetlands, rivers, and lagoons.",
+      "location": "Caño Negro, Tortuguero, Sarapiquí"
+    },
+    {
+      "name": "Blue-winged Teal",
+      "description": "Migratory duck found in freshwater wetlands and flooded fields.",
+      "location": "Palo Verde, Caño Negro, Gulf of Nicoya"
+    },
+    {
+      "name": "Lesser Scaup",
+      "description": "Wintering diving duck occasionally found on lakes and larger wetlands.",
+      "location": "Palo Verde, Caño Negro, Central Valley reservoirs"
+    }
+  ],
+  "Ardeidae": [
+    {
+      "name": "Bare-throated Tiger-Heron",
+      "description": "Large patterned heron of rivers, wetlands, and mangrove edges.",
+      "location": "Tortuguero, Caño Negro, Tarcoles"
+    },
+    {
+      "name": "Great Blue Heron",
+      "description": "Tall heron found along coasts, rivers, and wetlands.",
+      "location": "Tarcoles, Gulf of Nicoya, Tortuguero"
+    },
+    {
+      "name": "Great Egret",
+      "description": "Elegant white heron common in marshes, estuaries, and flooded fields.",
+      "location": "Palo Verde, Caño Negro, Tarcoles"
+    },
+    {
+      "name": "Snowy Egret",
+      "description": "Small white egret often feeding actively in shallow water.",
+      "location": "Gulf of Nicoya, Tarcoles, Palo Verde"
+    },
+    {
+      "name": "Little Blue Heron",
+      "description": "Slaty-blue heron frequenting wetlands, mangroves, and muddy edges.",
+      "location": "Tortuguero, Caño Negro, Tarcoles"
+    },
+    {
+      "name": "Cattle Egret",
+      "description": "Common egret of pastures and agricultural areas.",
+      "location": "Guanacaste, Central Valley, Sarapiquí"
+    },
+    {
+      "name": "Green Heron",
+      "description": "Small heron often hidden along streams, ponds, and mangroves.",
+      "location": "Tortuguero, Sarapiquí, Carara"
+    },
+    {
+      "name": "Boat-billed Heron",
+      "description": "Nocturnal heron with a broad bill, usually roosting in dense wetland vegetation.",
+      "location": "Tarcoles, Tortuguero, Caño Negro"
+    }
+  ],
+  "Threskiornithidae": [
+    {
+      "name": "Roseate Spoonbill",
+      "description": "Pink wetland bird with a spoon-shaped bill, often seen feeding in shallow water.",
+      "location": "Palo Verde, Gulf of Nicoya, Tarcoles"
+    },
+    {
+      "name": "White Ibis",
+      "description": "Common white ibis of wetlands, estuaries, and flooded fields.",
+      "location": "Palo Verde, Tarcoles, Caño Negro"
+    },
+    {
+      "name": "Green Ibis",
+      "description": "Dark ibis of forested wetlands and river edges.",
+      "location": "Sarapiquí, Tortuguero, Bijagua de Upala"
+    },
+    {
+      "name": "Glossy Ibis",
+      "description": "Migratory ibis sometimes found in marshes and flooded pastures.",
+      "location": "Palo Verde, Caño Negro, Gulf of Nicoya"
+    }
+  ],
+  "Ciconiidae": [
+    {
+      "name": "Jabiru",
+      "description": "Very large stork of open wetlands, rare and highly sought after.",
+      "location": "Palo Verde, Caño Negro, Tempisque Basin"
+    },
+    {
+      "name": "Wood Stork",
+      "description": "Large white stork commonly seen soaring or feeding in wetlands.",
+      "location": "Palo Verde, Tarcoles, Gulf of Nicoya"
+    }
+  ],
+  "Fregatidae": [
+    {
+      "name": "Magnificent Frigatebird",
+      "description": "Large seabird often soaring above coasts with angular wings.",
+      "location": "Pacific Coast, Caribbean Coast, Gulf of Nicoya"
+    }
+  ],
+  "Pelecanidae": [
+    {
+      "name": "Brown Pelican",
+      "description": "Coastal pelican commonly seen gliding over waves and plunge-diving.",
+      "location": "Pacific Coast, Caribbean Coast, Gulf of Nicoya"
+    }
+  ],
+  "Sulidae": [
+    {
+      "name": "Brown Booby",
+      "description": "Tropical seabird seen offshore and near rocky islands.",
+      "location": "Pacific Coast, Cocos Island, Gulf of Nicoya"
+    },
+    {
+      "name": "Blue-footed Booby",
+      "description": "Occasional Pacific seabird recognized by its blue feet and plunge-diving behavior.",
+      "location": "Pacific Coast, Gulf of Nicoya, Cocos Island"
+    }
+  ],
+  "Phalacrocoracidae": [
+    {
+      "name": "Neotropic Cormorant",
+      "description": "Common waterbird often perched with wings spread near lakes and rivers.",
+      "location": "Tortuguero, Caño Negro, Palo Verde"
+    }
+  ],
+  "Anhingidae": [
+    {
+      "name": "Anhinga",
+      "description": "Long-necked waterbird often swimming low or drying wings near wetlands.",
+      "location": "Tortuguero, Caño Negro, Palo Verde"
+    }
+  ],
+  "Rallidae": [
+    {
+      "name": "Purple Gallinule",
+      "description": "Colorful marsh bird walking across floating vegetation.",
+      "location": "Palo Verde, Caño Negro, Tortuguero"
+    },
+    {
+      "name": "Common Gallinule",
+      "description": "Common rail of ponds and marshes with a red frontal shield.",
+      "location": "Palo Verde, Caño Negro, Central Valley wetlands"
+    },
+    {
+      "name": "Gray-cowled Wood-Rail",
+      "description": "Large rail often seen near forest streams and wet edges.",
+      "location": "Carara, Sarapiquí, Bijagua de Upala"
+    },
+    {
+      "name": "White-throated Crake",
+      "description": "Secretive rail of grassy wetlands and dense marsh vegetation.",
+      "location": "Sarapiquí, Tortuguero, La Fortuna"
+    }
+  ],
+  "Jacanidae": [
+    {
+      "name": "Northern Jacana",
+      "description": "Wetland bird with long toes, often walking on floating plants.",
+      "location": "Palo Verde, Caño Negro, Tortuguero"
+    }
+  ],
+  "Recurvirostridae": [
+    {
+      "name": "Black-necked Stilt",
+      "description": "Elegant shorebird with very long pink legs in shallow wetlands.",
+      "location": "Gulf of Nicoya, Palo Verde, Tarcoles"
+    }
+  ],
+  "Charadriidae": [
+    {
+      "name": "Southern Lapwing",
+      "description": "Conspicuous plover of open fields, wetlands, and pastures.",
+      "location": "Guanacaste, Central Valley, Palo Verde"
+    },
+    {
+      "name": "Killdeer",
+      "description": "Migratory and resident plover found in open muddy or grassy areas.",
+      "location": "Central Valley, Palo Verde, Gulf of Nicoya"
+    },
+    {
+      "name": "Wilson's Plover",
+      "description": "Coastal plover found on sandy beaches and mudflats.",
+      "location": "Pacific Coast, Gulf of Nicoya, Caribbean Coast"
+    },
+    {
+      "name": "Semipalmated Plover",
+      "description": "Small migratory shorebird common on mudflats and beaches.",
+      "location": "Gulf of Nicoya, Tarcoles, Pacific Coast"
+    }
+  ],
+  "Scolopacidae": [
+    {
+      "name": "Spotted Sandpiper",
+      "description": "Common migrant along rivers, lakes, and shorelines.",
+      "location": "Sarapiquí, Tortuguero, Tarcoles"
+    },
+    {
+      "name": "Ruddy Turnstone",
+      "description": "Coastal migrant that flips stones and debris while feeding.",
+      "location": "Pacific Coast, Caribbean Coast, Gulf of Nicoya"
+    },
+    {
+      "name": "Whimbrel",
+      "description": "Large curlew of mudflats, beaches, and coastal wetlands.",
+      "location": "Gulf of Nicoya, Tarcoles, Pacific Coast"
+    },
+    {
+      "name": "Western Sandpiper",
+      "description": "Small migratory sandpiper found in flocks on mudflats.",
+      "location": "Gulf of Nicoya, Tarcoles, Palo Verde"
+    },
+    {
+      "name": "Least Sandpiper",
+      "description": "Tiny shorebird that feeds in muddy wetland edges.",
+      "location": "Palo Verde, Gulf of Nicoya, Caño Negro"
+    }
+  ],
+  "Laridae": [
+    {
+      "name": "Laughing Gull",
+      "description": "Common coastal gull around beaches, ports, and estuaries.",
+      "location": "Pacific Coast, Caribbean Coast, Gulf of Nicoya"
+    },
+    {
+      "name": "Royal Tern",
+      "description": "Large tern often resting on beaches or diving offshore.",
+      "location": "Pacific Coast, Caribbean Coast, Gulf of Nicoya"
+    },
+    {
+      "name": "Black Skimmer",
+      "description": "Distinctive coastal bird that skims the water surface with its lower bill.",
+      "location": "Gulf of Nicoya, Tarcoles, Pacific Coast"
+    }
+  ],
+  "Columbidae": [
+    {
+      "name": "White-tipped Dove",
+      "description": "Ground dove of forest edges and shaded understory.",
+      "location": "Carara, Sarapiquí, Bijagua de Upala"
+    },
+    {
+      "name": "Ruddy Ground Dove",
+      "description": "Small common dove of open fields and roadsides.",
+      "location": "Guanacaste, Central Valley, Carara"
+    },
+    {
+      "name": "Inca Dove",
+      "description": "Small scaly-looking dove common in dry towns and open areas.",
+      "location": "Guanacaste, Central Valley, Palo Verde"
+    },
+    {
+      "name": "Pale-vented Pigeon",
+      "description": "Large pigeon often found near rivers and wet lowland habitats.",
+      "location": "Tortuguero, Caño Negro, Sarapiquí"
+    },
+    {
+      "name": "Short-billed Pigeon",
+      "description": "Forest pigeon usually detected by its repeated vocalizations.",
+      "location": "Sarapiquí, Bijagua de Upala, Braulio Carrillo"
+    },
+    {
+      "name": "Band-tailed Pigeon",
+      "description": "Highland pigeon often seen in flocks over cloud forest.",
+      "location": "San Gerardo de Dota, Monteverde, Cerro de la Muerte"
+    }
+  ],
+  "Cuculidae": [
+    {
+      "name": "Squirrel Cuckoo",
+      "description": "Large rufous cuckoo moving through canopy and forest edges.",
+      "location": "Carara, Sarapiquí, Bijagua de Upala"
+    },
+    {
+      "name": "Groove-billed Ani",
+      "description": "Social black cuckoo of pastures, roadsides, and open scrub.",
+      "location": "Guanacaste, Central Valley, Carara"
+    },
+    {
+      "name": "Smooth-billed Ani",
+      "description": "Black social cuckoo of humid lowland open areas.",
+      "location": "Caribbean Lowlands, Tortuguero, Sarapiquí"
+    },
+    {
+      "name": "Striped Cuckoo",
+      "description": "Open-country cuckoo often heard from shrubs and fences.",
+      "location": "Guanacaste, Palo Verde, Central Valley"
+    }
+  ],
+  "Nyctibiidae": [
+    {
+      "name": "Great Potoo",
+      "description": "Large nocturnal bird that roosts camouflaged on branches.",
+      "location": "Sarapiquí, Tortuguero, Osa Peninsula"
+    },
+    {
+      "name": "Common Potoo",
+      "description": "Nocturnal species of dry forest and woodland edges.",
+      "location": "Guanacaste, Carara, Palo Verde"
+    },
+    {
+      "name": "Northern Potoo",
+      "description": "Night bird of humid forest and edges, best detected by call.",
+      "location": "Sarapiquí, Tortuguero, Bijagua de Upala"
+    }
+  ],
+  "Caprimulgidae": [
+    {
+      "name": "Lesser Nighthawk",
+      "description": "Crepuscular nightjar often seen flying low over dry open areas.",
+      "location": "Guanacaste, Palo Verde, Tarcoles"
+    },
+    {
+      "name": "Common Pauraque",
+      "description": "Common nightjar found on roads and trails after dark.",
+      "location": "Carara, Sarapiquí, Bijagua de Upala"
+    },
+    {
+      "name": "Chuck-will's-widow",
+      "description": "Migratory nightjar occasionally found in lowland forest and woodland.",
+      "location": "Caribbean Lowlands, Tortuguero, Sarapiquí"
+    }
+  ],
+  "Apodidae": [
+    {
+      "name": "White-collared Swift",
+      "description": "Large swift often seen in fast flocks over forests and mountains.",
+      "location": "Monteverde, Braulio Carrillo, Bijagua de Upala"
+    },
+    {
+      "name": "Vaux's Swift",
+      "description": "Small swift commonly seen over towns, forests, and highlands.",
+      "location": "Central Valley, Monteverde, San Gerardo de Dota"
+    },
+    {
+      "name": "Chestnut-collared Swift",
+      "description": "Foothill swift often flying over humid forested slopes.",
+      "location": "Braulio Carrillo, Arenal, Bijagua de Upala"
+    }
+  ],
+  "Tinamidae": [
+    {
+      "name": "Great Tinamou",
+      "description": "Large forest ground bird often heard giving clear whistled calls.",
+      "location": "Sarapiquí, Osa Peninsula, Bijagua de Upala"
+    },
+    {
+      "name": "Little Tinamou",
+      "description": "Secretive lowland species usually heard from dense vegetation.",
+      "location": "Carara, Sarapiquí, Tortuguero"
+    },
+    {
+      "name": "Slaty-breasted Tinamou",
+      "description": "Lowland rainforest tinamou, shy and more often heard than seen.",
+      "location": "Sarapiquí, Tortuguero, Boca Tapada"
+    },
+    {
+      "name": "Highland Tinamou",
+      "description": "Secretive highland forest bird with haunting whistles.",
+      "location": "San Gerardo de Dota, Cerro de la Muerte, Monteverde"
+    }
+  ],
+  "Furnariidae": [
+    {
+      "name": "Ruddy Treerunner",
+      "description": "Highland furnariid often traveling with mixed flocks in oak forest.",
+      "location": "San Gerardo de Dota, Cerro de la Muerte, Savegre"
+    },
+    {
+      "name": "Buffy Tuftedcheek",
+      "description": "Cloud forest bird that climbs mossy branches and bromeliads.",
+      "location": "Monteverde, San Gerardo de Dota, Braulio Carrillo"
+    },
+    {
+      "name": "Streak-breasted Treehunter",
+      "description": "Montane forest species often found with mixed feeding flocks.",
+      "location": "Monteverde, Braulio Carrillo, San Gerardo de Dota"
+    },
+    {
+      "name": "Spotted Barbtail",
+      "description": "Foothill and cloud forest bird that forages on mossy trunks.",
+      "location": "Monteverde, Braulio Carrillo, Bijagua de Upala"
+    },
+    {
+      "name": "Plain Xenops",
+      "description": "Small bark-foraging bird found in forests and mixed flocks.",
+      "location": "Carara, Sarapiquí, Bijagua de Upala"
+    },
+    {
+      "name": "Wedge-billed Woodcreeper",
+      "description": "Small woodcreeper that climbs trunks in humid forest.",
+      "location": "Sarapiquí, Carara, Bijagua de Upala"
+    },
+    {
+      "name": "Northern Barred-Woodcreeper",
+      "description": "Large barred woodcreeper often attending army-ant swarms.",
+      "location": "Sarapiquí, Tortuguero, Braulio Carrillo"
+    },
+    {
+      "name": "Cocoa Woodcreeper",
+      "description": "Common woodcreeper of forest edges and secondary growth.",
+      "location": "Carara, Sarapiquí, Bijagua de Upala"
+    },
+    {
+      "name": "Streak-headed Woodcreeper",
+      "description": "Dry forest and woodland woodcreeper often seen on trunks and branches.",
+      "location": "Guanacaste, Carara, Central Valley"
+    },
+    {
+      "name": "Ruddy Woodcreeper",
+      "description": "Forest woodcreeper often associated with ant swarms in mature rainforest.",
+      "location": "Sarapiquí, Braulio Carrillo, Osa Peninsula"
+    }
+  ],
+  "Thamnophilidae": [
+    {
+      "name": "Fasciated Antshrike",
+      "description": "Boldly barred antbird of humid forest understory.",
+      "location": "Sarapiquí, Tortuguero, Braulio Carrillo"
+    },
+    {
+      "name": "Black-hooded Antshrike",
+      "description": "South Pacific antshrike often found in dense forest understory.",
+      "location": "Osa Peninsula, Carara, Golfito"
+    },
+    {
+      "name": "Barred Antshrike",
+      "description": "Common antshrike of dry forest edges, scrub, and gardens.",
+      "location": "Guanacaste, Carara, Central Valley"
+    },
+    {
+      "name": "Russet Antshrike",
+      "description": "Humid forest antshrike that often follows mixed flocks.",
+      "location": "Sarapiquí, Bijagua de Upala, Braulio Carrillo"
+    },
+    {
+      "name": "Dot-winged Antwren",
+      "description": "Small active antbird of forest edges and second growth.",
+      "location": "Carara, Sarapiquí, Bijagua de Upala"
+    },
+    {
+      "name": "Dusky Antbird",
+      "description": "Lowland antbird often found in dense understory near streams.",
+      "location": "Sarapiquí, Tortuguero, Boca Tapada"
+    },
+    {
+      "name": "Chestnut-backed Antbird",
+      "description": "Pacific lowland antbird with loud duets and skulking behavior.",
+      "location": "Carara, Osa Peninsula, Golfito"
+    },
+    {
+      "name": "Bicolored Antbird",
+      "description": "Army-ant follower of mature lowland and foothill forest.",
+      "location": "Osa Peninsula, Braulio Carrillo, Sarapiquí"
+    }
+  ],
+  "Formicariidae": [
+    {
+      "name": "Black-faced Antthrush",
+      "description": "Ground-walking forest bird with a distinctive ringing song.",
+      "location": "Carara, Sarapiquí, Osa Peninsula"
+    },
+    {
+      "name": "Black-headed Antthrush",
+      "description": "Secretive ground bird of humid Caribbean slope forest.",
+      "location": "Braulio Carrillo, Sarapiquí, Bijagua de Upala"
+    }
+  ],
+  "Grallariidae": [
+    {
+      "name": "Streak-chested Antpitta",
+      "description": "Skulking forest floor bird best detected by its voice.",
+      "location": "Carara, Osa Peninsula, Sarapiquí"
+    },
+    {
+      "name": "Thicket Antpitta",
+      "description": "Highland antpitta of dense understory and bamboo thickets.",
+      "location": "San Gerardo de Dota, Cerro de la Muerte, Savegre"
+    },
+    {
+      "name": "Scaled Antpitta",
+      "description": "Elusive montane forest species often heard from ravines.",
+      "location": "Monteverde, Braulio Carrillo, San Gerardo de Dota"
+    }
+  ],
+  "Rhinocryptidae": [
+    {
+      "name": "Silvery-fronted Tapaculo",
+      "description": "Secretive highland bird usually heard from dense vegetation.",
+      "location": "San Gerardo de Dota, Cerro de la Muerte, Monteverde"
+    }
+  ],
+  "Tityridae": [
+    {
+      "name": "Masked Tityra",
+      "description": "Canopy bird often perched conspicuously near forest edges.",
+      "location": "Carara, Sarapiquí, Bijagua de Upala"
+    },
+    {
+      "name": "Black-crowned Tityra",
+      "description": "Forest canopy tityra usually seen around fruiting trees.",
+      "location": "Sarapiquí, Tortuguero, Osa Peninsula"
+    },
+    {
+      "name": "Barred Becard",
+      "description": "Montane becard often found in mixed flocks and forest edges.",
+      "location": "Monteverde, San Gerardo de Dota, Braulio Carrillo"
+    },
+    {
+      "name": "Cinnamon Becard",
+      "description": "Small becard of woodland edges and secondary growth.",
+      "location": "Carara, Sarapiquí, Bijagua de Upala"
+    },
+    {
+      "name": "White-winged Becard",
+      "description": "Dry forest becard often found in pairs in open woodland.",
+      "location": "Guanacaste, Carara, Central Valley"
+    },
+    {
+      "name": "Northern Schiffornis",
+      "description": "Plain forest bird with a memorable whistled song.",
+      "location": "Sarapiquí, Tortuguero, Boca Tapada"
+    }
+  ],
+  "Pipridae": [
+    {
+      "name": "Long-tailed Manakin",
+      "description": "Pacific slope manakin famous for cooperative displays and musical calls.",
+      "location": "Carara, Guanacaste, Palo Verde"
+    },
+    {
+      "name": "White-collared Manakin",
+      "description": "Caribbean slope manakin known for sharp wing-snapping displays.",
+      "location": "Sarapiquí, Tortuguero, Bijagua de Upala"
+    },
+    {
+      "name": "Red-capped Manakin",
+      "description": "Colorful manakin famous for its courtship display on display perches.",
+      "location": "Carara, Osa Peninsula, Golfito"
+    },
+    {
+      "name": "White-ruffed Manakin",
+      "description": "Small manakin of foothill and cloud forest understory.",
+      "location": "Monteverde, Braulio Carrillo, Bijagua de Upala"
+    },
+    {
+      "name": "Orange-collared Manakin",
+      "description": "South Pacific specialty with bright male plumage and lekking behavior.",
+      "location": "Osa Peninsula, Golfito, Corcovado"
+    }
+  ],
+  "Tyrannidae": [
+    {
+      "name": "Great Kiskadee",
+      "description": "Common, loud flycatcher found around towns, rivers, and forest edges.",
+      "location": "Central Valley, Sarapiquí, Carara"
+    },
+    {
+      "name": "Social Flycatcher",
+      "description": "Common flycatcher often seen around gardens, farms, and open woodland.",
+      "location": "Central Valley, Sarapiquí, Bijagua de Upala"
+    },
+    {
+      "name": "Boat-billed Flycatcher",
+      "description": "Large flycatcher similar to kiskadee, often found in pairs near forest.",
+      "location": "Carara, Sarapiquí, Monteverde"
+    },
+    {
+      "name": "Tropical Kingbird",
+      "description": "Very common open-country flycatcher often perched on wires and treetops.",
+      "location": "Central Valley, Guanacaste, La Fortuna"
+    },
+    {
+      "name": "Piratic Flycatcher",
+      "description": "Migratory breeding flycatcher that often takes over other birds' nests.",
+      "location": "Sarapiquí, Carara, Bijagua de Upala"
+    },
+    {
+      "name": "Sulphur-bellied Flycatcher",
+      "description": "Large streaked migrant breeder of forested areas and edges.",
+      "location": "Carara, Sarapiquí, Osa Peninsula"
+    },
+    {
+      "name": "Long-tailed Tyrant",
+      "description": "Elegant flycatcher often perched on exposed snags in lowland forest.",
+      "location": "Sarapiquí, Boca Tapada, Bijagua de Upala"
+    },
+    {
+      "name": "Black Phoebe",
+      "description": "Streamside flycatcher that pumps its tail while perched near water.",
+      "location": "Central Valley, San Gerardo de Dota, Monteverde"
+    },
+    {
+      "name": "Eastern Wood-Pewee",
+      "description": "Migratory flycatcher seen in forests and edges during passage and winter.",
+      "location": "Carara, Sarapiquí, Tortuguero"
+    },
+    {
+      "name": "Yellow-bellied Elaenia",
+      "description": "Common flycatcher of gardens, second growth, and forest edges.",
+      "location": "Central Valley, Monteverde, Carara"
+    },
+    {
+      "name": "Mountain Elaenia",
+      "description": "Highland flycatcher common in montane forest edges and scrub.",
+      "location": "San Gerardo de Dota, Cerro de la Muerte, Monteverde"
+    },
+    {
+      "name": "Olive-sided Flycatcher",
+      "description": "Migratory flycatcher often perched high on exposed snags.",
+      "location": "Monteverde, San Gerardo de Dota, Braulio Carrillo"
+    }
+  ],
+  "Vireonidae": [
+    {
+      "name": "Yellow-throated Vireo",
+      "description": "Migratory vireo found in forest edges and canopy during winter and passage.",
+      "location": "Carara, Sarapiquí, Tortuguero"
+    },
+    {
+      "name": "Red-eyed Vireo",
+      "description": "Common migrant and resident complex in forest canopy and edges.",
+      "location": "Sarapiquí, Carara, Bijagua de Upala"
+    },
+    {
+      "name": "Yellow-winged Vireo",
+      "description": "Highland regional endemic often found in mixed flocks.",
+      "location": "San Gerardo de Dota, Cerro de la Muerte, Monteverde"
+    },
+    {
+      "name": "Lesser Greenlet",
+      "description": "Small canopy vireo common in lowland and foothill forest.",
+      "location": "Carara, Sarapiquí, Bijagua de Upala"
+    },
+    {
+      "name": "Rufous-browed Peppershrike",
+      "description": "Vocal bird of forest edges, gardens, and highland woodland.",
+      "location": "Monteverde, San Gerardo de Dota, Central Valley"
+    }
+  ],
+  "Corvidae": [
+    {
+      "name": "White-throated Magpie-Jay",
+      "description": "Large, social jay of dry forest and open woodland.",
+      "location": "Guanacaste, Palo Verde, Santa Rosa"
+    },
+    {
+      "name": "Brown Jay",
+      "description": "Noisy social jay of humid forest edges, plantations, and gardens.",
+      "location": "Sarapiquí, Bijagua de Upala, La Fortuna"
+    },
+    {
+      "name": "Silvery-throated Jay",
+      "description": "Highland specialty found in oak forest and mixed flocks.",
+      "location": "San Gerardo de Dota, Cerro de la Muerte, Savegre"
+    }
+  ],
+  "Hirundinidae": [
+    {
+      "name": "Blue-and-white Swallow",
+      "description": "Common swallow in towns, farms, and highland open areas.",
+      "location": "Central Valley, Monteverde, San Gerardo de Dota"
+    },
+    {
+      "name": "Mangrove Swallow",
+      "description": "Glossy swallow found over rivers, canals, and mangroves.",
+      "location": "Tortuguero, Caño Negro, Tarcoles"
+    },
+    {
+      "name": "Southern Rough-winged Swallow",
+      "description": "Common swallow over fields, rivers, and open forest edges.",
+      "location": "Sarapiquí, Carara, Central Valley"
+    },
+    {
+      "name": "Barn Swallow",
+      "description": "Familiar migratory swallow seen over open country and wetlands.",
+      "location": "Central Valley, Palo Verde, Gulf of Nicoya"
+    }
+  ],
+  "Troglodytidae": [
+    {
+      "name": "House Wren",
+      "description": "Common small wren of gardens, farms, and towns.",
+      "location": "Central Valley, Guanacaste, Monteverde"
+    },
+    {
+      "name": "Rufous-naped Wren",
+      "description": "Large vocal wren of dry forest, gardens, and open woodland.",
+      "location": "Guanacaste, Central Valley, Palo Verde"
+    },
+    {
+      "name": "Riverside Wren",
+      "description": "Pacific lowland wren often heard from dense vegetation near streams.",
+      "location": "Carara, Osa Peninsula, Golfito"
+    },
+    {
+      "name": "Bay Wren",
+      "description": "Loud, richly colored wren of humid forest understory.",
+      "location": "Sarapiquí, Bijagua de Upala, Braulio Carrillo"
+    },
+    {
+      "name": "Cabanis's Wren",
+      "description": "Common wren of gardens, coffee areas, and brushy edges.",
+      "location": "Central Valley, Carara, Guanacaste"
+    },
+    {
+      "name": "Black-throated Wren",
+      "description": "Caribbean lowland wren usually found in dense understory.",
+      "location": "Sarapiquí, Tortuguero, Bijagua de Upala"
+    },
+    {
+      "name": "Ochraceous Wren",
+      "description": "Small cloud forest wren that forages in mosses and epiphytes.",
+      "location": "Monteverde, San Gerardo de Dota, Braulio Carrillo"
+    },
+    {
+      "name": "Timberline Wren",
+      "description": "High-elevation wren of páramo and stunted vegetation.",
+      "location": "Cerro de la Muerte, Irazú, Turrialba Highlands"
+    }
+  ],
+  "Turdidae": [
+    {
+      "name": "Clay-colored Thrush",
+      "description": "Costa Rica's national bird, common in gardens, towns, and forest edges.",
+      "location": "Central Valley, Sarapiquí, Bijagua de Upala"
+    },
+    {
+      "name": "Sooty Thrush",
+      "description": "Large highland thrush common in páramo and montane forest edges.",
+      "location": "Cerro de la Muerte, Irazú, San Gerardo de Dota"
+    },
+    {
+      "name": "Mountain Thrush",
+      "description": "Highland thrush of cloud forest, gardens, and forest clearings.",
+      "location": "Monteverde, San Gerardo de Dota, Cerro de la Muerte"
+    },
+    {
+      "name": "Black-faced Solitaire",
+      "description": "Cloud forest songbird prized for its flute-like song.",
+      "location": "Monteverde, San Gerardo de Dota, Braulio Carrillo"
+    },
+    {
+      "name": "Wood Thrush",
+      "description": "Migratory thrush wintering in shady forest understory.",
+      "location": "Carara, Sarapiquí, Tortuguero"
+    },
+    {
+      "name": "Swainson's Thrush",
+      "description": "Migratory thrush passing through and wintering in forested habitats.",
+      "location": "Monteverde, San Gerardo de Dota, Braulio Carrillo"
+    }
+  ],
+  "Mimidae": [
+    {
+      "name": "Tropical Mockingbird",
+      "description": "Open-country songbird increasingly common in towns, fields, and roadsides.",
+      "location": "Central Valley, Guanacaste, Palo Verde"
+    }
+  ],
+  "Parulidae": [
+    {
+      "name": "Golden-winged Warbler",
+      "description": "Migratory warbler of conservation concern found in forest edges and second growth.",
+      "location": "Monteverde, San Gerardo de Dota, Braulio Carrillo"
+    },
+    {
+      "name": "Chestnut-sided Warbler",
+      "description": "Common wintering warbler in second growth, gardens, and forest edges.",
+      "location": "Sarapiquí, Carara, Bijagua de Upala"
+    },
+    {
+      "name": "Black-throated Green Warbler",
+      "description": "Migratory warbler often found in highland mixed flocks.",
+      "location": "Monteverde, San Gerardo de Dota, Braulio Carrillo"
+    },
+    {
+      "name": "Wilson's Warbler",
+      "description": "Common migrant and wintering warbler in brushy highland habitats.",
+      "location": "San Gerardo de Dota, Monteverde, Central Valley"
+    },
+    {
+      "name": "Collared Redstart",
+      "description": "Charismatic highland warbler often seen along cloud forest trails.",
+      "location": "San Gerardo de Dota, Cerro de la Muerte, Savegre"
+    },
+    {
+      "name": "Slate-throated Redstart",
+      "description": "Active warbler of foothill and montane forest understory.",
+      "location": "Monteverde, Braulio Carrillo, San Gerardo de Dota"
+    },
+    {
+      "name": "Black-cheeked Warbler",
+      "description": "Highland regional endemic found in oak forest and páramo edges.",
+      "location": "Cerro de la Muerte, San Gerardo de Dota, Irazú"
+    },
+    {
+      "name": "Flame-throated Warbler",
+      "description": "Bright highland warbler often traveling in mixed flocks.",
+      "location": "San Gerardo de Dota, Cerro de la Muerte, Savegre"
+    },
+    {
+      "name": "Tropical Parula",
+      "description": "Small resident warbler of forest canopy and edges.",
+      "location": "Monteverde, Bijagua de Upala, Braulio Carrillo"
+    },
+    {
+      "name": "Buff-rumped Warbler",
+      "description": "Streamside warbler walking along rocks and forested watercourses.",
+      "location": "Sarapiquí, Bijagua de Upala, Braulio Carrillo"
+    }
+  ],
+  "Thraupidae": [
+    {
+      "name": "Blue-gray Tanager",
+      "description": "Common pale-blue tanager of gardens, towns, and forest edges.",
+      "location": "Central Valley, Sarapiquí, Bijagua de Upala"
+    },
+    {
+      "name": "Palm Tanager",
+      "description": "Common tanager often seen around palms, gardens, and semi-open areas.",
+      "location": "Carara, Sarapiquí, Bijagua de Upala"
+    },
+    {
+      "name": "Golden-hooded Tanager",
+      "description": "Brilliant small tanager found in humid forest edges and fruiting trees.",
+      "location": "Carara, Sarapiquí, Bijagua de Upala"
+    },
+    {
+      "name": "Bay-headed Tanager",
+      "description": "Colorful tanager often seen with mixed flocks in foothill and montane forest.",
+      "location": "Monteverde, Braulio Carrillo, Bijagua de Upala"
+    },
+    {
+      "name": "Silver-throated Tanager",
+      "description": "Common highland and foothill tanager at forest edges and feeders.",
+      "location": "Monteverde, San Gerardo de Dota, Bijagua de Upala"
+    },
+    {
+      "name": "Speckled Tanager",
+      "description": "Patterned tanager of humid foothill forest and canopy flocks.",
+      "location": "Braulio Carrillo, Bijagua de Upala, Sarapiquí"
+    },
+    {
+      "name": "Spangle-cheeked Tanager",
+      "description": "Striking cloud forest tanager with glittering facial markings.",
+      "location": "Monteverde, San Gerardo de Dota, Braulio Carrillo"
+    },
+    {
+      "name": "Scarlet-thighed Dacnis",
+      "description": "Small canopy tanager often seen around fruiting and flowering trees.",
+      "location": "Sarapiquí, Bijagua de Upala, Braulio Carrillo"
+    },
+    {
+      "name": "Green Honeycreeper",
+      "description": "Bright green-blue bird frequenting fruit feeders and forest edges.",
+      "location": "Sarapiquí, Carara, Bijagua de Upala"
+    },
+    {
+      "name": "Red-legged Honeycreeper",
+      "description": "Colorful honeycreeper of forest edges, gardens, and fruiting trees.",
+      "location": "Carara, Sarapiquí, Bijagua de Upala"
+    },
+    {
+      "name": "Shining Honeycreeper",
+      "description": "Humid lowland honeycreeper, often seen in canopy and fruiting trees.",
+      "location": "Sarapiquí, Tortuguero, Boca Tapada"
+    },
+    {
+      "name": "Blue Dacnis",
+      "description": "Small bright canopy bird often found in pairs or mixed flocks.",
+      "location": "Carara, Sarapiquí, Osa Peninsula"
+    },
+    {
+      "name": "Variable Seedeater",
+      "description": "Common seedeater of grasslands, fields, and roadsides.",
+      "location": "Central Valley, Guanacaste, Sarapiquí"
+    },
+    {
+      "name": "Morelet's Seedeater",
+      "description": "Small seed-eating bird of dry open habitats and grassy areas.",
+      "location": "Guanacaste, Palo Verde, Central Valley"
+    },
+    {
+      "name": "Slaty Flowerpiercer",
+      "description": "Highland bird that pierces flower bases to access nectar.",
+      "location": "San Gerardo de Dota, Cerro de la Muerte, Monteverde"
+    }
+  ],
+  "Cardinalidae": [
+    {
+      "name": "Summer Tanager",
+      "description": "Migratory tanager often seen in forest edges and gardens.",
+      "location": "Carara, Sarapiquí, Central Valley"
+    },
+    {
+      "name": "Scarlet Tanager",
+      "description": "Migratory songbird, bright males sometimes seen during passage.",
+      "location": "Carara, Sarapiquí, Tortuguero"
+    },
+    {
+      "name": "Hepatic Tanager",
+      "description": "Highland tanager of pine-oak-like and montane forest habitats.",
+      "location": "Monteverde, San Gerardo de Dota, Central Highlands"
+    },
+    {
+      "name": "Rose-breasted Grosbeak",
+      "description": "Migratory grosbeak found in gardens, farms, and forest edges.",
+      "location": "Central Valley, Monteverde, Sarapiquí"
+    },
+    {
+      "name": "Blue-black Grosbeak",
+      "description": "Thick-billed bird of dense vegetation and forest edges.",
+      "location": "Carara, Sarapiquí, Bijagua de Upala"
+    },
+    {
+      "name": "Blue Grosbeak",
+      "description": "Migratory and resident open-country grosbeak of fields and scrub.",
+      "location": "Guanacaste, Central Valley, Palo Verde"
+    },
+    {
+      "name": "Painted Bunting",
+      "description": "Colorful migrant often found in dry scrub and weedy edges.",
+      "location": "Guanacaste, Palo Verde, Carara"
+    }
+  ],
+  "Icteridae": [
+    {
+      "name": "Montezuma Oropendola",
+      "description": "Large colonial blackbird known for hanging nests and bubbling display calls.",
+      "location": "Sarapiquí, Bijagua de Upala, La Fortuna"
+    },
+    {
+      "name": "Chestnut-headed Oropendola",
+      "description": "Lowland oropendola of humid forest and river edges.",
+      "location": "Sarapiquí, Tortuguero, Boca Tapada"
+    },
+    {
+      "name": "Scarlet-rumped Cacique",
+      "description": "Social blackbird often seen in noisy flocks in Caribbean lowlands.",
+      "location": "Sarapiquí, Bijagua de Upala, Tortuguero"
+    },
+    {
+      "name": "Baltimore Oriole",
+      "description": "Common wintering migrant in gardens, flowering trees, and forest edges.",
+      "location": "Central Valley, Carara, Sarapiquí"
+    },
+    {
+      "name": "Orchard Oriole",
+      "description": "Migratory oriole found in open woodland, gardens, and dry forest.",
+      "location": "Guanacaste, Carara, Central Valley"
+    },
+    {
+      "name": "Melodious Blackbird",
+      "description": "Common blackbird of towns, gardens, and open habitats with musical calls.",
+      "location": "Central Valley, Guanacaste, Carara"
+    },
+    {
+      "name": "Great-tailed Grackle",
+      "description": "Very common blackbird in towns, beaches, fields, and wetlands.",
+      "location": "Central Valley, Guanacaste, Puntarenas"
+    },
+    {
+      "name": "Eastern Meadowlark",
+      "description": "Grassland bird found in pastures and open agricultural areas.",
+      "location": "Guanacaste, Palo Verde, Central Valley"
+    }
+  ],
+  "Fringillidae": [
+    {
+      "name": "Yellow-thighed Brushfinch",
+      "description": "Highland specialty with bright yellow thigh tufts, often near trails.",
+      "location": "San Gerardo de Dota, Cerro de la Muerte, Savegre"
+    },
+    {
+      "name": "Sooty-capped Chlorospingus",
+      "description": "Common highland flocking bird in cloud forest and edges.",
+      "location": "San Gerardo de Dota, Monteverde, Cerro de la Muerte"
+    },
+    {
+      "name": "Common Chlorospingus",
+      "description": "Active flocking bird of foothill and montane forest.",
+      "location": "Monteverde, Braulio Carrillo, Bijagua de Upala"
+    },
+    {
+      "name": "Golden-browed Chlorophonia",
+      "description": "Brilliant green-and-yellow finch of cloud forest fruiting trees.",
+      "location": "Monteverde, San Gerardo de Dota, Braulio Carrillo"
+    },
+    {
+      "name": "Yellow-bellied Siskin",
+      "description": "Small highland finch found in forest edges and open montane areas.",
+      "location": "San Gerardo de Dota, Cerro de la Muerte, Central Highlands"
+    },
+    {
+      "name": "Elegant Euphonia",
+      "description": "Colorful euphonia often found near mistletoe and fruiting trees.",
+      "location": "Monteverde, San Gerardo de Dota, Central Valley"
+    },
+    {
+      "name": "Yellow-crowned Euphonia",
+      "description": "Small fruit-eating finch of forest edges and gardens.",
+      "location": "Sarapiquí, Bijagua de Upala, Carara"
+    },
+    {
+      "name": "Spot-crowned Euphonia",
+      "description": "Montane euphonia usually seen in pairs or small groups.",
+      "location": "San Gerardo de Dota, Monteverde, Braulio Carrillo"
+    }
+  ],
+  "Passerellidae": [
+    {
+      "name": "Rufous-collared Sparrow",
+      "description": "Common highland and urban sparrow familiar around gardens and towns.",
+      "location": "Central Valley, San Gerardo de Dota, Monteverde"
+    },
+    {
+      "name": "Sooty-faced Finch",
+      "description": "Cloud forest understory bird often seen in dense vegetation.",
+      "location": "Monteverde, San Gerardo de Dota, Braulio Carrillo"
+    },
+    {
+      "name": "Large-footed Finch",
+      "description": "Highland ground finch found scratching leaf litter in oak forest.",
+      "location": "San Gerardo de Dota, Cerro de la Muerte, Savegre"
+    },
+    {
+      "name": "White-eared Ground-Sparrow",
+      "description": "Attractive sparrow of coffee farms, gardens, and forest edges.",
+      "location": "Central Valley, Monteverde, San Ramón"
+    },
+    {
+      "name": "Orange-billed Sparrow",
+      "description": "Colorful ground sparrow of humid forest edges and shaded understory.",
+      "location": "Carara, Sarapiquí, Bijagua de Upala"
+    },
+    {
+      "name": "Black-striped Sparrow",
+      "description": "Common sparrow of brushy fields, gardens, and open woodland.",
+      "location": "Central Valley, Carara, Guanacaste"
+    }
+  ],
+  "Motacillidae": [
+    {
+      "name": "American Pipit",
+      "description": "Uncommon migrant found in open highland grasslands and pastures.",
+      "location": "Cerro de la Muerte, Irazú, Highland pastures"
+    }
+  ]
+}
