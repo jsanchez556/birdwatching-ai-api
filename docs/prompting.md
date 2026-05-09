@@ -10,10 +10,16 @@ Back to [Project Context](../CONTEXT.md). See [Memory](./memory.md) for how chat
 Prompt modules export both content and a semantic prompt version. Keep version changes intentional and loggable.
 
 ## Chat Prompt Flow
-`conversation.service.js` builds OpenAI messages in this order:
+`conversation.service.js` first builds base OpenAI messages in this order:
 1. `system`: `CHAT_SYSTEM_PROMPT`
 2. recent historical `user` and `assistant` turns from the same conversation
 3. current `user` message
+
+`rag.service.js` then optionally injects a second `system` message immediately
+after the base system prompt. The retrieved context includes top matching bird
+documents from `src/db/data/birds.json`, similarity scores, locations, and
+descriptions. If retrieval or embedding fails, chat continues with the base
+messages and an empty `sources` array.
 
 `openai.service.js` logs:
 - prompt version
@@ -37,4 +43,4 @@ The parsed tool arguments become the API response body. If the tool response is 
 - Prefer small prompt edits plus test cases over broad rewrites.
 
 ## Prompt History
-The root `prompts/` directory contains generation and implementation notes from earlier AI-assisted work. Treat those files as project history, not runtime prompt assets.
+`docs/development_prompts/` contains generation and implementation notes from earlier AI-assisted work. Treat those files as project history, not runtime prompt assets.

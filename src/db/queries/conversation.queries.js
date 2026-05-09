@@ -11,24 +11,19 @@ export class ConversationQueries {
    */
   async saveMessage(conversationId, userInput, aiOutput) {
     try {
-      const query = `
-        INSERT INTO messages (conversation_id, user_input, ai_output)
-        VALUES ($1, $2, $3)
-        RETURNING id, conversation_id, user_input, ai_output, created_at
-      `;
-      
+      const query = `SELECT * FROM save_message($1, $2, $3)`;
       const values = [conversationId, userInput, aiOutput];
       const result = await pool.query(query, values);
-      
-      logger.info('Chat message saved', { 
+
+      logger.info('Chat message saved', {
         id: result.rows[0].id,
         conversationId,
       });
-      
+
       return result.rows[0];
     } catch (error) {
-      logger.error('Failed to save chat message', { 
-        error: error.message
+      logger.error('Failed to save chat message', {
+        error: error.message,
       });
       throw error;
     }
@@ -42,16 +37,9 @@ export class ConversationQueries {
    */
   async getLastMessages(conversationId, limit = 10) {
     try {
-      const query = `
-        SELECT conversation_id, user_input, ai_output, created_at
-        FROM messages
-        WHERE conversation_id = $1
-        ORDER BY created_at DESC
-        LIMIT $2
-      `;
-
+      const query = `SELECT * FROM get_last_messages($1, $2)`;
       const result = await pool.query(query, [conversationId, limit]);
-      return result.rows.reverse();
+      return result.rows;
     } catch (error) {
       logger.error('Failed to retrieve recent chat messages', {
         error: error.message,
@@ -70,14 +58,7 @@ export class ConversationQueries {
    */
   async getByConversationId(conversationId, limit = 100) {
     try {
-      const query = `
-        SELECT id, conversation_id, user_input, ai_output, created_at
-        FROM messages
-        WHERE conversation_id = $1
-        ORDER BY created_at ASC
-        LIMIT $2
-      `;
-
+      const query = `SELECT * FROM get_conversation_messages($1, $2)`;
       const result = await pool.query(query, [conversationId, limit]);
       return result.rows;
     } catch (error) {
@@ -98,20 +79,12 @@ export class ConversationQueries {
    */
   async getAll(offset = 0, limit = 100) {
     try {
-      const query = `
-        SELECT id, conversation_id, user_input, ai_output, created_at
-        FROM messages
-        ORDER BY created_at DESC
-        OFFSET $1
-        LIMIT $2
-      `;
-      
+      const query = `SELECT * FROM get_all_messages($1, $2)`;
       const result = await pool.query(query, [offset, limit]);
-      
       return result.rows;
     } catch (error) {
-      logger.error('Failed to retrieve messages', { 
-        error: error.message 
+      logger.error('Failed to retrieve messages', {
+        error: error.message,
       });
       throw error;
     }
@@ -129,14 +102,12 @@ export class ConversationQueries {
         FROM messages
         WHERE id = $1
       `;
-      
       const result = await pool.query(query, [id]);
-      
       return result.rows[0] || null;
     } catch (error) {
-      logger.error('Failed to retrieve message', { 
+      logger.error('Failed to retrieve message', {
         error: error.message,
-        id 
+        id,
       });
       throw error;
     }
@@ -149,21 +120,19 @@ export class ConversationQueries {
    */
   async delete(id) {
     try {
-      const query = `
-        DELETE FROM messages
-        WHERE id = $1
-        RETURNING id
-      `;
-      
+      const query = `SELECT delete_message_by_id($1) AS deleted`;
       const result = await pool.query(query, [id]);
-      
-      logger.info('Chat message deleted', { id });
-      
-      return result.rowCount > 0;
+      const deleted = result.rows[0]?.deleted ?? false;
+
+      if (deleted) {
+        logger.info('Chat message deleted', { id });
+      }
+
+      return deleted;
     } catch (error) {
-      logger.error('Failed to delete message', { 
+      logger.error('Failed to delete message', {
         error: error.message,
-        id 
+        id,
       });
       throw error;
     }

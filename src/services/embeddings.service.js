@@ -6,7 +6,7 @@ import logger from '../utils/logger.js';
 
 const KNOWLEDGE_BASE_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  '../../birds.json'
+  '../db/data/birds.json'
 );
 
 function normalizeLocations(document) {

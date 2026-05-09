@@ -28,6 +28,14 @@ Errors use:
 ## `GET /health`
 Returns service health and process uptime.
 
+Success data:
+```json
+{
+  "status": "ok",
+  "uptime": 12.345
+}
+```
+
 ## `POST /chat`
 Body:
 ```json
@@ -59,7 +67,7 @@ Success data:
 Behavior:
 - Creates a UUID conversation ID when none is provided.
 - Loads recent history for that conversation.
-- Retrieves relevant bird knowledge sources from `birds.json` and returns them as `sources` for frontend display.
+- Retrieves relevant bird knowledge sources from `src/db/data/birds.json` and returns them as `sources` for frontend display.
 - Sends role-based messages to OpenAI.
 - Saves the exchange to PostgreSQL on a best-effort basis.
 
@@ -108,3 +116,10 @@ Success data is the parsed OpenAI function tool response:
 
 ## Current Protection
 Routes are public. The app applies global in-memory IP rate limiting at 60 requests per minute, but does not yet enforce JWT, sessions, or API keys.
+
+## Common Errors
+- Validation failures return `400` with code `VALIDATION_ERROR`.
+- Rate limit failures return `429` with code `RATE_LIMITED`.
+- Unknown routes return `404` with code `NOT_FOUND`.
+- Empty or malformed AI provider responses return `502` with code `AI_EMPTY_RESPONSE`.
+- Unexpected server errors return `500` with code `INTERNAL_SERVER_ERROR` and do not expose stack traces.

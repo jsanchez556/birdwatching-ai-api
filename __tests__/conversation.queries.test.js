@@ -39,7 +39,7 @@ describe('ConversationQueries', () => {
 
       expect(result).toEqual(mockMessage);
       expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO messages'),
+        expect.stringContaining('save_message'),
         ['conversation-123', 'Hello', 'Hi there!']
       );
     });
@@ -56,20 +56,17 @@ describe('ConversationQueries', () => {
   describe('getLastMessages', () => {
     it('should retrieve recent messages for one conversation in chronological order', async () => {
       const mockMessages = [
-        { conversation_id: 'conversation-123', user_input: 'Second', ai_output: 'Reply two' },
         { conversation_id: 'conversation-123', user_input: 'First', ai_output: 'Reply one' },
+        { conversation_id: 'conversation-123', user_input: 'Second', ai_output: 'Reply two' },
       ];
 
       mockQuery.mockResolvedValue({ rows: mockMessages });
 
       const result = await conversationQueries.getLastMessages('conversation-123', 2);
 
-      expect(result).toEqual([
-        { conversation_id: 'conversation-123', user_input: 'First', ai_output: 'Reply one' },
-        { conversation_id: 'conversation-123', user_input: 'Second', ai_output: 'Reply two' },
-      ]);
+      expect(result).toEqual(mockMessages);
       expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE conversation_id = $1'),
+        expect.stringContaining('get_last_messages'),
         ['conversation-123', 2]
       );
     });
@@ -92,10 +89,9 @@ describe('ConversationQueries', () => {
 
       expect(result).toEqual(mockMessages);
       expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE conversation_id = $1'),
+        expect.stringContaining('get_conversation_messages'),
         ['conversation-123', 100]
       );
-      expect(mockQuery.mock.calls[0][0]).toContain('ORDER BY created_at ASC');
     });
   });
 
@@ -112,7 +108,7 @@ describe('ConversationQueries', () => {
 
       expect(result).toEqual(mockMessages);
       expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('SELECT'),
+        expect.stringContaining('get_all_messages'),
         [0, 100]
       );
     });
@@ -139,15 +135,19 @@ describe('ConversationQueries', () => {
 
   describe('delete', () => {
     it('should delete message and return true', async () => {
-      mockQuery.mockResolvedValue({ rowCount: 1 });
+      mockQuery.mockResolvedValue({ rows: [{ deleted: true }] });
 
       const result = await conversationQueries.delete(1);
 
       expect(result).toBe(true);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('delete_message_by_id'),
+        [1]
+      );
     });
 
     it('should return false if no rows deleted', async () => {
-      mockQuery.mockResolvedValue({ rowCount: 0 });
+      mockQuery.mockResolvedValue({ rows: [{ deleted: false }] });
 
       const result = await conversationQueries.delete(999);
 

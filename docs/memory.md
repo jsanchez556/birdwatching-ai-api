@@ -6,31 +6,51 @@ Back to [Project Context](../CONTEXT.md). See [Prompting](./prompting.md) for ro
 Conversation memory is PostgreSQL-backed short-term chat history. It is not a vector store and does not currently store user profiles, preferences, embeddings, or long-term semantic memory.
 
 ## Storage
-Table: `messages`
+Table: `conversations`
 
 Defined in `src/db/migrations/001_create_chat_interactions.sql`.
 
 Columns:
 - `id`
 - `conversation_id`
+- `user_id`
+- `title`
+- `last_message_at`
+- `metadata`
+- `created_at`
+
+Table: `messages`
+
+Defined in `src/db/migrations/001_create_chat_interactions.sql`.
+
+Columns:
+- `id`
+- `conversation_id`, referencing `conversations(conversation_id)` with cascade delete
 - `user_input`
 - `ai_output`
 - `created_at`
 
 Indexes:
+- `idx_conversations_created_at`
 - `idx_messages_created_at`
 - `idx_messages_conversation_created_at`
 
+SQL helper functions are defined in `src/db/migrations/002_create_functions.sql`.
+Query modules call those functions instead of embedding most persistence SQL directly.
+
 ## Write Behavior
 `conversation.service.saveExchange(...)` writes one row per user/assistant exchange after OpenAI returns a chat response.
+
+`conversation.queries.saveMessage(...)` calls `save_message(...)`, which first calls
+`ensure_conversation(...)` so the parent conversation row exists, inserts the
+message, and updates `last_message_at`.
 
 Write failures are logged as warnings and do not fail the chat request. This keeps chat available during transient database issues but means memory can be incomplete.
 
 ## Read Behavior
 For prompt context:
 - `getLastMessages(conversationId, 10)` loads up to 10 recent exchanges.
-- SQL orders by newest first for the limit.
-- The query helper reverses rows back into chronological order before prompt construction.
+- SQL limits the newest exchanges and returns them in chronological order before prompt construction.
 
 For client retrieval:
 - `getByConversationId(conversationId, 100)` returns up to 100 exchanges oldest first.

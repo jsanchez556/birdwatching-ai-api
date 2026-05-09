@@ -5,7 +5,7 @@ AI-agent entry point for the Birdwatching AI API. Read this file first, then fol
 ## What This Is
 This repository is a single Express API for Costa Rica birdwatching assistance. It supports:
 - conversational chat with short-term PostgreSQL memory
-- simple in-memory RAG over `birds.json`
+- simple in-memory RAG over `src/db/data/birds.json`
 - structured trip recommendations from OpenAI function tool calls
 - normalized JSON responses and centralized error handling
 - Railway-oriented deployment with environment-driven configuration
@@ -72,8 +72,9 @@ GET /chat/:conversationId
 - `optionalAuth` exists as a placeholder; active routes are currently public.
 - `NODE_ENV=test` bypasses required `OPENAI_API_KEY` and `DATABASE_URL` validation.
 - OpenAI retry behavior lives in `src/utils/asyncRetry.js` and is used for transient OpenAI statuses.
-- RAG loads `birds.json`, embeds documents on first use, stores vectors in memory, and falls back to normal chat if retrieval fails.
+- RAG loads `src/db/data/birds.json`, embeds documents on first use, stores vectors in memory, and falls back to normal chat if retrieval fails.
 - Database writes for chat memory are best-effort; save failures are logged but do not fail the chat response.
+- Chat persistence uses the `conversations` and `messages` tables plus SQL helper functions from `src/db/migrations/002_create_functions.sql`.
 
 ## Testing
 Tests live in `__tests__/` and cover routes, services, and query helpers with ESM module mocks.

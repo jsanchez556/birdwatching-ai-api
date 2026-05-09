@@ -34,9 +34,15 @@ Back to [Project Context](../CONTEXT.md). Pair this with [API Contracts](./api.m
 
 ## Database
 - Use `src/db/pool.js` for all PostgreSQL access.
-- Store chat exchanges in `messages`.
+- Store conversation metadata in `conversations` and chat exchanges in `messages`.
+- Keep database helper functions in migrations when shared by query modules.
 - Treat chat persistence as best-effort unless the API contract changes.
 - Add migrations under `src/db/migrations/` for schema changes.
+
+## RAG Data
+- Keep runtime bird knowledge in `src/db/data/birds.json`.
+- Preserve simple document fields used by embeddings: `name`, `locations` or `location`, and `description`.
+- Treat embedded documents as an in-memory runtime cache; do not write generated embeddings into source files.
 
 ## Testing
 - Unit test services, validators, query helpers, and AI orchestration boundaries.

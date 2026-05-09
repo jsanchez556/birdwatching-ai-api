@@ -45,12 +45,12 @@ HTTP request
 ## Main Flows
 Chat context is assembled from:
 1. `CHAT_SYSTEM_PROMPT`
-2. optional retrieved context from `birds.json` through in-memory vector search
+2. optional retrieved context from `src/db/data/birds.json` through in-memory vector search
 3. up to 10 recent exchanges from the same `conversation_id`
 4. the current user message
 
 RAG uses:
-1. `embeddings.service.js` to load `birds.json`, generate OpenAI `text-embedding-3-small` embeddings, and cache embedded documents in memory
+1. `embeddings.service.js` to load `src/db/data/birds.json`, generate OpenAI `text-embedding-3-small` embeddings, and cache embedded documents in memory
 2. `vectorSearch.service.js` to normalize vectors and rank documents with cosine similarity
 3. `rag.service.js` to retrieve top matches and inject a compact system context message into chat prompts
 
@@ -60,13 +60,27 @@ Recommendations use:
 3. `recommendationSchema` as a forced OpenAI function tool response
 
 ## Persistence
+The `conversations` table stores one row per conversation:
+- `conversation_id`
+- optional `user_id`, `title`, and `metadata`
+- `last_message_at`
+- `created_at`
+
 The `messages` table stores one row per exchange:
 - `conversation_id`
 - `user_input`
 - `ai_output`
 - `created_at`
 
-Recent context is loaded newest-first from PostgreSQL, reversed into chronological order before being sent to OpenAI.
+Query modules use SQL helper functions from `002_create_functions.sql`:
+- `ensure_conversation`
+- `save_message`
+- `get_last_messages`
+- `get_conversation_messages`
+- `get_all_messages`
+- `delete_message_by_id`
+
+Recent context is returned in chronological order by `get_last_messages` after limiting the newest exchanges.
 
 ## Cross-Cutting Concerns
 - Errors are represented with `HttpError` and rendered by `error.middleware.js`.

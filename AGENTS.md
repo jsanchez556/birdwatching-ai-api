@@ -39,9 +39,15 @@ This backend provides secure API delivery, OpenAI orchestration, PostgreSQL conv
 
 ## Database
 - Use parameterized SQL in query modules.
+- Keep table definitions and SQL helper functions in migrations under `src/db/migrations/`.
 - Add migrations for schema changes.
 - Do not mix persistence logic into services beyond orchestration decisions.
 - Preserve conversation isolation by always filtering chat history by `conversation_id`.
+
+## RAG Data
+- Runtime bird knowledge lives in `src/db/data/birds.json`.
+- Keep document fields explicit enough for embedding text: `name`, `locations` or `location`, and `description`.
+- Treat embedded vectors as process-local cache, not durable state.
 
 ## Testing Expectations
 - Unit test services, validators, query helpers, and prompt orchestration boundaries.

@@ -17,6 +17,7 @@ Use this file as repository-specific guidance for GitHub Copilot. For fuller con
 - Controllers live in `src/controllers/` and should only extract request data, log request metadata, call services, and return normalized responses.
 - Services live in `src/services/` and own business orchestration.
 - SQL access lives in `src/db/queries/` and must use parameterized queries.
+- SQL helper functions and table definitions live in ordered migrations under `src/db/migrations/`.
 - OpenAI clients, prompts, prompt versions, and schemas live in `src/ai/`.
 - Middleware owns validation, rate limiting, error handling, and authentication hooks.
 - Environment parsing and validation belong in `src/config/env.js`.
@@ -28,6 +29,7 @@ Use this file as repository-specific guidance for GitHub Copilot. For fuller con
 - Use `sendSuccess` and `sendError` response envelopes from `src/utils/apiResponse.js`.
 - Keep OpenAI calls behind `openai.client.js` or `openai.service.js`.
 - Keep prompt text centralized in `src/ai/prompts/`.
+- Keep runtime bird knowledge in `src/db/data/birds.json`; RAG embeddings are cached in memory at runtime.
 - Log structured metadata through `src/utils/logger.js`.
 - Mock OpenAI and PostgreSQL in tests.
 - Add or update tests under `__tests__/` when changing behavior.

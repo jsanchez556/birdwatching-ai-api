@@ -36,10 +36,17 @@ Common optional variables:
 - `CORS_ORIGINS` accepts a comma-separated allowlist
 - `LOG_FILES_ENABLED` accepts `true` or `false`
 
+Run database migrations before using chat memory:
+```bash
+psql "$DATABASE_URL" -f src/db/migrations/001_create_chat_interactions.sql
+psql "$DATABASE_URL" -f src/db/migrations/002_create_functions.sql
+```
+
 ## Bird Knowledge Base
 Chat responses use a simple in-memory RAG flow. Documents are loaded from
-`birds.json`, embedded with the OpenAI embeddings API on first use, ranked with
-cosine similarity, and injected into the chat prompt when relevant.
+`src/db/data/birds.json`, embedded with the OpenAI embeddings API on first use,
+ranked with cosine similarity, and injected into the chat prompt when relevant.
+The embedded document cache is process-local and resets when the app restarts.
 
 ## Scripts
 ```bash
@@ -55,3 +62,8 @@ npm test    # Jest ESM test runner
 - `POST /recommend`
 
 Responses use the normalized envelope from `src/utils/apiResponse.js`.
+
+## Persistence
+PostgreSQL stores one `conversations` row per conversation ID and one
+`messages` row per user/assistant exchange. Query modules call SQL helper
+functions from `002_create_functions.sql`, so deploy both migrations in order.
