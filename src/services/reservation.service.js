@@ -45,6 +45,45 @@ function normalizeConversationId(conversationId) {
     : null;
 }
 
+function normalizeText(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function normalizeComparableText(value) {
+  return normalizeText(value)?.toLowerCase() || '';
+}
+
+function textMatchesTour(tour, selectedText) {
+  const selection = normalizeComparableText(selectedText);
+
+  if (!selection || !tour) {
+    return false;
+  }
+
+  const tourText = [
+    tour.name,
+    tour.location,
+  ]
+    .map(normalizeComparableText)
+    .filter(Boolean)
+    .join(' ');
+
+  if (!tourText) {
+    return false;
+  }
+
+  if (tourText.includes(selection)) {
+    return true;
+  }
+
+  const selectionTokens = selection
+    .split(/\s+/)
+    .filter((token) => token.length > 2);
+
+  return selectionTokens.length > 0
+    && selectionTokens.every((token) => tourText.includes(token));
+}
+
 function calculateDiscount(participants, discountCode) {
   const code = typeof discountCode === 'string' ? discountCode.trim().toUpperCase() : '';
   const discountCodes = new Map([
@@ -103,6 +142,25 @@ function toAvailabilityResult(tour) {
   };
 }
 
+function tourNotFound(selector) {
+  return {
+    success: false,
+    code: 'TOUR_NOT_FOUND',
+    message: selector
+      ? `Tour ${selector} was not found.`
+      : 'Tour was not found.',
+  };
+}
+
+function ambiguousTourSelection(selector, tours) {
+  return {
+    success: false,
+    code: 'TOUR_SELECTION_AMBIGUOUS',
+    message: `I found more than one tour matching ${selector}. Please choose a tour ID.`,
+    tours: tours.map(toAvailabilityResult),
+  };
+}
+
 function generateConfirmationCode() {
   const timestamp = Date.now().toString(36).toUpperCase();
   const suffix = randomBytes(3).toString('hex').toUpperCase();
@@ -110,72 +168,145 @@ function generateConfirmationCode() {
 }
 
 class ReservationService {
-  async checkTourAvailability({ tourId } = {}) {
-    let normalizedTourId;
-
-    try {
-      normalizedTourId = toPositiveInteger(tourId, 'tourId');
-    } catch (error) {
-      return invalidArguments(error);
-    }
-
-    const tour = await tourQueries.getTourById(normalizedTourId);
-
-    if (!tour) {
-      return {
-        success: false,
-        code: 'TOUR_NOT_FOUND',
-        message: `Tour ${tourId} was not found.`,
-      };
-    }
-
-    return toAvailabilityResult(tour);
-  }
-
-  async calculateTourPrice({ tourId, participants, discountCode } = {}) {
+  async resolveTour({ tourId, tourName, location, participants } = {}) {
     let normalizedTourId;
     let participantCount;
 
     try {
-      normalizedTourId = toPositiveInteger(tourId, 'tourId');
+      if (tourId !== undefined && tourId !== null) {
+        normalizedTourId = toPositiveInteger(tourId, 'tourId');
+      }
+
+      if (participants !== undefined && participants !== null) {
+        participantCount = toPositiveInteger(participants, 'participants');
+      }
+    } catch (error) {
+      return invalidArguments(error);
+    }
+
+    const selector = normalizeText(tourName) || normalizeText(location);
+
+    if (normalizedTourId) {
+      const tour = await tourQueries.getTourById(normalizedTourId);
+
+      if (!tour) {
+        return tourNotFound(normalizedTourId);
+      }
+
+      if (selector && !textMatchesTour(tour, selector)) {
+        return {
+          success: false,
+          code: 'TOUR_SELECTION_MISMATCH',
+          message: `Tour ${normalizedTourId} does not match ${selector}. Please confirm the tour ID.`,
+          tour: toAvailabilityResult(tour),
+        };
+      }
+
+      return {
+        success: true,
+        tour,
+      };
+    }
+
+    if (!selector) {
+      return invalidArguments(new Error('tourId, tourName, or location is required'));
+    }
+
+    const tours = await tourQueries.getAvailableTours({
+      location: selector,
+      minSlots: participantCount || 1,
+    });
+
+    if (tours.length === 0) {
+      return tourNotFound(selector);
+    }
+
+    const matchingTours = tours.filter((tour) => textMatchesTour(tour, selector));
+
+    if (matchingTours.length === 0) {
+      return tourNotFound(selector);
+    }
+
+    if (matchingTours.length > 1) {
+      return ambiguousTourSelection(selector, matchingTours);
+    }
+
+    return {
+      success: true,
+      tour: matchingTours[0],
+    };
+  }
+
+  async checkTourAvailability({ tourId, tourName, location, participants } = {}) {
+    const resolvedTour = await this.resolveTour({
+      tourId,
+      tourName,
+      location,
+      participants,
+    });
+
+    if (!resolvedTour.success) {
+      return resolvedTour;
+    }
+
+    return toAvailabilityResult(resolvedTour.tour);
+  }
+
+  async calculateTourPrice({ tourId, tourName, location, participants, discountCode } = {}) {
+    let participantCount;
+
+    try {
       participantCount = toPositiveInteger(participants, 'participants');
     } catch (error) {
       return invalidArguments(error);
     }
 
-    const tour = await tourQueries.getTourById(normalizedTourId);
+    const resolvedTour = await this.resolveTour({
+      tourId,
+      tourName,
+      location,
+      participants: participantCount,
+    });
 
-    if (!tour) {
-      return {
-        success: false,
-        code: 'TOUR_NOT_FOUND',
-        message: `Tour ${tourId} was not found.`,
-      };
+    if (!resolvedTour.success) {
+      return resolvedTour;
     }
 
-    return calculatePriceForTour(tour, participantCount, discountCode);
+    return calculatePriceForTour(resolvedTour.tour, participantCount, discountCode);
   }
 
   async createReservation({
     tourId,
+    tourName,
+    location,
     participants,
     customerName,
     customerEmail,
     discountCode,
     conversationId,
   } = {}, metadata = {}) {
-    let normalizedTourId;
     let participantCount;
     let reservationName;
 
     try {
-      normalizedTourId = toPositiveInteger(tourId, 'tourId');
       participantCount = toPositiveInteger(participants, 'participants');
       reservationName = normalizeCustomerName(customerName);
     } catch (error) {
       return invalidArguments(error);
     }
 
+    const resolvedTour = await this.resolveTour({
+      tourId,
+      tourName,
+      location,
+      participants: participantCount,
+    });
+
+    if (!resolvedTour.success) {
+      return resolvedTour;
+    }
+
+    const normalizedTourId = resolvedTour.tour.id;
     const discount = calculateDiscount(participantCount, discountCode);
 
     for (let attempt = 1; attempt <= MAX_CONFIRMATION_ATTEMPTS; attempt += 1) {

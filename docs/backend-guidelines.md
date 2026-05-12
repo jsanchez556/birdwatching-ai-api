@@ -28,6 +28,8 @@ Back to [Project Context](../CONTEXT.md). Pair this with [API Contracts](./api.m
 ## OpenAI
 - Always send role-based messages.
 - Use centralized prompts from `src/ai/prompts/`.
+- Keep token usage and cost-estimation helpers in `src/ai/evaluations/`.
+- Keep AI safety, refusal, or policy checks in `src/ai/guardrails/`.
 - Keep structured recommendation output aligned with `src/ai/schemas/recommendation.schema.js`.
 - Keep chat tool schemas in `src/ai/schemas/` and adapters in `src/ai/tools/`.
 - Feed tool results back to OpenAI as `tool` role messages before returning conversational text.

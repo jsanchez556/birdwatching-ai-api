@@ -1,19 +1,14 @@
 import conversationQueries from '../db/queries/conversation.queries.js';
 import logger from '../utils/logger.js';
 import HttpError from '../utils/httpError.js';
-import { CHAT_SYSTEM_PROMPT } from '../ai/prompts/system.prompt.js';
+import { buildChatMessages } from '../ai/prompts/prompt.builder.js';
 
 const RECENT_EXCHANGE_LIMIT = 10;
 const CONVERSATION_LOAD_LIMIT = 100;
 
 class ConversationMemoryService {
   async buildConversationContext(currentMessage, conversationId) {
-    const messages = [
-      {
-        role: 'system',
-        content: CHAT_SYSTEM_PROMPT,
-      },
-    ];
+    const history = [];
 
     try {
       const lastMessages = await conversationQueries.getLastMessages(
@@ -23,11 +18,11 @@ class ConversationMemoryService {
 
       for (const msg of lastMessages) {
         if (msg.user_input) {
-          messages.push({ role: 'user', content: msg.user_input });
+          history.push({ role: 'user', content: msg.user_input });
         }
 
         if (msg.ai_output) {
-          messages.push({ role: 'assistant', content: msg.ai_output });
+          history.push({ role: 'assistant', content: msg.ai_output });
         }
       }
     } catch (error) {
@@ -37,8 +32,10 @@ class ConversationMemoryService {
       });
     }
 
-    messages.push({ role: 'user', content: currentMessage });
-    return messages;
+    return buildChatMessages({
+      userMessage: currentMessage,
+      history,
+    });
   }
 
   async saveExchange(conversationId, userInput, aiOutput) {

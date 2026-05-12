@@ -1,6 +1,15 @@
 import openaiClient from '../ai/openai.client.js';
 import logger from '../utils/logger.js';
 import HttpError from '../utils/httpError.js';
+import { RECOMMENDATION_PROMPT_VERSION } from '../ai/prompts/system.prompt.js';
+
+function buildRecommendationMeta() {
+  return {
+    promptVersions: {
+      recommendation: RECOMMENDATION_PROMPT_VERSION,
+    },
+  };
+}
 
 class RecommendationService {
   async getRecommendations(location, budget, days, clientIP) {
@@ -39,8 +48,12 @@ class RecommendationService {
       hasItinerary: recommendations.recommendations?.suggestedItinerary?.length > 0
     });
 
-    return recommendations;
+    return {
+      recommendations,
+      meta: buildRecommendationMeta(),
+    };
   }
 }
 
+export { buildRecommendationMeta };
 export default new RecommendationService();

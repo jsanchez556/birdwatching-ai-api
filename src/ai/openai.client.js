@@ -4,10 +4,11 @@ import env from '../config/env.js';
 import asyncRetry from '../utils/asyncRetry.js';
 import logger from '../utils/logger.js';
 import { availableTools, executeToolCall } from './tools/index.js';
+import { addCompletionUsage } from './evaluations/token.usage.js';
 import {
-  RECOMMENDATION_PROMPT,
+  buildRecommendationMessages,
   RECOMMENDATION_PROMPT_VERSION,
-} from './prompts/recommendation.prompt.js';
+} from './prompts/index.js';
 
 const retryableStatuses = new Set([408, 409, 429, 500, 502, 503, 504]);
 
@@ -47,7 +48,8 @@ class OpenAIClient {
     this.embeddingModel = env.openAiEmbeddingModel;
   }
 
-  async createChatCompletion(messages) {
+  async createChatCompletion(messages, options = {}) {
+    const usage = options.usage || {};
     const completion = await asyncRetry(() => this.client.chat.completions.create({
       model: this.model,
       messages,
@@ -56,7 +58,7 @@ class OpenAIClient {
       shouldRetry: isRetryableOpenAIError,
     });
 
-    this.logCompletionUsage('chat_completion', completion);
+    this.logCompletionUsage('chat_completion', completion, {}, usage);
     return completion.choices[0]?.message?.content;
   }
 
@@ -64,6 +66,7 @@ class OpenAIClient {
     const tools = options.tools || availableTools;
     const toolExecutor = options.executeToolCall || executeToolCall;
     const metadata = options.metadata || {};
+    const usage = options.usage || {};
     const maxToolIterations = options.maxToolIterations || 3;
     const conversation = [...messages];
 
@@ -81,7 +84,7 @@ class OpenAIClient {
 
       this.logCompletionUsage('chat_completion_with_tools', completion, {
         toolIteration: iteration,
-      });
+      }, usage);
 
       const assistantMessage = completion.choices[0]?.message;
       const toolCalls = assistantMessage?.tool_calls || [];
@@ -126,7 +129,7 @@ class OpenAIClient {
       shouldRetry: isRetryableOpenAIError,
     });
 
-    this.logCompletionUsage('chat_completion_after_tool_limit', completion);
+    this.logCompletionUsage('chat_completion_after_tool_limit', completion, {}, usage);
     return completion.choices[0]?.message?.content;
   }
 
@@ -160,23 +163,9 @@ class OpenAIClient {
   }
 
   async createStructuredRecommendation(location, budget, days) {
-    const userMessage = `Generate birdwatching recommendations for:
-- Location: ${location}
-- Budget: ${budget}
-- Days: ${days}`;
-
     const completion = await asyncRetry(() => this.client.chat.completions.create({
       model: this.model,
-      messages: [
-        {
-          role: 'system',
-          content: RECOMMENDATION_PROMPT,
-        },
-        {
-          role: 'user',
-          content: userMessage,
-        },
-      ],
+      messages: buildRecommendationMessages({ location, budget, days }),
       tools: [
         {
           type: 'function',
@@ -224,15 +213,19 @@ class OpenAIClient {
     }
   }
 
-  logCompletionUsage(event, completion, metadata = {}) {
+  logCompletionUsage(event, completion, logMetadata = {}, usageCollector = null) {
+    const usage = addCompletionUsage(usageCollector, completion, this.model);
+
     logger.info('OpenAI completion finished', {
       event,
       model: completion.model || this.model,
       requestId: completion.id,
-      promptTokens: completion.usage?.prompt_tokens,
-      completionTokens: completion.usage?.completion_tokens,
-      totalTokens: completion.usage?.total_tokens,
-      ...metadata,
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+      totalTokens: usage.totalTokens,
+      estimatedCostUsd: usage.estimatedCostUsd,
+      estimatedCost: usage.estimatedCostDisplay,
+      ...logMetadata,
     });
   }
 }

@@ -98,8 +98,19 @@ export const tourSchema = [
             type: 'integer',
             description: 'The selected numeric tour ID to check.',
           },
+          tourName: {
+            type: 'string',
+            description: 'Optional selected tour name when no tour ID is known.',
+          },
+          location: {
+            type: 'string',
+            description: 'Optional selected tour location when no tour ID is known, such as Cerro de la Muerte.',
+          },
+          participants: {
+            type: 'integer',
+            description: 'Optional group size to validate slot availability.',
+          },
         },
-        required: ['tourId'],
       },
     },
   },
@@ -115,6 +126,14 @@ export const tourSchema = [
             type: 'integer',
             description: 'The selected numeric tour ID to price.',
           },
+          tourName: {
+            type: 'string',
+            description: 'Optional selected tour name when no tour ID is known.',
+          },
+          location: {
+            type: 'string',
+            description: 'Optional selected tour location when no tour ID is known.',
+          },
           participants: {
             type: 'integer',
             description: 'Number of people joining the selected tour.',
@@ -124,7 +143,7 @@ export const tourSchema = [
             description: 'Optional discount code provided by the user.',
           },
         },
-        required: ['tourId', 'participants'],
+        required: ['participants'],
       },
     },
   },
@@ -139,6 +158,14 @@ export const tourSchema = [
           tourId: {
             type: 'integer',
             description: 'The explicitly selected numeric tour ID to reserve.',
+          },
+          tourName: {
+            type: 'string',
+            description: 'Optional selected tour name when no tour ID is known.',
+          },
+          location: {
+            type: 'string',
+            description: 'Optional selected tour location when no tour ID is known, such as Cerro de la Muerte.',
           },
           participants: {
             type: 'integer',
@@ -157,7 +184,7 @@ export const tourSchema = [
             description: 'Optional discount code provided by the user.',
           },
         },
-        required: ['tourId', 'participants', 'customerName'],
+        required: ['participants', 'customerName'],
       },
     },
   },

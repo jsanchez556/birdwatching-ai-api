@@ -1,0 +1,8 @@
+Track OpenAI token usage and estimated request cost for every conversation.
+Log the information in the server console.
+
+Expected Log Information:
+
+Prompt tokens: 1200
+Completion tokens: 250
+Estimated cost: $0.0032

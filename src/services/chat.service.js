@@ -4,9 +4,23 @@ import conversationService from './conversation.service.js';
 import ragService from './rag.service.js';
 import logger from '../utils/logger.js';
 import HttpError from '../utils/httpError.js';
+import { CHAT_SYSTEM_PROMPT_VERSION } from '../ai/prompts/system.prompt.js';
+import {
+  applyChatOutputGuardrails,
+  assessChatInput,
+} from '../ai/guardrails/chat.guardrails.js';
+
+function buildPromptMeta() {
+  return {
+    promptVersions: {
+      chat: CHAT_SYSTEM_PROMPT_VERSION,
+    },
+  };
+}
 
 function buildToolMeta(metadata = {}) {
   return {
+    ...buildPromptMeta(),
     ...(metadata.toolsCalled?.length ? { toolsCalled: metadata.toolsCalled } : {}),
     ...(metadata.tours ? { tours: metadata.tours } : {}),
     ...(metadata.selectedTour ? { selectedTour: metadata.selectedTour } : {}),
@@ -30,6 +44,30 @@ class ChatService {
       throw new HttpError(400, 'Message is required', { code: 'VALIDATION_ERROR' });
     }
 
+    const inputGuardrail = assessChatInput(message);
+
+    if (!inputGuardrail.allowed) {
+      logger.warn('Chat input blocked by AI guardrail', {
+        ip: clientIP,
+        conversationId: activeConversationId,
+        code: inputGuardrail.code,
+        reason: inputGuardrail.reason,
+      });
+
+      await conversationService.saveExchange(
+        activeConversationId,
+        message,
+        inputGuardrail.response
+      );
+
+      return {
+        conversationId: activeConversationId,
+        response: inputGuardrail.response,
+        sources: [],
+        meta: buildToolMeta(),
+      };
+    }
+
     const conversationMessages = await conversationService.buildConversationContext(
       message,
       activeConversationId
@@ -46,12 +84,22 @@ class ChatService {
     };
 
     const response = await openaiService.generateResponseWithTools(ragContext.messages, openAiMetadata);
+    const outputGuardrail = applyChatOutputGuardrails(response);
 
-    await conversationService.saveExchange(activeConversationId, message, response);
+    if (outputGuardrail.blocked) {
+      logger.warn('Chat response replaced by AI guardrail', {
+        ip: clientIP,
+        conversationId: activeConversationId,
+        code: outputGuardrail.code,
+        reason: outputGuardrail.reason,
+      });
+    }
+
+    await conversationService.saveExchange(activeConversationId, message, outputGuardrail.response);
 
     return {
       conversationId: activeConversationId,
-      response,
+      response: outputGuardrail.response,
       sources: ragContext.sources,
       meta: buildToolMeta(openAiMetadata),
     };
@@ -62,5 +110,5 @@ class ChatService {
   }
 }
 
-export { buildToolMeta };
+export { buildPromptMeta, buildToolMeta };
 export default new ChatService();

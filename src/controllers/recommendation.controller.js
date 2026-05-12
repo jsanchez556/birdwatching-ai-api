@@ -8,14 +8,14 @@ class RecommendationController {
     const { location, budget, days } = req.body;
     logger.info('Recommendation request received', { ip: clientIP, location, budget, days });
 
-    const recommendations = await recommendationService.getRecommendations(
+    const result = await recommendationService.getRecommendations(
       location,
       budget,
       days,
       clientIP
     );
 
-    return sendSuccess(res, recommendations);
+    return sendSuccess(res, result.recommendations, result.meta);
   }
 }
 

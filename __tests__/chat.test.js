@@ -56,6 +56,9 @@ describe('POST /chat', () => {
         },
       ],
       meta: {
+        promptVersions: {
+          chat: '2.1.0',
+        },
         toolsCalled: ['recommendTours'],
         tours: [{ tourId: 1, name: 'Monteverde Quetzal Tour' }],
       },
@@ -80,6 +83,9 @@ describe('POST /chat', () => {
         ],
       },
       meta: {
+        promptVersions: {
+          chat: '2.1.0',
+        },
         toolsCalled: ['recommendTours'],
         tours: [{ tourId: 1, name: 'Monteverde Quetzal Tour' }],
       },

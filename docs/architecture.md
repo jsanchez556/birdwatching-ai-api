@@ -9,7 +9,7 @@ This is a single-service Node.js API. There is no active `apps/` monorepo layout
 src/
   app.js                 Express app, CORS, JSON parsing, rate limit, routes, errors
   server.js              process entrypoint
-  ai/                    OpenAI client/service, prompts, schemas, chat tools
+  ai/                    OpenAI client/service, prompts, evaluations, guardrails, schemas, chat tools
   config/                environment parsing and validation
   controllers/           thin HTTP handlers
   db/                    pg pool, migrations, query modules
@@ -89,6 +89,15 @@ inserts the reservation in one database transaction.
 Future tools should be added as a group with schemas and handlers keyed by the
 OpenAI `function.name`. The registry rejects duplicate names and schemas without
 matching handlers.
+
+## AI Layer
+The `src/ai/` layer is split by responsibility:
+- `openai.client.js` and `openai.service.js` own provider calls, retry use, tool-call loops, and chat response handling.
+- `prompts/` owns versioned system prompts, user prompt templates, RAG context formatting, and prompt message construction.
+- `schemas/` owns OpenAI tool schemas and structured output schemas.
+- `tools/` owns thin tool adapters and registry validation for model-callable functions.
+- `evaluations/` owns AI observability and evaluation helpers such as token usage and estimated cost accounting.
+- `guardrails/` owns AI safety checks such as prompt-extraction blocking and sensitive-output fallbacks.
 
 Recommendations use:
 1. `RECOMMENDATION_PROMPT`

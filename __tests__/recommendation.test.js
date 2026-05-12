@@ -104,6 +104,11 @@ describe('/recommend endpoint', () => {
     expect(response.body.data.recommendations.birdSpecies).toHaveLength(1);
     expect(response.body.data.recommendations.bestSpots).toHaveLength(1);
     expect(response.body.data.recommendations.suggestedItinerary).toHaveLength(1);
+    expect(response.body.meta).toEqual({
+      promptVersions: {
+        recommendation: '1.0.0',
+      },
+    });
     expect(mockCreateStructuredRecommendation).toHaveBeenCalledWith('Monteverde', 'moderate', 3);
   });
 

@@ -46,7 +46,7 @@ describe('OpenAIClient tool calling', () => {
     mockCreate
       .mockResolvedValueOnce({
         id: 'completion-1',
-        model: 'gpt-test',
+        model: 'gpt-4o',
         choices: [
           {
             message: {
@@ -65,11 +65,15 @@ describe('OpenAIClient tool calling', () => {
             },
           },
         ],
-        usage: {},
+        usage: {
+          prompt_tokens: 1000,
+          completion_tokens: 120,
+          total_tokens: 1120,
+        },
       })
       .mockResolvedValueOnce({
         id: 'completion-2',
-        model: 'gpt-test',
+        model: 'gpt-4o',
         choices: [
           {
             message: {
@@ -78,15 +82,22 @@ describe('OpenAIClient tool calling', () => {
             },
           },
         ],
-        usage: {},
+        usage: {
+          prompt_tokens: 1200,
+          completion_tokens: 250,
+          total_tokens: 1450,
+        },
       });
 
+    const metadata = { conversationId: 'conversation-123' };
+    const usage = {};
     const response = await openaiClient.createChatCompletionWithTools(
       [{ role: 'user', content: 'Is tour 1 available?' }],
       {
         tools: [{ type: 'function', function: { name: 'checkTourAvailability' } }],
         executeToolCall,
-        metadata: { conversationId: 'conversation-123' },
+        metadata,
+        usage,
       }
     );
 
@@ -100,6 +111,14 @@ describe('OpenAIClient tool calling', () => {
       { tourId: 1 },
       expect.objectContaining({ conversationId: 'conversation-123' })
     );
+    expect(metadata.openAiUsage).toBeUndefined();
+    expect(usage.openAiUsage).toMatchObject({
+      promptTokens: 2200,
+      completionTokens: 370,
+      totalTokens: 2570,
+      hasEstimatedCost: true,
+    });
+    expect(usage.openAiUsage.estimatedCostDisplay).toMatch(/^\$\d+\.\d{4}$/);
 
     const secondRequest = mockCreate.mock.calls[1][0];
     expect(secondRequest.messages).toEqual([
@@ -137,7 +156,7 @@ describe('OpenAIClient tool calling', () => {
     mockCreate
       .mockResolvedValueOnce({
         id: 'completion-1',
-        model: 'gpt-test',
+        model: 'gpt-4o',
         choices: [
           {
             message: {
@@ -160,7 +179,7 @@ describe('OpenAIClient tool calling', () => {
       })
       .mockResolvedValueOnce({
         id: 'completion-2',
-        model: 'gpt-test',
+        model: 'gpt-4o',
         choices: [
           {
             message: {

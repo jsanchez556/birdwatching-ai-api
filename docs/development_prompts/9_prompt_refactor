@@ -1,0 +1,87 @@
+Refactor the AI prompt architecture in the Birdwatching AI API.
+
+Context:
+- Current prompt code lives in:
+  `src/ai/prompts`
+- Start by inspecting the existing prompt files and all imports/usages before editing.
+- Preserve current behavior unless a change is required by the new architecture.
+- Use the project .md files as context
+
+Goal:
+Make prompt handling modular, centralized, versioned, and easier to maintain.
+
+Requirements:
+1. Create a centralized prompt template system.
+2. Add prompt versioning so prompt changes can be tracked explicitly.
+3. Separate prompt concerns into distinct modules:
+   - System prompts
+   - User prompt templates
+   - RAG context formatting
+   - Tool instructions
+4. Create these files:
+   - `src/ai/prompts/promptBuilder.js`
+   - `src/ai/prompts/systemPrompts.js`
+5. Ensure this directory structure exists:
+   ```text
+   src/ai/
+     prompts/
+     evaluations/
+     guardrails/
+   ```
+6. Keep prompt assembly out of business logic where possible.
+7. Avoid duplicating large prompt strings across files.
+8. Use plain JavaScript ESM, matching the existing code style.
+9. Update existing imports/usages to use the new prompt builder.
+10. Do not introduce backend behavior unrelated to prompt construction.
+
+Suggested architecture:
+- `systemPrompts.js`
+  - exports versioned system prompt definitions
+  - example shape:
+    ```js
+    export const SYSTEM_PROMPT_VERSION = 'v1';
+
+    export const systemPrompts = {
+      v1: `...`,
+    };
+
+    export function getSystemPrompt(version = SYSTEM_PROMPT_VERSION) {
+      ...
+    }
+    ```
+
+- `promptBuilder.js`
+  - composes final prompt payloads from modular inputs
+  - accepts system prompt version, user message, conversation context, RAG context, and tool instructions
+  - validates inputs conservatively
+  - keeps formatting consistent
+
+- Optional supporting files if useful:
+  - `userPrompts.js`
+  - `ragContext.js`
+  - `toolInstructions.js`
+  - `index.js`
+
+Implementation steps:
+1. Inspect current prompt architecture and usages.
+2. Design the smallest modular structure that satisfies the requirements.
+3. Add the new prompt modules.
+4. Move existing prompt text into the appropriate module without changing intent.
+5. Update call sites to use `promptBuilder.js`.
+6. Add lightweight tests if the project already has tests around prompt construction.
+7. Run the relevant test suite, preferably:
+   ```bash
+   npm test
+   ```
+8. Summarize:
+   - files changed
+   - new prompt architecture
+   - any behavior intentionally preserved
+   - tests run or why tests could not be run
+
+Acceptance criteria:
+- Prompt strings are no longer scattered through business logic.
+- System prompts are versioned.
+- RAG context and tool instructions are formatted separately from the base system prompt.
+- Existing AI behavior remains functionally equivalent unless explicitly improved by the refactor.
+- The code is readable, maintainable, and follows existing project conventions.
