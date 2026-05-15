@@ -1,24 +1,10 @@
 import { jest } from '@jest/globals';
 
-const mockGenerateEmbedding = jest.fn();
-const mockSearchSimilarDocuments = jest.fn();
-const mockSearch = jest.fn();
+const mockRetrieve = jest.fn();
 
-await jest.unstable_mockModule('../src/ai/openai.client.js', () => ({
+await jest.unstable_mockModule('../src/db/retrieval/retrieval.service.js', () => ({
   default: {
-    generateEmbedding: mockGenerateEmbedding,
-  },
-}));
-
-await jest.unstable_mockModule('../src/services/embeddings.service.js', () => ({
-  default: {
-    searchSimilarDocuments: mockSearchSimilarDocuments,
-  },
-}));
-
-await jest.unstable_mockModule('../src/services/vectorSearch.service.js', () => ({
-  default: {
-    search: mockSearch,
+    retrieve: mockRetrieve,
   },
 }));
 
@@ -66,9 +52,7 @@ describe('RagService', () => {
       },
     ];
 
-    mockGenerateEmbedding.mockResolvedValue([[1, 0]]);
-    mockSearchSimilarDocuments.mockResolvedValue([{ name: 'Resplendent Quetzal' }]);
-    mockSearch.mockReturnValue(documents);
+    mockRetrieve.mockResolvedValue(documents);
 
     const context = await ragService.buildContext(
       messages,
@@ -76,7 +60,13 @@ describe('RagService', () => {
       { conversationId: 'conversation-123' }
     );
 
-    expect(mockGenerateEmbedding).toHaveBeenCalledWith(['Where can I see quetzals?']);
+    expect(mockRetrieve).toHaveBeenCalledWith('Where can I see quetzals?', {
+      topK: 3,
+      filters: {},
+      minScore: undefined,
+      minSemanticScore: undefined,
+      maxChunksPerDocument: undefined,
+    });
     expect(context.messages).toEqual([
       { role: 'system', content: 'Base prompt' },
       expect.objectContaining({
@@ -112,7 +102,22 @@ describe('RagService', () => {
       { role: 'user', content: 'Where can I see quetzals?' },
     ];
 
-    mockGenerateEmbedding.mockRejectedValue(new Error('OpenAI unavailable'));
+    mockRetrieve.mockRejectedValue(new Error('PostgreSQL unavailable'));
+
+    await expect(ragService.buildContext(messages, 'Where can I see quetzals?'))
+      .resolves.toEqual({
+        messages,
+        sources: [],
+      });
+  });
+
+  it('returns original messages when pgvector has no matching documents', async () => {
+    const messages = [
+      { role: 'system', content: 'Base prompt' },
+      { role: 'user', content: 'Where can I see quetzals?' },
+    ];
+
+    mockRetrieve.mockResolvedValue([]);
 
     await expect(ragService.buildContext(messages, 'Where can I see quetzals?'))
       .resolves.toEqual({

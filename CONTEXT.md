@@ -5,7 +5,7 @@ AI-agent entry point for the Birdwatching AI API. Read this file first, then fol
 ## What This Is
 This repository is a single Express API for Costa Rica birdwatching assistance. It supports:
 - conversational chat with short-term PostgreSQL memory
-- simple in-memory RAG over `src/db/data/birds.json`
+- PostgreSQL-backed RAG over ingested `src/db/data` documents using pgvector
 - OpenAI tool calling for tour discovery, selection, availability, pricing, discounts, and durable reservations
 - structured trip recommendations from OpenAI function tool calls
 - normalized JSON responses and centralized error handling
@@ -27,6 +27,7 @@ The app uses a controller-service-query split:
 - `src/controllers/*` extracts request data, logs request metadata, and returns response envelopes.
 - `src/services/*` owns orchestration, AI calls, memory construction, and persistence decisions.
 - `src/db/queries/*` owns parameterized calls to PostgreSQL functions through `src/db/pool.js`.
+- `src/db/vector`, `src/db/retrieval`, `src/db/ingestion`, and `src/db/chunking` own durable RAG storage, search, ingestion, and chunking.
 - `src/ai/*` owns OpenAI client calls, prompt assets, structured schemas, and chat tool adapters.
 - `src/middleware/*` owns validation, rate limiting, errors, and future auth hooks.
 
@@ -39,6 +40,7 @@ POST /chat
   -> chat.service.processMessageStream
   -> conversation.service.buildConversationContext
   -> rag.service.buildContext
+  -> PostgreSQL pgvector retrieval
   -> openai.client resolves required chat tools
   -> OpenAI streams final assistant text through SSE chunk events with client-disconnect abort support
   -> conversation.service.saveExchange
@@ -74,7 +76,7 @@ GET /chat/:conversationId
 - `NODE_ENV=test` bypasses required `OPENAI_API_KEY` and `DATABASE_URL` validation.
 - OpenAI retry behavior lives in `src/utils/asyncRetry.js` and is used for transient OpenAI statuses.
 - Streaming chat passes an `AbortSignal` to OpenAI and skips saving a completed exchange when the client disconnects before completion.
-- RAG loads `src/db/data/birds.json`, flattens family-keyed bird groups into documents, embeds them on first use, stores vectors in memory, and falls back to normal chat if retrieval fails.
+- RAG reads only from PostgreSQL pgvector during chat. Use `npm run ingest` to ingest supported files from `src/db/data` before relying on RAG context; chat does not chunk documents, generate source embeddings, or write vectors.
 - Tour data, availability, selection, and reservations are stored in PostgreSQL through functions in `003_create_tour_reservations.sql`.
 - Tour listing and recommendation details are returned in the `/chat` stream `done.meta` object for frontend rendering; assistant text stays short when tours are present.
 - Tour selection accepts a tour ID or a clear/partial tour name such as `Monteverde tour` before pricing or reservation.

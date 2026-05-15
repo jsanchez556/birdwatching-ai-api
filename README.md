@@ -41,15 +41,34 @@ Run database migrations before using chat memory:
 psql "$DATABASE_URL" -f src/db/migrations/001_create_chat_interactions.sql
 psql "$DATABASE_URL" -f src/db/migrations/002_create_functions.sql
 psql "$DATABASE_URL" -f src/db/migrations/003_create_tour_reservations.sql
+psql "$DATABASE_URL" -f src/db/migrations/004_create_vector_knowledge.sql
 ```
 
 ## Bird Knowledge Base
-Chat responses use a simple in-memory RAG flow. Documents are loaded from
-`src/db/data/birds.json`, whose current shape is a family-keyed object of bird
-arrays. The embedding service flattens those family groups into documents,
-embeds them with the OpenAI embeddings API on first use, ranks with cosine
-similarity, and injects relevant matches into the chat prompt. The embedded
-document cache is process-local and resets when the app restarts.
+Chat responses use a PostgreSQL-backed RAG flow with `pgvector`. Documents must
+be ingested from `src/db/data` before retrieval can return RAG context. The
+ingestion command parses supported source files, chunks each document, embeds
+chunks with the OpenAI embeddings API, and persists documents, chunks, metadata,
+and vectors in PostgreSQL.
+
+Run ingestion after migrations and whenever source knowledge files change:
+```bash
+npm run ingest              # ingest all supported files in src/db/data
+npm run ingest -- birds.json
+npm run ingest -- file1.json file2.md
+npm run ingest -- --all
+```
+
+Supported source files currently include `.json` and `.md`. The current
+`birds.json` shape is a family-keyed object of bird arrays, and generic JSON
+document arrays or `{ "documents": [...] }` files are also supported.
+
+Semantic retrieval runs through `src/db/retrieval/retrieval.service.js` and
+`src/db/vector/vector.repository.js`, with optional metadata filters for fields
+such as source, category, document type, locale, tags, and JSON metadata. If
+PostgreSQL or `pgvector` is unavailable, chat continues without RAG context.
+Chat requests do not run ingestion, generate embeddings for source documents, or
+write vectors.
 
 ## Tour Tools
 Chat can use OpenAI tool calling for tour listing, tour recommendations,
@@ -70,9 +89,10 @@ PostgreSQL reservation function.
 
 ## Scripts
 ```bash
-npm start   # node src/server.js
-npm run dev # nodemon src/server.js
-npm test    # Jest ESM test runner
+npm start      # node src/server.js
+npm run dev    # nodemon src/server.js
+npm run ingest # ingest all supported src/db/data files into pgvector
+npm test       # Jest ESM test runner
 ```
 
 ## Runtime Endpoints
@@ -90,3 +110,7 @@ functions from migrations instead of embedding persistence SQL in JavaScript.
 Tour reservations use PostgreSQL `tours` and `reservations` tables from
 `003_create_tour_reservations.sql`, including database functions for tour lookup
 and transactional reservation creation.
+
+RAG persistence uses `knowledge_documents` and `knowledge_chunks` from
+`004_create_vector_knowledge.sql`. The migration enables the `vector` extension
+and creates indexes for semantic search and metadata filtering.

@@ -1,7 +1,5 @@
-import openaiClient from '../ai/openai.client.js';
-import embeddingsService from './embeddings.service.js';
-import vectorSearchService from './vectorSearch.service.js';
 import logger from '../utils/logger.js';
+import retrievalService from '../db/retrieval/retrieval.service.js';
 import { injectRagContextMessage } from '../ai/prompts/prompt.builder.js';
 import {
   formatRetrievedContext,
@@ -14,10 +12,19 @@ const DEFAULT_TOP_K = 3;
 class RagService {
   async retrieveContext(question, options = {}) {
     const topK = options.topK || DEFAULT_TOP_K;
-    const [queryEmbedding] = await openaiClient.generateEmbedding([question]);
-    const documents = await embeddingsService.searchSimilarDocuments();
 
-    return vectorSearchService.search(queryEmbedding, documents, topK);
+    return retrievalService.retrieve(question, {
+      topK,
+      filters: {
+        ...(options.filters || {}),
+        ...(options.category ? { category: options.category } : {}),
+        ...(options.location ? { location: options.location } : {}),
+        ...(options.title ? { title: options.title } : {}),
+      },
+      minScore: options.minScore,
+      minSemanticScore: options.minSemanticScore,
+      maxChunksPerDocument: options.maxChunksPerDocument,
+    });
   }
 
   async buildContext(messages, question, metadata = {}) {

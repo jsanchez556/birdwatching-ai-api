@@ -27,7 +27,7 @@
     },
     {
       "name": "Collared Trogon",
-      "description": "Widespread trogon of foothill and montane forests.",
+      "description": "Widespread trogon of foothill and birds.json must contain an array or family-keyed object of documentsmontane forests.",
       "location": "Monteverde, Bijagua de Upala, Braulio Carrillo"
     }
   ],

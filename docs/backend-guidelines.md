@@ -47,7 +47,10 @@ Back to [Project Context](../CONTEXT.md). Pair this with [API Contracts](./api.m
 - Keep runtime bird knowledge in `src/db/data/birds.json`.
 - Preserve the family-keyed bird JSON shape unless intentionally migrating it.
 - Preserve simple document fields used by embeddings: `name`, `location`, and `description`; legacy `locations` arrays remain supported by the adapter.
-- Treat embedded documents as an in-memory runtime cache; do not write generated embeddings into source files.
+- Store generated embeddings in PostgreSQL through `src/db/vector/vector.repository.js`; do not write generated embeddings into source files.
+- Keep chunking in `src/db/chunking`, ingestion in `src/db/ingestion`, and semantic retrieval in `src/db/retrieval`.
+- Keep metadata filters parameterized and limited to known document fields, tags, and JSONB containment.
+- Run document ingestion through `npm run ingest`; do not run source document ingestion from chat or request handlers.
 
 ## Tour Tools
 - Keep tour data and reservation state in PostgreSQL; do not reintroduce JSON-backed tour state.

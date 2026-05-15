@@ -1,0 +1,178 @@
+in `birdwatching-ai-api`
+
+Migrate the existing RAG implementation to use PostgreSQL as the persistent vector store, using the `pgvector` extension for embedding storage and semantic similarity search.
+
+## Goals
+
+Build a production-oriented but simple RAG backend that can:
+
+- Store document chunks and embeddings in PostgreSQL
+- Use the `pgvector` extension for vector operations
+- Perform semantic similarity search over embedded knowledge
+- Persist source knowledge documents and chunk metadata
+- Support metadata-based filtering during retrieval
+- Keep the implementation modular, testable, and easy to extend
+
+## Required Architecture
+
+Organize the implementation around these responsibilities:
+
+```txt
+src/db/
+  vector/
+    vector.repository.js
+    vector.schema.sql
+  retrieval/
+    retrieval.service.js
+  ingestion/
+    ingestion.service.js
+  chunking/
+    chunking.service.js
+```
+
+Suggested responsibilities:
+
+### Vector Repository
+
+Create a repository layer responsible for all PostgreSQL vector operations.
+
+It should handle:
+
+- Creating or migrating the vector tables
+- Inserting knowledge documents
+- Inserting document chunks with embeddings
+- Querying chunks by semantic similarity
+- Applying metadata filters
+- Returning similarity scores and relevant source metadata
+
+Use parameterized SQL queries and avoid direct database access from services.
+
+### Database / pgvector
+
+Use PostgreSQL with the `pgvector` extension.
+
+Create tables for:
+
+- Knowledge documents
+- Document chunks
+- Embeddings
+- Metadata
+
+The schema should support:
+
+- Document ID
+- Chunk ID
+- Chunk text
+- Embedding vector
+- Source/type/category metadata
+- Created and updated timestamps
+
+Include appropriate indexes for vector search and metadata filtering.
+
+### Ingestion Service
+
+Create an ingestion service that can:
+
+- Accept raw knowledge documents
+- Normalize document content
+- Split documents into chunks
+- Generate embeddings for each chunk
+- Persist the original document and all chunks
+- Store useful metadata alongside each chunk
+
+The ingestion flow should be idempotent where practical, avoiding duplicate documents when the same source is re-ingested.
+
+### Chunking Service
+
+Create a simple chunking service that:
+
+- Splits long documents into semantically useful chunks
+- Supports configurable chunk size and overlap
+- Preserves enough context for retrieval quality
+- Returns stable chunk objects ready for embedding
+
+Keep chunking simple and deterministic.
+
+### Retrieval Service
+
+Create a retrieval service that:
+
+- Accepts a user query
+- Generates an embedding for the query
+- Searches PostgreSQL using pgvector similarity
+- Supports optional metadata filters
+- Returns the most relevant chunks
+- Includes similarity score, text, document ID, chunk ID, and metadata
+
+The retrieval service should be the only layer used by chat/RAG orchestration code.
+
+## Metadata Filtering
+
+Support filtering by metadata such as:
+
+- document type
+- category
+- source
+- locale
+- tags
+- active/inactive status
+
+Filtering should be optional and composable with semantic search.
+
+## Production Expectations
+
+Keep the implementation production-oriented and simple:
+
+- Use clear module boundaries
+- Avoid over-engineering
+- Validate input shapes
+- Handle database errors cleanly
+- Use environment variables for database configuration
+- Do not store secrets in code
+- Add meaningful logging around ingestion and retrieval
+- Add tests for repository behavior, ingestion, chunking, and retrieval where practical
+
+## Integration Constraints
+
+- Do not put frontend logic in this backend change
+- Do not expose raw internal vector details unless needed
+- Keep existing chat/RAG behavior working while replacing the storage/retrieval layer
+- Preserve existing OpenAI embedding generation patterns if already present
+- Prefer incremental migration over a large rewrite
+
+## Acceptance Criteria
+
+The migration is complete when:
+
+- PostgreSQL stores knowledge documents, chImplement semantic chunking for RAG ingestion.
+
+Requirements:
+- split large documents into chunks
+- preserve semantic meaning
+- avoid overly small chunks
+- support overlap between chunksunks, metadata, and embeddings
+- `pgvector` is enabled and used for similarity search
+- Retrieval returns relevant chunks for a natural language query
+- Metadata filters can narrow retrieval results
+- Ingestion persists documents and embeddings reliably
+- Chat/RAG code uses the retrieval service instead of any previous in-memory or file-based vector store
+- Tests or verification scripts demonstrate ingestion and semantic search working end to end
+
+---
+
+## Iteration 2
+Implement semantic chunking for RAG ingestion.
+
+Requirements:
+- split large documents into chunks
+- preserve semantic meaning
+- avoid overly small chunks
+- support overlap between chunks
+
+---
+
+## Iteration 3
+
+Implement hybrid search combining:
+- semantic similarity
+- keyword matching
