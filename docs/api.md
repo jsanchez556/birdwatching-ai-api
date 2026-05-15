@@ -37,6 +37,8 @@ Success data:
 ```
 
 ## `POST /chat`
+Streams an assistant response with Server-Sent Events.
+
 Body:
 ```json
 {
@@ -49,22 +51,38 @@ Validation:
 - `message` is required, trimmed, non-empty, max 4000 characters.
 - `conversationId` is optional, trimmed, non-empty when present, max 128 characters.
 
-Success data:
-```json
-{
-  "conversationId": "uuid-or-provided-id",
-  "response": "I found 2 tours that match your preferences.",
-  "sources": [
-    {
-      "name": "Resplendent Quetzal",
-      "location": "Monteverde, San Gerardo de Dota",
-      "similarityScore": 0.9123
-    }
-  ]
-}
+SSE events:
+```text
+event: start
+data: {"conversationId":"conversation-123","sources":[],"meta":{"promptVersions":{"chat":"2.1.0"}}}
+
+event: chunk
+data: {"content":"Hello"}
+
+event: replace
+data: {"content":"I can help with Costa Rica birdwatching, tours, pricing, or reservations. Could you rephrase what you would like to do next?"}
+
+event: done
+data: {"conversationId":"conversation-123","response":"Hello from AI","sources":[],"meta":{"promptVersions":{"chat":"2.1.0"}}}
+
+event: error
+data: {"code":"STREAM_ERROR","message":"Unable to stream chat response right now."}
 ```
 
-Success meta may include frontend-ready tour and reservation data collected from tool calls:
+Behavior:
+- Creates a UUID conversation ID when none is provided.
+- Loads recent history for that conversation.
+- Retrieves relevant bird knowledge sources from `src/db/data/birds.json` and returns them as `sources` in `start` and `done` events.
+- Resolves any required OpenAI tool calls first, then streams the final assistant text to the client.
+- Sends `start` once the conversation ID and source context are known.
+- Sends one or more `chunk` events as assistant text becomes safe to flush.
+- Sends `replace` only when output guardrails replace already-started streamed text with a safe fallback.
+- Sends `done` with the final persisted response and frontend-safe metadata.
+- Sends `error` as an SSE event if the stream fails after headers are open.
+- If the client disconnects, aborts the OpenAI stream and stops writing SSE events.
+- Saves the exchange to PostgreSQL on a best-effort basis.
+
+Done `meta` may include frontend-ready tour and reservation data collected from tool calls:
 ```json
 {
   "toolsCalled": ["recommendTours"],
@@ -82,15 +100,6 @@ Success meta may include frontend-ready tour and reservation data collected from
 }
 ```
 
-Behavior:
-- Creates a UUID conversation ID when none is provided.
-- Loads recent history for that conversation.
-- Retrieves relevant bird knowledge sources from `src/db/data/birds.json` and returns them as `sources` for frontend display.
-- Sends role-based messages to OpenAI with tour tools enabled.
-- May execute tour tools for listing, recommending, selecting, pricing, or reserving tours, then return a natural-language response plus structured metadata.
-- When tour listing or recommendation tools return tours, the assistant text should stay short, for example `I found 2 tours that match your preferences.` Tour details belong in `meta.tours`.
-- Saves the exchange to PostgreSQL on a best-effort basis.
-
 Tour tool notes:
 - Tour and reservation state comes from PostgreSQL.
 - Available tour tools are `getAvailableTours`, `recommendTours`, `selectTour`, `checkTourAvailability`, `calculateTourPrice`, and `createReservation`.
@@ -100,7 +109,7 @@ Tour tool notes:
 - `createReservation` requires `tourId`, `participants`, and `customerName`; it accepts optional `customerEmail` and `discountCode`.
 - Successful reservation tool results include `id`, `reservationId`, `customer_name`, `customerName`, `customerEmail`, `conversationId`, `tour_id`, `tourId`, `tourName`, `participants`, `confirmation_code`, `confirmationCode`, `created_at`, `createdAt`, `total_price`, `totalPrice`, `currency`, `remainingSlots`, `discountRate`, and `discountReason`.
 - Reservations are associated with the active chat `conversationId` internally.
-- The public `/chat` response shape does not expose raw tool messages, but safe structured tool data is returned in the top-level `meta` envelope for frontend rendering.
+- The public stream does not expose raw tool messages, but safe structured tool data is returned in the `done` event `meta` object for frontend rendering.
 
 ## `GET /chat/:conversationId`
 Returns up to 100 persisted messages for one conversation as alternating user and assistant messages.

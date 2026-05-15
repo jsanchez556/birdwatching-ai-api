@@ -4,20 +4,13 @@ import HttpError from '../utils/httpError.js';
 import { CHAT_SYSTEM_PROMPT_VERSION } from './prompts/system.prompt.js';
 
 class ChatCompletionService {
-  async generateResponse(messages, metadata = {}) {
+  async streamResponseWithTools(messages, metadata = {}, options = {}) {
     const usage = {};
-    const response = await openaiClient.createChatCompletion(messages, {
+    const response = await openaiClient.streamChatCompletionWithTools(messages, {
       metadata,
       usage,
-    });
-    return this.handleResponse(response, messages, metadata, usage);
-  }
-
-  async generateResponseWithTools(messages, metadata = {}) {
-    const usage = {};
-    const response = await openaiClient.createChatCompletionWithTools(messages, {
-      metadata,
-      usage,
+      onChunk: options.onChunk,
+      signal: options.signal,
     });
 
     return this.handleResponse(response, messages, metadata, usage);

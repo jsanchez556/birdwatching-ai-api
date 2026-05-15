@@ -1,0 +1,298 @@
+You are working in a workspace with two related projects:
+
+- `birdwatching-ai-api` - Backend
+- `birdwatching-ai-ui` - Frontend
+
+Implement OpenAI streaming chat responses using Server-Sent Events (SSE).
+
+## Goal
+
+Update the chat flow so assistant responses stream progressively from the backend to the frontend instead of waiting for the full OpenAI response before rendering.
+
+The user should see the assistant message appear token-by-token or chunk-by-chunk in real time while the request is still running.
+
+## Backend Requirements
+
+In `birdwatching-ai-api`:
+
+1. Replace chat for streaming chat responses.
+   - Prefer a route such as `POST /chat/`
+   - Set correct SSE headers:
+     - `Content-Type: text/event-stream`
+     - `Cache-Control: no-cache`
+     - `Connection: keep-alive`
+
+2. Stream OpenAI output progressively.
+   - Use the OpenAI streaming API.
+   - Forward streamed text chunks to the client as SSE events.
+   - Send a final completion event when the response is done.
+   - Send structured error events if streaming fails.
+
+3. Preserve existing chat architecture.
+   - Keep backend response handling, guardrails, conversation state, tools, and metadata compatible with the current architecture.
+   - If the current chat pipeline includes RAG, reservations, tour tools, or guardrails, integrate streaming without bypassing required safety/business logic.
+
+4. Use a clean architecture.
+   - Put streaming-specific logic in a dedicated module/service.
+   - Avoid calling OpenAI directly from route handlers.
+   - Keep route/controller/service boundaries clear.
+
+Suggested backend structure:
+
+```txt
+src/
+  ai/
+  services/
+    chat.service.js
+  streaming/
+    sse.js
+  routes/
+    chat.routes.js
+```
+
+## Frontend Requirements
+
+In `birdwatching-ai-ui`:
+
+1. Add streaming chat support.
+   - Send chat messages to the new SSE streaming endpoint.
+   - Render assistant text progressively as chunks arrive.
+   - Keep the UI responsive while streaming.
+
+2. Preserve existing chat behavior.
+   - Keep clear `user` and `assistant` roles.
+   - Preserve loading, error, and retry behavior where applicable.
+   - Preserve scroll-to-latest behavior.
+   - Keep the original non-streaming path available if needed, unless there is a clear reason to replace it.
+
+3. Update state handling cleanly.
+   - Use hooks for streaming orchestration.
+   - Do not put direct network/event parsing logic inside presentational components.
+   - Keep API calls inside `src/api/`.
+   - Store only safe UI state in local storage.
+
+Suggested frontend structure:
+
+```txt
+src/
+  api/
+    chat.js
+    streamChat.js
+  hooks/
+    useChat.js
+    useStreamingChat.js
+  components/
+    ChatWindow.jsx
+    MessageList.jsx
+    MessageBubble.jsx
+```
+
+## Streaming Event Contract
+
+Define and document a simple SSE event contract between backend and frontend.
+
+Example events:
+
+```txt
+event: chunk
+data: {"content":"Hello"}
+
+event: chunk
+data: {"content":" there"}
+
+event: done
+data: {"conversationId":"abc123"}
+
+event: error
+data: {"message":"Something went wrong"}
+```
+
+The frontend should:
+- Append `chunk.content` to the active assistant message.
+- Mark the message complete on `done`.
+- Show a friendly error state on `error`.
+
+## Implementation Constraints
+
+- Do not store API keys, secrets, or backend-only configuration in the frontend.
+- Do not add backend OpenAI logic to the frontend.
+- Do not invent new public response fields unless they are documented and actually emitted by the backend.
+- Keep implementation consistent with the existing project style.
+- Add or update tests for the streaming behavior where practical.
+- Run the relevant test suites before handing off.
+
+## Deliverables
+
+1. Backend SSE streaming endpoint.
+2. OpenAI streaming service.
+3. Frontend streaming API adapter.
+4. React hook/state updates for progressive rendering.
+5. Updated chat UI behavior.
+6. Documentation of the streaming event contract.
+7. Test coverage or a clear note explaining what could not be tested.
+
+Before implementing, inspect both repositories and explain briefly how the existing chat request/response flow currently works. Then implement the smallest clean change that adds streaming without disrupting existing behavior.
+
+---
+
+# ITERATION 2
+
+You are working in a workspace with two related projects:
+
+- `birdwatching-ai-api` - Backend
+- `birdwatching-ai-ui` - Frontend
+
+Add stop-generation support for streaming chat responses, improve the visible typing state, and slow down frontend text rendering so streamed responses feel readable.
+
+Streaming is currently the only chat mode. The active endpoint is:
+
+`POST /chat`
+
+It returns Server-Sent Events.
+
+## Goals
+
+1. Let users stop an in-progress streamed assistant response.
+2. Show a clear AI typing/streaming indicator while the response is active.
+3. Make text appear progressively at a readable pace instead of rendering chunks too quickly.
+4. Keep backend and frontend behavior clean, accessible, and consistent with the existing architecture.
+
+## Backend Requirements
+
+In `birdwatching-ai-api`:
+
+1. Support request cancellation.
+   - Detect when the client disconnects during `POST /chat`.
+   - Use an `AbortController` or equivalent cancellation mechanism to stop the OpenAI streaming request when the HTTP connection closes.
+   - Ensure no additional SSE events are written after the response is closed.
+   - Avoid saving partial assistant responses as completed conversation messages unless intentionally marked as stopped.
+
+2. Update OpenAI streaming flow.
+   - Pass an abort signal from the route/controller/service layer down to the OpenAI client streaming call.
+   - Ensure the OpenAI SDK request receives the abort signal.
+   - Handle abort errors separately from provider/server errors.
+   - Log cancellation at info/debug level, not as an unexpected server error.
+
+3. Add an explicit stopped event if useful.
+   - If the server can detect a user stop before the connection fully closes, emit something like:
+     ```text
+     event: stopped
+     data: {"conversationId":"conversation-123"}
+     ```
+   - If stopping happens by aborting the HTTP request from the browser, it is acceptable that no final event is received.
+
+4. Preserve existing streaming contract.
+   - Keep `start`, `chunk`, `replace`, `done`, and `error`.
+   - Keep `POST /chat` as the active endpoint.
+   - Keep `GET /chat/:conversationId` unchanged.
+   - Keep guardrails, RAG, tool calling, metadata, and best-effort persistence for completed responses.
+
+5. Update backend tests.
+   - Add focused tests for abort/disconnect handling where practical.
+   - Ensure completed streams still emit `done`.
+   - Ensure cancellation does not produce a server error event after the stream is closed.
+
+## Frontend Requirements
+
+In `birdwatching-ai-ui`:
+
+1. Add stop-generation UI.
+   - While a response is streaming, show a stop button in or near the input area.
+   - The stop button should be keyboard-accessible and have a clear ARIA label such as `Stop`.
+   - When clicked, cancel the active streaming request using `AbortController`.
+   - Re-enable the input after cancellation.
+
+2. Update the chat API adapter.
+   - `streamChatMessage` should accept an `AbortSignal`.
+   - Pass the signal to `fetch`.
+   - Treat `AbortError` as user cancellation, not as a normal failure.
+
+3. Update chat state handling.
+   - Track streaming state separately enough to know when a response is actively generating.
+   - Preserve the user message.
+   - Keep the partially generated assistant message visible when stopped.
+   - Mark the assistant message as stopped or no longer streaming.
+   - Do not replace a user-stopped partial response with the generic error fallback.
+   - Do not persist an incomplete stopped assistant message as a completed backend exchange unless the backend explicitly confirms it.
+
+4. Improve typing indicator.
+   - Show a visible assistant typing indicator before text starts arriving.
+   - Once text starts, keep a subtle streaming cursor or indicator so users know generation is ongoing.
+   - Keep loading/status indicators accessible with ARIA labels.
+
+5. Slow down visible text rendering.
+   - Buffer incoming SSE chunks and reveal text gradually on the frontend.
+   - Do not slow the backend or OpenAI request artificially.
+   - Use a small configurable delay or character batch size so text appears readable.
+   - Flush the remaining buffered text immediately when the stream finishes.
+   - Cancel any pending timers cleanly when the user stops generation or when the component unmounts.
+
+6. Preserve existing behavior.
+   - Keep Enter to send and Shift+Enter for multiline input.
+   - Keep scroll-to-latest behavior while text is revealed gradually.
+   - Keep reservation confirmation rendering from final metadata.
+   - Keep localStorage guarded with `try/catch`.
+   - Keep API calls in `src/api/`.
+   - Keep orchestration in `src/hooks/`.
+   - Keep presentational UI in `src/components/`.
+
+7. Update frontend tests.
+   - Add or update tests for:
+     - stop button visibility while streaming
+     - cancelling an in-progress stream
+     - partial assistant response remains visible after stop
+     - loading/typing indicator behavior
+     - progressive rendering behavior if practical with fake timers
+
+## Suggested Frontend Shape
+
+```txt
+src/
+  api/
+    chatApi.js
+  hooks/
+    useChat.js
+  components/
+    ChatInput.jsx
+    ChatMessages.jsx
+```
+
+Possible API signature:
+
+```js
+streamChatMessage({
+  message,
+  conversationId,
+  signal,
+  onStart,
+  onChunk,
+  onReplace,
+})
+```
+
+Possible hook state:
+
+```js
+const [isLoading, setIsLoading] = useState(false)
+const [isStreaming, setIsStreaming] = useState(false)
+const activeAbortControllerRef = useRef(null)
+
+function stopGenerating() {
+  activeAbortControllerRef.current?.abort()
+}
+```
+
+## Expected Result
+
+- User sends a message.
+- Assistant typing indicator appears.
+- Text streams in at a readable pace.
+- User can click stop while generation is active.
+- The active fetch/OpenAI stream is cancelled.
+- Partial assistant text remains visible and stops updating.
+- Input becomes usable again.
+- Completed responses still persist and render reservation metadata as before.
+
+Run relevant backend and frontend tests before handing off.
+
+---

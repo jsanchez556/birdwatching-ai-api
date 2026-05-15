@@ -35,14 +35,15 @@ documents from `src/db/data/birds.json`, similarity scores, locations, and
 descriptions. If retrieval or embedding fails, chat continues with the base
 messages and an empty `sources` array.
 
-`openai.client.createChatCompletionWithTools(...)` sends the messages with
-tour tools enabled. When OpenAI returns tool calls, the app executes them,
-appends `tool` role results, and asks OpenAI for the final conversational
-response. Tool calls are executed sequentially so selection, pricing, and
-reservation steps cannot race each other in one model turn.
+`openai.client.resolveChatToolCalls(...)` sends the messages with tour tools
+enabled. When OpenAI returns tool calls, the app executes them and appends
+`tool` role results. `openai.client.streamChatCompletion(...)` then streams the
+final conversational response. Tool calls are executed sequentially so
+selection, pricing, and reservation steps cannot race each other in one model
+turn.
 
 Tour discovery should happen before booking: list or recommend database-backed
-tours, return tour details through `/chat` response metadata, ask the user to
+tours, return tour details through stream `done` event metadata, ask the user to
 select a specific tour by ID or clear/partial name, then check availability,
 price, and create the reservation. When tours are returned, the assistant text
 should be minimal, for example: `I found 2 tours that match your preferences.`
@@ -66,8 +67,8 @@ tool calls unless the user asks about tours or reservations.
 - response length
 - conversation ID
 
-`POST /chat` responses include prompt version metadata in the response `meta`
-envelope for debugging and prompt experiments:
+`POST /chat` responses include prompt version metadata in the `done`
+event `meta` object for debugging and prompt experiments:
 ```json
 {
   "promptVersions": {

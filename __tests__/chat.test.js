@@ -1,8 +1,8 @@
 import { jest } from '@jest/globals';
 import request from 'supertest';
 
-const mockProcessMessage = jest.fn();
 const mockGetConversationMessages = jest.fn();
+const mockProcessMessageStream = jest.fn();
 
 await jest.unstable_mockModule('../src/utils/logger.js', () => ({
   default: {
@@ -14,7 +14,7 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
 
 await jest.unstable_mockModule('../src/services/chat.service.js', () => ({
   default: {
-    processMessage: mockProcessMessage,
+    processMessageStream: mockProcessMessageStream,
     getConversationMessages: mockGetConversationMessages,
   },
 }));
@@ -26,42 +26,30 @@ describe('POST /chat', () => {
     jest.clearAllMocks();
   });
 
-  it('returns 400 when message is missing', async () => {
-    const res = await request(app)
-      .post('/chat')
-      .send({});
-
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({
-      success: false,
-      error: {
-        code: 'VALIDATION_ERROR',
-        message: 'Invalid chat payload',
-        details: [
-          'Message is required and must be a non-empty string',
-        ],
-      },
-    });
-  });
-
-  it('returns AI response', async () => {
-    mockProcessMessage.mockResolvedValue({
-      conversationId: 'conversation-123',
-      response: 'Hello from AI',
-      sources: [
-        {
-          name: 'Keel-billed Toucan',
-          location: 'Sarapiqui',
-          similarityScore: 0.92,
+  it('streams chat chunks and a done event', async () => {
+    mockProcessMessageStream.mockImplementation(async (message, conversationId, clientIP, events) => {
+      events.onStart({
+        conversationId,
+        sources: [],
+        meta: {
+          promptVersions: {
+            chat: '2.1.0',
+          },
         },
-      ],
-      meta: {
-        promptVersions: {
-          chat: '2.1.0',
+      });
+      events.onChunk('Hello');
+      events.onChunk(' from AI');
+
+      return {
+        conversationId,
+        response: 'Hello from AI',
+        sources: [],
+        meta: {
+          promptVersions: {
+            chat: '2.1.0',
+          },
         },
-        toolsCalled: ['recommendTours'],
-        tours: [{ tourId: 1, name: 'Monteverde Quetzal Tour' }],
-      },
+      };
     });
 
     const res = await request(app)
@@ -69,50 +57,49 @@ describe('POST /chat', () => {
       .send({ message: 'Hi', conversationId: 'conversation-123' });
 
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({
-      success: true,
-      data: {
-        conversationId: 'conversation-123',
-        response: 'Hello from AI',
-        sources: [
-          {
-            name: 'Keel-billed Toucan',
-            location: 'Sarapiqui',
-            similarityScore: 0.92,
-          },
-        ],
-      },
-      meta: {
-        promptVersions: {
-          chat: '2.1.0',
-        },
-        toolsCalled: ['recommendTours'],
-        tours: [{ tourId: 1, name: 'Monteverde Quetzal Tour' }],
-      },
-    });
-    expect(mockProcessMessage).toHaveBeenCalledTimes(1);
-    expect(mockProcessMessage).toHaveBeenCalledWith(
+    expect(res.headers['content-type']).toContain('text/event-stream');
+    expect(res.text).toContain('event: start');
+    expect(res.text).toContain('data: {"conversationId":"conversation-123","sources":[]');
+    expect(res.text).toContain('event: chunk');
+    expect(res.text).toContain('data: {"content":"Hello"}');
+    expect(res.text).toContain('data: {"content":" from AI"}');
+    expect(res.text).toContain('event: done');
+    expect(res.text).toContain('data: {"conversationId":"conversation-123","response":"Hello from AI"');
+    expect(mockProcessMessageStream).toHaveBeenCalledWith(
       'Hi',
       'conversation-123',
-      expect.stringMatching(/(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)/)
+      expect.stringMatching(/(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)/),
+      expect.objectContaining({
+        onStart: expect.any(Function),
+        onChunk: expect.any(Function),
+        onReplace: expect.any(Function),
+      }),
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+      })
     );
   });
 
-  it('returns 500 when service throws', async () => {
-    mockProcessMessage.mockRejectedValue(new Error('Service failure'));
+  it('returns validation errors before opening an SSE stream', async () => {
+    const res = await request(app)
+      .post('/chat')
+      .send({});
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(mockProcessMessageStream).not.toHaveBeenCalled();
+  });
+
+  it('sends an SSE error event when streaming fails', async () => {
+    mockProcessMessageStream.mockRejectedValue(new Error('Service failure'));
 
     const res = await request(app)
       .post('/chat')
       .send({ message: 'Hi', conversationId: 'conversation-123' });
 
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({
-      success: false,
-      error: {
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Internal server error',
-      },
-    });
+    expect(res.statusCode).toBe(200);
+    expect(res.text).toContain('event: error');
+    expect(res.text).toContain('Unable to stream chat response right now.');
   });
 });
 

@@ -36,7 +36,7 @@ describe('OpenAIClient tool calling', () => {
     jest.clearAllMocks();
   });
 
-  it('executes tool calls and sends tool results back for the final response', async () => {
+  it('executes tool calls and prepares tool results before streaming', async () => {
     const executeToolCall = jest.fn().mockResolvedValue({
       success: true,
       tourId: 1,
@@ -91,7 +91,7 @@ describe('OpenAIClient tool calling', () => {
 
     const metadata = { conversationId: 'conversation-123' };
     const usage = {};
-    const response = await openaiClient.createChatCompletionWithTools(
+    const conversation = await openaiClient.resolveChatToolCalls(
       [{ role: 'user', content: 'Is tour 1 available?' }],
       {
         tools: [{ type: 'function', function: { name: 'checkTourAvailability' } }],
@@ -101,7 +101,6 @@ describe('OpenAIClient tool calling', () => {
       }
     );
 
-    expect(response).toBe('The Monteverde tour has 5 slots available.');
     expect(mockCreate.mock.calls[0][0]).toMatchObject({
       parallel_tool_calls: false,
       tool_choice: 'auto',
@@ -138,6 +137,7 @@ describe('OpenAIClient tool calling', () => {
         }),
       },
     ]);
+    expect(conversation).toEqual(secondRequest.messages);
   });
 
   it('captures structured metadata from tour tool results', async () => {
@@ -191,7 +191,7 @@ describe('OpenAIClient tool calling', () => {
         usage: {},
       });
 
-    await openaiClient.createChatCompletionWithTools(
+    await openaiClient.resolveChatToolCalls(
       [{ role: 'user', content: 'Recommend tours in Monteverde' }],
       {
         tools: [{ type: 'function', function: { name: 'recommendTours' } }],
@@ -209,6 +209,113 @@ describe('OpenAIClient tool calling', () => {
           location: 'Monteverde',
         },
       ],
+    });
+  });
+
+  it('streams final chat text after resolving tool calls', async () => {
+    async function* streamChunks() {
+      yield {
+        id: 'stream-1',
+        model: 'gpt-4o',
+        choices: [{ delta: { content: 'The tour ' } }],
+      };
+      yield {
+        id: 'stream-1',
+        model: 'gpt-4o',
+        choices: [{ delta: { content: 'has 5 slots.' } }],
+      };
+      yield {
+        id: 'stream-1',
+        model: 'gpt-4o',
+        choices: [],
+        usage: {
+          prompt_tokens: 1200,
+          completion_tokens: 50,
+          total_tokens: 1250,
+        },
+      };
+    }
+
+    const executeToolCall = jest.fn().mockResolvedValue({
+      success: true,
+      tourId: 1,
+      availableSlots: 5,
+    });
+    const onChunk = jest.fn();
+    const usage = {};
+
+    mockCreate
+      .mockResolvedValueOnce({
+        id: 'completion-1',
+        model: 'gpt-4o',
+        choices: [
+          {
+            message: {
+              role: 'assistant',
+              content: null,
+              tool_calls: [
+                {
+                  id: 'call-1',
+                  type: 'function',
+                  function: {
+                    name: 'checkTourAvailability',
+                    arguments: '{"tourId":1}',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+        usage: {
+          prompt_tokens: 1000,
+          completion_tokens: 100,
+          total_tokens: 1100,
+        },
+      })
+      .mockResolvedValueOnce({
+        id: 'completion-2',
+        model: 'gpt-4o',
+        choices: [
+          {
+            message: {
+              role: 'assistant',
+              content: 'The tour has 5 slots.',
+            },
+          },
+        ],
+        usage: {
+          prompt_tokens: 1100,
+          completion_tokens: 40,
+          total_tokens: 1140,
+        },
+      })
+      .mockResolvedValueOnce(streamChunks());
+
+    const response = await openaiClient.streamChatCompletionWithTools(
+      [{ role: 'user', content: 'Is tour 1 available?' }],
+      {
+        tools: [{ type: 'function', function: { name: 'checkTourAvailability' } }],
+        executeToolCall,
+        metadata: { conversationId: 'conversation-123' },
+        usage,
+        onChunk,
+      }
+    );
+
+    expect(response).toBe('The tour has 5 slots.');
+    expect(onChunk).toHaveBeenNthCalledWith(1, 'The tour ');
+    expect(onChunk).toHaveBeenNthCalledWith(2, 'has 5 slots.');
+    expect(mockCreate.mock.calls[2][0]).toMatchObject({
+      stream: true,
+      stream_options: {
+        include_usage: true,
+      },
+    });
+    expect(usage.openAiUsage).toMatchObject({
+      promptTokens: 3300,
+      completionTokens: 190,
+      totalTokens: 3490,
+      hasEstimatedCost: true,
     });
   });
 });

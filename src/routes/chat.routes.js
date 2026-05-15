@@ -6,7 +6,7 @@ import { validateChatBody } from '../validators/chat.validator.js';
 
 const router = express.Router();
 
-router.post('/', validate(validateChatBody), asyncHandler(chatController.handleChat.bind(chatController)));
+router.post('/', validate(validateChatBody), chatController.handleStreamChat.bind(chatController));
 router.get('/:conversationId', asyncHandler(chatController.handleGetConversation.bind(chatController)));
 
 export default router;

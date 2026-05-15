@@ -13,6 +13,10 @@ import {
 const retryableStatuses = new Set([408, 409, 429, 500, 502, 503, 504]);
 
 function isRetryableOpenAIError(error) {
+  if (error?.name === 'AbortError' || error?.code === 'ABORT_ERR') {
+    return false;
+  }
+
   return retryableStatuses.has(error.status) || error.code === 'ETIMEDOUT';
 }
 
@@ -48,25 +52,12 @@ class OpenAIClient {
     this.embeddingModel = env.openAiEmbeddingModel;
   }
 
-  async createChatCompletion(messages, options = {}) {
-    const usage = options.usage || {};
-    const completion = await asyncRetry(() => this.client.chat.completions.create({
-      model: this.model,
-      messages,
-    }), {
-      retries: 2,
-      shouldRetry: isRetryableOpenAIError,
-    });
-
-    this.logCompletionUsage('chat_completion', completion, {}, usage);
-    return completion.choices[0]?.message?.content;
-  }
-
-  async createChatCompletionWithTools(messages, options = {}) {
+  async resolveChatToolCalls(messages, options = {}) {
     const tools = options.tools || availableTools;
     const toolExecutor = options.executeToolCall || executeToolCall;
     const metadata = options.metadata || {};
     const usage = options.usage || {};
+    const signal = options.signal;
     const maxToolIterations = options.maxToolIterations || 3;
     const conversation = [...messages];
 
@@ -77,12 +68,12 @@ class OpenAIClient {
         tools,
         tool_choice: 'auto',
         parallel_tool_calls: false,
-      }), {
+      }, { signal }), {
         retries: 2,
         shouldRetry: isRetryableOpenAIError,
       });
 
-      this.logCompletionUsage('chat_completion_with_tools', completion, {
+      this.logCompletionUsage('chat_completion_stream_tool_resolution', completion, {
         toolIteration: iteration,
       }, usage);
 
@@ -90,7 +81,7 @@ class OpenAIClient {
       const toolCalls = assistantMessage?.tool_calls || [];
 
       if (toolCalls.length === 0) {
-        return assistantMessage?.content;
+        return conversation;
       }
 
       conversation.push({
@@ -116,21 +107,60 @@ class OpenAIClient {
       conversation.push(...toolResults);
     }
 
-    logger.warn('OpenAI tool call loop reached iteration limit', {
+    logger.warn('OpenAI streaming tool resolution reached iteration limit', {
       conversationId: metadata.conversationId,
       maxToolIterations,
     });
 
-    const completion = await asyncRetry(() => this.client.chat.completions.create({
+    return conversation;
+  }
+
+  async streamChatCompletion(messages, options = {}) {
+    const usage = options.usage || {};
+    const onChunk = options.onChunk || (() => {});
+    const signal = options.signal;
+    let response = '';
+    let streamModel = this.model;
+    let streamId;
+
+    const stream = await asyncRetry(() => this.client.chat.completions.create({
       model: this.model,
-      messages: conversation,
-    }), {
+      messages,
+      stream: true,
+      stream_options: {
+        include_usage: true,
+      },
+    }, { signal }), {
       retries: 2,
       shouldRetry: isRetryableOpenAIError,
     });
 
-    this.logCompletionUsage('chat_completion_after_tool_limit', completion, {}, usage);
-    return completion.choices[0]?.message?.content;
+    for await (const chunk of stream) {
+      streamId ||= chunk.id;
+      streamModel = chunk.model || streamModel;
+
+      if (chunk.usage) {
+        this.logCompletionUsage('chat_completion_stream', {
+          id: streamId,
+          model: streamModel,
+          usage: chunk.usage,
+        }, {}, usage);
+      }
+
+      const content = chunk.choices?.[0]?.delta?.content;
+
+      if (content) {
+        response += content;
+        await onChunk(content);
+      }
+    }
+
+    return response;
+  }
+
+  async streamChatCompletionWithTools(messages, options = {}) {
+    const conversation = await this.resolveChatToolCalls(messages, options);
+    return this.streamChatCompletion(conversation, options);
   }
 
   async generateEmbedding(input) {

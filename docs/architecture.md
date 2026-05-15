@@ -54,16 +54,27 @@ RAG uses:
 2. `vectorSearch.service.js` to normalize vectors and rank documents with cosine similarity
 3. `rag.service.js` to retrieve top matches and inject a compact system context message into chat prompts
 
-Chat tool calling uses:
-1. `openai.client.createChatCompletionWithTools(...)` with `tool_choice: 'auto'` and sequential tool calls
+Chat streaming uses:
+1. `openai.client.resolveChatToolCalls(...)` with `tool_choice: 'auto'` and sequential tool calls
 2. tool schemas from `src/ai/schemas/tour.schema.js`
 3. registry validation and dispatch through `src/ai/tools/index.js`
 4. thin tour adapters in `src/ai/tools/tour-tools.js`
 5. tour listing, recommendation, and selection in `src/services/tour.service.js`
 6. reservation orchestration in `src/services/reservation.service.js`
 7. PostgreSQL function calls in `src/db/queries/tour.queries.js` and `src/db/queries/reservation.queries.js`
-8. frontend-safe tool metadata collected on the chat response `meta` envelope
-9. a follow-up OpenAI chat completion with `tool` messages so the user receives a natural response
+8. frontend-safe tool metadata collected on the SSE `done` event `meta` object
+9. `openai.client.streamChatCompletion(...)` for the final assistant response
+10. SSE `start`, `chunk`, optional `replace`, `done`, or `error` events
+
+`POST /chat` is the single active chat response path. It enters
+`chat.controller.handleStreamChat`, then `chat.service.processMessageStream`.
+The controller creates an `AbortController` and aborts it if the SSE connection
+closes before completion; the signal is passed through the chat service to the
+OpenAI client so provider streaming stops cleanly. The chat service keeps a
+short guardrail buffer before flushing chunks so sensitive output patterns can
+be blocked before the final buffered text is sent. The completed assistant
+response is saved to PostgreSQL on a best-effort basis after streaming finishes;
+aborted streams are not saved as completed exchanges.
 
 The current tour tool set is:
 - `getAvailableTours`
@@ -73,7 +84,7 @@ The current tour tool set is:
 - `calculateTourPrice`
 - `createReservation`
 
-Tour listing and recommendation results are returned through `/chat` response
+Tour listing and recommendation results are returned through stream `done` event
 metadata, so assistant text can stay short, such as `I found 2 tours that match
 your preferences.` Explicit tour selection can be made by ID or clear/partial
 tour name; service matching resolves names such as `Monteverde tour` to the

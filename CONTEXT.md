@@ -35,17 +35,14 @@ Chat:
 ```text
 POST /chat
   -> validateChatBody
-  -> chat.controller.handleChat
-  -> chat.service.processMessage
+  -> chat.controller.handleStreamChat
+  -> chat.service.processMessageStream
   -> conversation.service.buildConversationContext
   -> rag.service.buildContext
-  -> openai.service.generateResponseWithTools
-  -> openai.client.createChatCompletionWithTools
-  -> optional src/ai/tools execution for tour operations
-  -> optional tour.service listing, recommendation, or selection
-  -> reservation.service and reservation.queries for durable bookings
+  -> openai.client resolves required chat tools
+  -> OpenAI streams final assistant text through SSE chunk events with client-disconnect abort support
   -> conversation.service.saveExchange
-  -> { success, data: { conversationId, response, sources }, meta: { toolsCalled, tours, selectedTour, reservation } }
+  -> SSE start/chunk/replace/done/error events
 ```
 
 Recommendation:
@@ -76,9 +73,10 @@ GET /chat/:conversationId
 - `optionalAuth` exists as a placeholder; active routes are currently public.
 - `NODE_ENV=test` bypasses required `OPENAI_API_KEY` and `DATABASE_URL` validation.
 - OpenAI retry behavior lives in `src/utils/asyncRetry.js` and is used for transient OpenAI statuses.
+- Streaming chat passes an `AbortSignal` to OpenAI and skips saving a completed exchange when the client disconnects before completion.
 - RAG loads `src/db/data/birds.json`, flattens family-keyed bird groups into documents, embeds them on first use, stores vectors in memory, and falls back to normal chat if retrieval fails.
 - Tour data, availability, selection, and reservations are stored in PostgreSQL through functions in `003_create_tour_reservations.sql`.
-- Tour listing and recommendation details are returned in the `/chat` response `meta` envelope for frontend rendering; assistant text stays short when tours are present.
+- Tour listing and recommendation details are returned in the `/chat` stream `done.meta` object for frontend rendering; assistant text stays short when tours are present.
 - Tour selection accepts a tour ID or a clear/partial tour name such as `Monteverde tour` before pricing or reservation.
 - Reservation creation can include optional `customerEmail` and `discountCode`; discounts are calculated in `reservation.service.js` and the final total is computed inside the PostgreSQL function.
 - Database writes for chat memory are best-effort; save failures are logged but do not fail the chat response.
