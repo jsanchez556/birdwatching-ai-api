@@ -57,7 +57,7 @@ describe('OpenAIClient tool calling', () => {
                   id: 'call-1',
                   type: 'function',
                   function: {
-                    name: 'checkTourAvailability',
+                    name: 'checkAvailability',
                     arguments: '{"tourId":1}',
                   },
                 },
@@ -94,7 +94,7 @@ describe('OpenAIClient tool calling', () => {
     const conversation = await openaiClient.resolveChatToolCalls(
       [{ role: 'user', content: 'Is tour 1 available?' }],
       {
-        tools: [{ type: 'function', function: { name: 'checkTourAvailability' } }],
+        tools: [{ type: 'function', function: { name: 'checkAvailability' } }],
         executeToolCall,
         metadata,
         usage,
@@ -106,7 +106,7 @@ describe('OpenAIClient tool calling', () => {
       tool_choice: 'auto',
     });
     expect(executeToolCall).toHaveBeenCalledWith(
-      'checkTourAvailability',
+      'checkAvailability',
       { tourId: 1 },
       expect.objectContaining({ conversationId: 'conversation-123' })
     );
@@ -129,7 +129,7 @@ describe('OpenAIClient tool calling', () => {
       {
         role: 'tool',
         tool_call_id: 'call-1',
-        name: 'checkTourAvailability',
+        name: 'checkAvailability',
         content: JSON.stringify({
           success: true,
           tourId: 1,
@@ -167,8 +167,8 @@ describe('OpenAIClient tool calling', () => {
                   id: 'call-1',
                   type: 'function',
                   function: {
-                    name: 'recommendTours',
-                    arguments: '{"location":"Monteverde","limit":2}',
+                    name: 'searchTours',
+                    arguments: '{"location":"Monteverde","recommend":true,"limit":2}',
                   },
                 },
               ],
@@ -194,14 +194,14 @@ describe('OpenAIClient tool calling', () => {
     await openaiClient.resolveChatToolCalls(
       [{ role: 'user', content: 'Recommend tours in Monteverde' }],
       {
-        tools: [{ type: 'function', function: { name: 'recommendTours' } }],
+        tools: [{ type: 'function', function: { name: 'searchTours' } }],
         executeToolCall,
         metadata,
       }
     );
 
     expect(metadata).toMatchObject({
-      toolsCalled: ['recommendTours'],
+      toolsCalled: ['searchTours'],
       tours: [
         {
           tourId: 1,
@@ -258,7 +258,7 @@ describe('OpenAIClient tool calling', () => {
                   id: 'call-1',
                   type: 'function',
                   function: {
-                    name: 'checkTourAvailability',
+                    name: 'checkAvailability',
                     arguments: '{"tourId":1}',
                   },
                 },
@@ -294,7 +294,7 @@ describe('OpenAIClient tool calling', () => {
     const response = await openaiClient.streamChatCompletionWithTools(
       [{ role: 'user', content: 'Is tour 1 available?' }],
       {
-        tools: [{ type: 'function', function: { name: 'checkTourAvailability' } }],
+        tools: [{ type: 'function', function: { name: 'checkAvailability' } }],
         executeToolCall,
         metadata: { conversationId: 'conversation-123' },
         usage,

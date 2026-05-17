@@ -1,4 +1,4 @@
-import openaiClient from './openai.client.js';
+import agentOrchestrator from './orchestrators/agent.orchestrator.js';
 import logger from '../utils/logger.js';
 import HttpError from '../utils/httpError.js';
 import { CHAT_SYSTEM_PROMPT_VERSION } from './prompts/system.prompt.js';
@@ -6,7 +6,7 @@ import { CHAT_SYSTEM_PROMPT_VERSION } from './prompts/system.prompt.js';
 class ChatCompletionService {
   async streamResponseWithTools(messages, metadata = {}, options = {}) {
     const usage = {};
-    const response = await openaiClient.streamChatCompletionWithTools(messages, {
+    const response = await agentOrchestrator.generateResponse(messages, metadata, {
       metadata,
       usage,
       onChunk: options.onChunk,

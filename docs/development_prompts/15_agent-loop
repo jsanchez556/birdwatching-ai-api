@@ -1,0 +1,36 @@
+Implement a simple agent execution loop that can process a generated plan step by step.
+
+Requirements:
+- Accept a plan as an ordered list of tasks.
+- Execute each task sequentially.
+- Store intermediate results from each task so later tasks can reference prior outputs.
+- Support multi-step reasoning by maintaining execution context across the loop.
+- Return a final structured result that includes:
+  - each executed task
+  - the result of each task
+  - any errors encountered
+  - the final accumulated output
+- Keep the implementation simple and readable; avoid introducing a complex orchestration framework unless already present in the codebase.
+- Add or update tests for the execution loop behavior.
+
+Expected conceptual flow:
+
+```js
+const context = {}
+
+for (const task of plan) {
+  const result = await execute(task, context)
+  context[task.id] = result
+}
+
+return {
+  success: true,
+  results: context
+}
+```
+
+Implementation guidance:
+- Place reusable agent execution logic in the appropriate service/module layer.
+- Keep API route handlers thin.
+- Do not expose private reasoning traces to clients; store only useful intermediate task outputs.
+- Handle task failures gracefully, either by stopping execution with a clear error or recording the failure depending on the existing API pattern.

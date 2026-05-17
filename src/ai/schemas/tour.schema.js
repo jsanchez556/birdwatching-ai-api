@@ -2,11 +2,15 @@ export const tourSchema = [
   {
     type: 'function',
     function: {
-      name: 'getAvailableTours',
-      description: 'List available Costa Rica birdwatching tours, optionally filtered by location, difficulty, price, or group size.',
+      name: 'searchTours',
+      description: 'Find or recommend Costa Rica birdwatching tours based on location, budget, difficulty, price, or group size.',
       parameters: {
         type: 'object',
         properties: {
+          query: {
+            type: 'string',
+            description: 'Optional free-text search query or tour/location phrase.',
+          },
           location: {
             type: 'string',
             description: 'Optional preferred location or region, such as Monteverde or Tortuguero.',
@@ -24,35 +28,14 @@ export const tourSchema = [
             type: 'integer',
             description: 'Optional group size so only tours with enough slots are listed.',
           },
-        },
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'recommendTours',
-      description: 'Recommend 2-3 available tours matching user preferences like location, budget, difficulty, and group size.',
-      parameters: {
-        type: 'object',
-        properties: {
-          location: {
-            type: 'string',
-            description: 'Preferred location or region from the conversation.',
-          },
           budget: {
             type: 'string',
             enum: ['budget', 'moderate', 'luxury'],
-            description: 'Budget preference inferred from the user.',
+            description: 'Optional budget preference inferred from the user.',
           },
-          difficulty: {
-            type: 'string',
-            enum: ['easy', 'moderate', 'challenging'],
-            description: 'Difficulty preference inferred from the user.',
-          },
-          participants: {
-            type: 'integer',
-            description: 'Number of participants if known.',
+          recommend: {
+            type: 'boolean',
+            description: 'Use true when the user asks for recommendations or best matching options.',
           },
           limit: {
             type: 'integer',
@@ -65,22 +48,30 @@ export const tourSchema = [
   {
     type: 'function',
     function: {
-      name: 'selectTour',
-      description: 'Validate an explicit tour selection by ID or clear tour name before pricing or reservation.',
+      name: 'calculateTransportation',
+      description: 'Estimate transportation options, route timing, and transportation costs for a tour location.',
       parameters: {
         type: 'object',
         properties: {
-          tourId: {
-            type: 'integer',
-            description: 'The selected tour ID. Prefer this when the user picked from displayed options.',
+          origin: {
+            type: 'string',
+            description: 'Optional pickup origin. Defaults to San Jose.',
+          },
+          destination: {
+            type: 'string',
+            description: 'Tour destination or region, such as Monteverde, Tortuguero, Sarapiqui, or Cerro de la Muerte.',
+          },
+          location: {
+            type: 'string',
+            description: 'Optional selected tour location when destination is not provided.',
           },
           tourName: {
             type: 'string',
-            description: 'The clear selected tour name if the user chose by name and no tour ID is known.',
+            description: 'Optional selected tour name when location is not provided.',
           },
           participants: {
             type: 'integer',
-            description: 'Optional participant count to validate slot availability.',
+            description: 'Optional group size for per-person transportation estimates.',
           },
         },
       },
@@ -89,7 +80,7 @@ export const tourSchema = [
   {
     type: 'function',
     function: {
-      name: 'checkTourAvailability',
+      name: 'checkAvailability',
       description: 'Check available slots and basic details for a selected Costa Rica birdwatching tour.',
       parameters: {
         type: 'object',
@@ -117,7 +108,7 @@ export const tourSchema = [
   {
     type: 'function',
     function: {
-      name: 'calculateTourPrice',
+      name: 'calculatePricing',
       description: 'Calculate total tour price for a selected tour and participant count, including available discounts.',
       parameters: {
         type: 'object',
@@ -151,7 +142,7 @@ export const tourSchema = [
     type: 'function',
     function: {
       name: 'createReservation',
-      description: 'Create a durable reservation only after the user has explicitly selected a tour.',
+      description: 'Create a durable reservation only after the user has explicitly selected a tour. Prefer known customerName and customerEmail from metadata.customerContext when available.',
       parameters: {
         type: 'object',
         properties: {
@@ -173,11 +164,11 @@ export const tourSchema = [
           },
           customerName: {
             type: 'string',
-            description: 'Name for the reservation.',
+            description: 'Name for the reservation. Use metadata.customerContext.customerName when available instead of asking again.',
           },
           customerEmail: {
             type: 'string',
-            description: 'Email address for reservation follow-up.',
+            description: 'Email address for reservation follow-up. Use metadata.customerContext.customerEmail when available instead of asking again.',
           },
           discountCode: {
             type: 'string',

@@ -1,8 +1,19 @@
-import { tourToolHandlers } from './tour-tools.js';
 import { tourSchema } from '../schemas/tour.schema.js';
 import logger from '../../utils/logger.js';
+import searchTours from './searchTours.tool.js';
+import calculateTransportation from './transportation.tool.js';
+import calculatePricing from './calculatePricing.tool.js';
+import checkAvailability from './checkAvailability.tool.js';
+import createReservation from './createReservation.tool.js';
+import { TOOL_EXECUTION_FAILED_MESSAGE } from './tool.executor.js';
 
-const TOOL_EXECUTION_FAILED_MESSAGE = 'I could not complete that action right now. Please try again in a moment.';
+const tourToolHandlers = {
+  searchTours,
+  calculateTransportation,
+  calculatePricing,
+  checkAvailability,
+  createReservation,
+};
 
 const toolGroups = [
   {

@@ -347,6 +347,7 @@ class ReservationService {
           createdAt: reservation.createdAt,
           total_price: reservation.totalPrice,
           totalPrice: reservation.totalPrice,
+          tourTotalPrice: reservation.totalPrice,
           currency: 'USD',
           remainingSlots: tour.availableSlots,
           discountRate: discount.discountRate,

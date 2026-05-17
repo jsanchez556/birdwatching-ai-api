@@ -1,0 +1,68 @@
+## Iteration 1
+
+Add structured debug tracing for agent runs by storing tool execution history and intermediate reasoning summaries.
+
+The trace should make it easy to inspect how the agent reached a final answer, including:
+
+1. The planned sequence of tool calls.
+2. Each tool that was executed.
+3. The input arguments passed to each tool.
+4. The normalized result returned by each tool.
+5. Any important intermediate state derived from tool results.
+6. Errors, retries, or skipped steps when applicable.
+
+Example debug trace:
+
+PLAN:
+1. searchTours
+2. calculateTransportation
+
+TOOL EXECUTION:
+tool: searchTours
+input:
+  location: "Monteverde"
+  date: "2026-06-12"
+result:
+  tours_found: 3
+  selected_tour_id: "tour_123"
+
+TOOL EXECUTION:
+tool: calculateTransportation
+input:
+  tour_id: "tour_123"
+  pickup_location: "San Jose"
+result:
+  transportation_cost: 120
+
+INTERMEDIATE STATE:
+selected_tour_id = "tour_123"
+transportation_cost = 120
+
+The stored trace should be used only for debugging and observability. Do not expose private chain-of-thought or sensitive internal reasoning to end users; store concise reasoning summaries instead.
+
+## Iteration 2
+
+Add robust retry and failure handling for agent tool execution.
+
+The implementation should make tool execution more resilient and easier to debug by:
+
+1. Retrying transient tool failures before returning an error.
+2. Allowing retry behavior to be configured per tool or per execution step.
+3. Recording each failed attempt in the agent debug trace.
+4. Distinguishing retryable failures from permanent failures.
+5. Preserving safe user-facing fallback messages.
+6. Avoiding retries for validation errors, missing required fields, unknown tools, or user-correctable issues.
+7. Stopping or continuing the remaining plan based on each step’s `stopOnFailure` behavior.
+8. Logging retry attempts with conversation ID, tool name, attempt number, and safe error metadata.
+
+Expected behavior:
+
+- If a retryable tool fails temporarily, retry it up to the configured limit.
+- If all attempts fail, return a normalized tool error result.
+- If a tool returns `success: false` with a permanent error code, do not retry.
+- If `stopOnFailure !== false`, skip the remaining planned steps after final failure.
+- Debug traces should show every attempt, final status, errors, and skipped steps.
+
+Do not expose raw stack traces, provider internals, database errors, private chain-of-thought, or sensitive user data to end users. Store concise debugging summaries only.
+
+---

@@ -105,8 +105,14 @@ Tour tool notes:
 - Available tour tools are `getAvailableTours`, `recommendTours`, `selectTour`, `checkTourAvailability`, `calculateTourPrice`, and `createReservation`.
 - Users should receive available or recommended tours through response metadata and explicitly select one before pricing or reservation creation.
 - `selectTour` accepts a selected `tourId` or a clear/partial `tourName`; the service resolves matching tour names before validating availability.
+- Species or topic queries such as `where can I see quetzals?` are passed into tour ranking so direct name/location matches like `Monteverde Quetzal Tour` outrank weak generic availability matches.
+- When availability is checked for a selected tour and participant count is still missing, `done.meta.uiAction` may contain a `participant_count` action with `min`, `max`, and numeric `options` from `1` through `availableSlots`.
+- Once supplied, participant count is persisted in safe response metadata as `meta.participants` and reused for pricing, transportation, final confirmation, and reservation creation; the same booking flow should not ask for participant count again.
+- Before final reservation confirmation, booking flows with an unknown transportation preference return a choice `uiAction` asking whether the customer wants transportation. Choosing `show_transportation` triggers transportation options; choosing `decline_transportation` persists `meta.transportationDeclined: true` for the booking flow.
 - `calculateTourPrice` supports optional `discountCode`. Recognized codes are currently `EARLYBIRD`, `STUDENT`, and `LOCAL`; group discounts can also apply.
 - `createReservation` requires `tourId`, `participants`, and `customerName`; it accepts optional `customerEmail` and `discountCode`.
+- A participant-count reply from that UI action can complete the booking context; the backend then asks for transportation preference when unknown and only calls `createReservation` after transportation is selected or declined and final confirmation is received.
+- Final confirmation accepts the structured `confirm_reservation` action and affirmative text such as `Yes` when the previous assistant metadata contained the final confirmation action.
 - Successful reservation tool results include `id`, `reservationId`, `customer_name`, `customerName`, `customerEmail`, `conversationId`, `tour_id`, `tourId`, `tourName`, `participants`, `confirmation_code`, `confirmationCode`, `created_at`, `createdAt`, `total_price`, `totalPrice`, `currency`, `remainingSlots`, `discountRate`, and `discountReason`.
 - Reservations are associated with the active chat `conversationId` internally.
 - The public stream does not expose raw tool messages, but safe structured tool data is returned in the `done` event `meta` object for frontend rendering.

@@ -39,6 +39,34 @@ function normalizeComparableText(value) {
   return normalizeText(value)?.toLowerCase() || '';
 }
 
+function singularizeToken(token) {
+  return token.length > 3 && token.endsWith('s') ? token.slice(0, -1) : token;
+}
+
+function queryTokens(value) {
+  return normalizeComparableText(value)
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .map(singularizeToken)
+    .filter((token) => token.length > 2 && ![
+      'where',
+      'what',
+      'when',
+      'which',
+      'tour',
+      'tours',
+      'see',
+      'can',
+      'for',
+      'the',
+      'and',
+      'with',
+      'birdwatching',
+      'bird',
+      'watching',
+    ].includes(token));
+}
+
 function tourNameMatchesSelection(tourName, selectedName) {
   const name = normalizeComparableText(tourName);
   const selection = normalizeComparableText(selectedName);
@@ -85,6 +113,7 @@ function formatTour(tour) {
 
 function scoreTour(tour, {
   location,
+  query,
   budget,
   difficulty,
   participants,
@@ -94,6 +123,12 @@ function scoreTour(tour, {
   const requestedLocation = normalizeText(location)?.toLowerCase();
   const requestedDifficulty = normalizeDifficulty(difficulty);
   const requestedBudget = normalizeBudget(budget);
+  const requestedQueryTokens = queryTokens(query);
+  const tourText = normalizeComparableText([
+    tour.name,
+    tour.location,
+    tour.difficulty,
+  ].filter(Boolean).join(' '));
 
   if (requestedLocation) {
     const locationMatches = tour.location.toLowerCase().includes(requestedLocation)
@@ -101,6 +136,15 @@ function scoreTour(tour, {
     if (locationMatches) {
       score += 5;
       reasons.push(`Matches ${location}`);
+    }
+  }
+
+  if (requestedQueryTokens.length > 0) {
+    const matchedTokens = requestedQueryTokens.filter((token) => tourText.includes(token));
+
+    if (matchedTokens.length > 0) {
+      score += matchedTokens.length * 6;
+      reasons.push(`Matches ${matchedTokens.join(', ')}`);
     }
   }
 
@@ -169,6 +213,7 @@ class TourService {
 
   async recommendTours({
     location,
+    query,
     budget,
     difficulty,
     participants,
@@ -195,6 +240,7 @@ class TourService {
     const recommendedTours = tours
       .map((tour) => scoreTour(tour, {
         location,
+        query,
         budget,
         difficulty,
         participants: participantCount,

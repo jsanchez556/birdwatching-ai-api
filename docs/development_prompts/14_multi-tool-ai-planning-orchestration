@@ -1,0 +1,152 @@
+Implement a production-oriented multi-tool AI agent for the Birdwatching platform.
+
+The agent should help users discover tours, estimate logistics, calculate pricing, check availability, and create reservations by reasoning over user intent and calling the appropriate backend tools.
+
+## Available Tools
+
+The agent may use the following tools:
+
+- `searchTours`
+  - Finds relevant birdwatching tours based on user preferences, location, dates, interests, group size, or budget.
+
+- `calculateTransportation`
+  - Estimates transportation options, routes, travel time, and transportation costs when needed.
+
+- `calculatePricing`
+  - Calculates tour pricing, discounts, taxes, fees, totals, and per-person costs.
+
+- `checkAvailability`
+  - Checks whether a selected tour/date/time has availability for the requested group size.
+
+- `createReservation`
+  - Creates a reservation only after the user has clearly confirmed the required booking details.
+
+## Agent Behavior
+
+The AI agent should:
+
+1. Understand the user’s intent and extract relevant booking context.
+2. Decide which tools are needed for the current request.
+3. Execute one or more tools sequentially when outputs from earlier tools are needed by later tools.
+4. Combine tool outputs into a coherent internal result.
+5. Generate a helpful final response for the user.
+6. Ask clarifying questions when required details are missing.
+7. Avoid creating reservations unless the user explicitly confirms.
+8. Handle tool errors gracefully and explain next steps in user-friendly language.
+9. Keep backend tool details internal unless they are useful to the user.
+10. Preserve conversation context across turns where applicable.
+
+## Example Flows
+
+### Tour Discovery
+User asks for birdwatching tours near a location.
+
+Expected behavior:
+- Use `searchTours`
+- Summarize relevant tour options
+- Ask follow-up questions if needed
+
+### Pricing Estimate
+User asks how much a specific tour would cost for a group.
+
+Expected behavior:
+- Use `searchTours` if the tour is not already identified
+- Use `calculatePricing`
+- Return clear pricing breakdown
+
+### Transportation + Pricing
+User asks for the full cost including transportation.
+
+Expected behavior:
+- Use `searchTours` if needed
+- Use `calculateTransportation`
+- Use `calculatePricing`
+- Combine both outputs into a single estimate
+
+### Reservation
+User wants to book a tour.
+
+Expected behavior:
+- Confirm selected tour, date, time, group size, customer details, and pricing
+- Use `checkAvailability`
+- If available, ask for final confirmation
+- Use `createReservation` only after confirmation
+- Return reservation confirmation details
+
+## Architecture
+
+Organize the implementation under `src/ai/` using this structure:
+
+```txt
+src/ai/
+  agents/
+    birdwatching.agent.js
+  planners/
+    tool.planner.js
+  orchestrators/
+    agent.orchestrator.js
+  tools/
+    searchTours.tool.js
+    calculateTransportation.tool.js
+    calculatePricing.tool.js
+    checkAvailability.tool.js
+    createReservation.tool.js
+```
+
+## Architectural Responsibilities
+
+### Planner Layer
+
+The planner should:
+- Analyze user input and conversation state
+- Decide which tool or tools are required
+- Produce an ordered execution plan
+- Include required tool arguments
+- Identify missing information and request clarification when needed
+
+### Tool Executor
+
+The tool executor should:
+- Validate tool names and arguments
+- Execute tools safely
+- Normalize tool outputs
+- Capture tool errors
+- Prevent unknown or unauthorized tool execution
+
+### Orchestration Service
+
+The orchestration service should:
+- Coordinate planning, tool execution, and final response generation
+- Execute tools sequentially according to the plan
+- Pass outputs from earlier tools into later steps when needed
+- Maintain a clear separation between internal tool results and user-facing responses
+- Return a normalized response object for the chat layer
+
+## Implementation Expectations
+
+- Keep the implementation understandable, modular, and production-oriented.
+- Use clear interfaces between planner, executor, tools, and orchestrator.
+- Avoid hardcoding conversational logic directly into controllers.
+- Keep business logic in services/tools where appropriate.
+- Add defensive validation around tool inputs and outputs.
+- Ensure reservation creation is guarded by explicit user confirmation.
+- Include meaningful error handling and logging hooks.
+- Prefer simple, readable code over overly abstract agent frameworks unless already used in the codebase.
+
+## Deliverables
+
+- Agent orchestration implementation
+- Planner implementation
+- Tool executor implementation
+- Tool wrappers for all five available tools
+- Integration point for the existing chat flow
+- Focused tests for:
+  - single-tool execution
+  - multi-tool sequential execution
+  - missing information clarification
+  - reservation confirmation guard
+  - tool failure handling
+
+  ## Iteration 2
+
+  Improve planning reliability and tool selection accuracy.

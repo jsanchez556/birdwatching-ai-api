@@ -82,6 +82,50 @@ describe('TourService', () => {
     });
   });
 
+  it('prioritizes direct query matches such as quetzal tour names', async () => {
+    mockGetAvailableTours.mockResolvedValue([
+      {
+        id: 2,
+        name: 'Sarapiqui Rainforest Tour',
+        price: 95,
+        availableSlots: 3,
+        location: 'Sarapiqui',
+        durationHours: 5,
+        difficulty: 'easy',
+      },
+      {
+        id: 1,
+        name: 'Monteverde Quetzal Tour',
+        price: 120,
+        availableSlots: 5,
+        location: 'Monteverde',
+        durationHours: 4,
+        difficulty: 'moderate',
+      },
+      {
+        id: 9,
+        name: 'Palo Verde Wetlands Birding',
+        price: 105,
+        availableSlots: 9,
+        location: 'Palo Verde National Park',
+        durationHours: 4,
+        difficulty: 'easy',
+      },
+    ]);
+
+    const result = await tourService.recommendTours({
+      query: 'where can i see quetzals?',
+      participants: 1,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.tours[0]).toMatchObject({
+      tourId: 1,
+      name: 'Monteverde Quetzal Tour',
+    });
+    expect(result.tours[0].reasons).toContain('Matches quetzal');
+  });
+
   it('validates explicit tour selection', async () => {
     mockSelectTour.mockResolvedValue({
       success: true,

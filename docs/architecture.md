@@ -86,9 +86,24 @@ The current tour tool set is:
 
 Tour listing and recommendation results are returned through stream `done` event
 metadata, so assistant text can stay short, such as `I found 2 tours that match
-your preferences.` Explicit tour selection can be made by ID or clear/partial
-tour name; service matching resolves names such as `Monteverde tour` to the
-database-backed tour before selection validation.
+your preferences.` Recommendation ranking uses explicit filters plus the
+original user query, so species terms such as `quetzal` can promote matching
+tour names and locations. Explicit tour selection can be made by ID or
+clear/partial tour name; service matching resolves names such as
+`Monteverde tour` to the database-backed tour before selection validation.
+
+When a selected tour is available but participant count is missing, tool
+metadata includes a `participant_count` `uiAction` with numeric options from
+`1` through the selected tour's available slots. A user reply from that action
+can complete the reservation details and is persisted as `participants` in safe
+response metadata for subsequent turns. If transportation preference is still
+unknown, metadata includes a choice `uiAction` asking whether the customer wants
+transportation before final reservation confirmation. A selected transportation
+option is stored as `selectedTransportation`; an explicit no is stored as
+`transportationDeclined`. `createReservation` runs only after the booking
+details are complete, transportation is either selected or declined, and the
+user confirms through the final confirmation action or an affirmative reply to
+that action.
 
 Tour data, availability, and reservations are stored in PostgreSQL. `createReservation`
 normalizes reservation arguments, calculates the best discount from supported

@@ -75,7 +75,7 @@ describe('ChatService streaming orchestration', () => {
       sources: [],
       meta: {
         promptVersions: {
-          chat: '2.1.0',
+          chat: '2.3.0',
         },
       },
     });
@@ -107,7 +107,7 @@ describe('ChatService streaming orchestration', () => {
       sources: [],
       meta: {
         promptVersions: {
-          chat: '2.1.0',
+          chat: '2.3.0',
         },
       },
     });
@@ -172,8 +172,17 @@ describe('ChatService streaming orchestration', () => {
 
     mockBuildConversationContext.mockResolvedValue(conversationMessages);
     mockStreamResponseWithTools.mockImplementation(async (messages, metadata, options) => {
-      metadata.toolsCalled = ['recommendTours'];
+      metadata.toolsCalled = ['searchTours'];
       metadata.tours = tours;
+      metadata.agentDebugTrace = {
+        plan: { tools: ['searchTours'] },
+        executions: [{ tool: 'searchTours' }],
+      };
+      metadata.selectedTransportation = {
+        transportationOption: 'shared_shuttle',
+        origin: 'San Jose',
+        destination: 'Monteverde',
+      };
       await options.onChunk('I found a Monteverde tour.');
       return 'I found a Monteverde tour.';
     });
@@ -187,11 +196,17 @@ describe('ChatService streaming orchestration', () => {
 
     expect(result.meta).toEqual({
       promptVersions: {
-        chat: '2.1.0',
+        chat: '2.3.0',
       },
-      toolsCalled: ['recommendTours'],
+      toolsCalled: ['searchTours'],
       tours,
+      selectedTransportation: {
+        transportationOption: 'shared_shuttle',
+        origin: 'San Jose',
+        destination: 'Monteverde',
+      },
     });
+    expect(result.meta.agentDebugTrace).toBeUndefined();
   });
 
   it('streams the input guardrail refusal without calling OpenAI', async () => {

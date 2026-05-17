@@ -2,9 +2,160 @@ const MAX_CHAT_MESSAGE_LENGTH = 4000;
 const MAX_CONVERSATION_ID_LENGTH = 128;
 const budgets = ['budget', 'moderate', 'luxury'];
 
+function normalizeOptionalText(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function isIsoDate(value) {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function normalizeCustomerContext(rawContext, errors) {
+  if (rawContext === undefined || rawContext === null) {
+    return undefined;
+  }
+
+  if (typeof rawContext !== 'object' || Array.isArray(rawContext)) {
+    errors.push('Customer context must be an object when provided');
+    return undefined;
+  }
+
+  const customerName = normalizeOptionalText(rawContext.customerName);
+  const customerEmail = normalizeOptionalText(rawContext.customerEmail);
+  const itineraryStartDate = normalizeOptionalText(rawContext.itineraryStartDate);
+  const itineraryEndDate = normalizeOptionalText(rawContext.itineraryEndDate);
+
+  if (rawContext.customerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawContext.customerEmail)) {
+    errors.push('Customer email must be a valid email address');
+  }
+
+  if (itineraryStartDate && !isIsoDate(itineraryStartDate)) {
+    errors.push('Itinerary start date must use YYYY-MM-DD format');
+  }
+
+  if (itineraryEndDate && !isIsoDate(itineraryEndDate)) {
+    errors.push('Itinerary end date must use YYYY-MM-DD format');
+  }
+
+  if (itineraryStartDate && itineraryEndDate && itineraryStartDate > itineraryEndDate) {
+    errors.push('Itinerary end date must be on or after the start date');
+  }
+
+  return {
+    customerName,
+    customerEmail,
+    itineraryStartDate,
+    itineraryEndDate,
+  };
+}
+
+function normalizeTourSummary(tour) {
+  if (!tour || typeof tour !== 'object') {
+    return null;
+  }
+
+  const tourId = Number(tour.tourId);
+
+  if (!Number.isInteger(tourId) || tourId <= 0 || typeof tour.name !== 'string') {
+    return null;
+  }
+
+  return {
+    tourId,
+    name: tour.name,
+    location: normalizeOptionalText(tour.location),
+    pricePerPerson: Number(tour.pricePerPerson),
+    availableSlots: Number(tour.availableSlots),
+    durationHours: Number(tour.durationHours),
+    difficulty: normalizeOptionalText(tour.difficulty),
+  };
+}
+
+function normalizeSelectedTransportation(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const transportationOption = normalizeOptionalText(value.transportationOption);
+  const pricePerPerson = Number(value.pricePerPerson);
+  const totalPrice = Number(value.totalPrice);
+
+  if (!['shared_shuttle', 'private_transfer'].includes(transportationOption)) {
+    return undefined;
+  }
+
+  return {
+    transportationOption,
+    ...(normalizeOptionalText(value.origin) ? { origin: normalizeOptionalText(value.origin) } : {}),
+    ...(normalizeOptionalText(value.destination) ? { destination: normalizeOptionalText(value.destination) } : {}),
+    ...(normalizeOptionalText(value.label) ? { label: normalizeOptionalText(value.label) } : {}),
+    ...(Number.isFinite(pricePerPerson) ? { pricePerPerson } : {}),
+    ...(Number.isFinite(totalPrice) ? { totalPrice } : {}),
+    ...(normalizeOptionalText(value.currency) ? { currency: normalizeOptionalText(value.currency) } : {}),
+    ...(normalizeOptionalText(value.estimatedTravelTime)
+      ? { estimatedTravelTime: normalizeOptionalText(value.estimatedTravelTime) }
+      : {}),
+  };
+}
+
+function normalizeConversationContext(rawContext, errors) {
+  if (rawContext === undefined || rawContext === null) {
+    return undefined;
+  }
+
+  if (typeof rawContext !== 'object' || Array.isArray(rawContext)) {
+    errors.push('Conversation context must be an object when provided');
+    return undefined;
+  }
+
+  const metadata = rawContext.recentAssistantMetadata;
+
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    return {};
+  }
+
+  const tours = Array.isArray(metadata.tours)
+    ? metadata.tours.map(normalizeTourSummary).filter(Boolean).slice(0, 5)
+    : undefined;
+
+  return {
+    recentAssistantMetadata: {
+      ...(tours ? { tours } : {}),
+      ...(normalizeTourSummary(metadata.selectedTour)
+        ? { selectedTour: normalizeTourSummary(metadata.selectedTour) }
+        : {}),
+      ...(Number.isInteger(Number(metadata.selectedTourId))
+        ? { selectedTourId: Number(metadata.selectedTourId) }
+        : {}),
+      ...(Number.isInteger(Number(metadata.participants)) && Number(metadata.participants) > 0
+        ? { participants: Number(metadata.participants) }
+        : {}),
+      ...(normalizeSelectedTransportation(metadata.selectedTransportation)
+        ? { selectedTransportation: normalizeSelectedTransportation(metadata.selectedTransportation) }
+        : {}),
+      ...(metadata.transportationDeclined === true
+        ? { transportationDeclined: true }
+        : {}),
+      ...(metadata.uiAction && typeof metadata.uiAction === 'object'
+        ? { uiAction: metadata.uiAction }
+        : {}),
+      ...(Array.isArray(metadata.toolsCalled)
+        ? { toolsCalled: metadata.toolsCalled.filter((tool) => typeof tool === 'string').slice(0, 10) }
+        : {}),
+    },
+  };
+}
+
 export function validateChatBody(req) {
-  const { message, conversationId } = req.body;
+  const {
+    message,
+    conversationId,
+    customerContext,
+    conversationContext,
+  } = req.body;
   const errors = [];
+  const normalizedCustomerContext = normalizeCustomerContext(customerContext, errors);
+  const normalizedConversationContext = normalizeConversationContext(conversationContext, errors);
 
   if (!message || typeof message !== 'string' || !message.trim()) {
     errors.push('Message is required and must be a non-empty string');
@@ -26,6 +177,8 @@ export function validateChatBody(req) {
     value: {
       message: typeof message === 'string' ? message.trim() : message,
       conversationId: typeof conversationId === 'string' ? conversationId.trim() : undefined,
+      customerContext: normalizedCustomerContext,
+      conversationContext: normalizedConversationContext,
     },
   };
 }

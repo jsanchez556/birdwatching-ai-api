@@ -22,14 +22,13 @@ describe('tool registry', () => {
   it('exposes registered schemas and handlers by tool name', () => {
     expect(getToolSchemas()).toBe(availableTools);
     expect(availableTools.map((tool) => tool.function.name)).toEqual([
-      'getAvailableTours',
-      'recommendTours',
-      'selectTour',
-      'checkTourAvailability',
-      'calculateTourPrice',
+      'searchTours',
+      'calculateTransportation',
+      'checkAvailability',
+      'calculatePricing',
       'createReservation',
     ]);
-    expect(hasTool('checkTourAvailability')).toBe(true);
+    expect(hasTool('checkAvailability')).toBe(true);
     expect(hasTool('missingTool')).toBe(false);
   });
 

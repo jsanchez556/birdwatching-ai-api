@@ -48,7 +48,13 @@ function buildToolMeta(metadata = {}) {
     ...(metadata.tours ? { tours: metadata.tours } : {}),
     ...(metadata.selectedTour ? { selectedTour: metadata.selectedTour } : {}),
     ...(metadata.selectedTourId ? { selectedTourId: metadata.selectedTourId } : {}),
+    ...(metadata.participants ? { participants: metadata.participants } : {}),
+    ...(metadata.selectedTransportation ? { selectedTransportation: metadata.selectedTransportation } : {}),
+    ...(metadata.transportationDeclined ? { transportationDeclined: metadata.transportationDeclined } : {}),
+    ...(metadata.pricing ? { pricing: metadata.pricing } : {}),
     ...(metadata.reservation ? { reservation: metadata.reservation } : {}),
+    ...(metadata.uiAction ? { uiAction: metadata.uiAction } : {}),
+    ...(metadata.customerContext ? { customerContext: metadata.customerContext } : {}),
   };
 }
 
@@ -118,6 +124,8 @@ class ChatService {
     const openAiMetadata = {
       clientIP,
       conversationId: activeConversationId,
+      customerContext: options.customerContext,
+      conversationContext: options.conversationContext,
     };
 
     events.onStart?.({

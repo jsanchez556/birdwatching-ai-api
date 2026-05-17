@@ -10,7 +10,12 @@ function isAbortError(error) {
 class ChatController {
   async handleStreamChat(req, res) {
     const clientIP = req.ip || req.connection.remoteAddress;
-    const { message, conversationId } = req.body;
+    const {
+      message,
+      conversationId,
+      customerContext,
+      conversationContext,
+    } = req.body;
     const abortController = new AbortController();
     let streamCompleted = false;
 
@@ -45,6 +50,8 @@ class ChatController {
         },
         {
           signal: abortController.signal,
+          customerContext,
+          conversationContext,
         }
       );
 
