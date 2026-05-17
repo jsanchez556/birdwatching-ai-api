@@ -9,7 +9,7 @@ This is a single-service Node.js API. There is no active `apps/` monorepo layout
 src/
   app.js                 Express app, CORS, JSON parsing, rate limit, routes, errors
   server.js              process entrypoint
-  ai/                    OpenAI client/service, prompts, evaluations, guardrails, schemas, chat tools
+  ai/                    OpenAI client/service, agents, orchestrators, prompts, evaluations, guardrails, schemas, chat tools
   config/                environment parsing and validation
   controllers/           thin HTTP handlers
   db/                    pg pool, migrations, query modules
@@ -45,26 +45,27 @@ HTTP request
 ## Main Flows
 Chat context is assembled from:
 1. `CHAT_SYSTEM_PROMPT`
-2. optional retrieved context from `src/db/data/birds.json` through in-memory vector search
-3. up to 10 recent exchanges from the same `conversation_id`
-4. the current user message
+2. up to 10 recent exchanges from the same `conversation_id`
+3. the current user message
+4. optional retrieved context injected after the base system message
 
 RAG uses:
-1. `embeddings.service.js` to load `src/db/data/birds.json`, flatten family-keyed bird groups into documents, generate OpenAI `text-embedding-3-small` embeddings, and cache embedded documents in memory
-2. `vectorSearch.service.js` to normalize vectors and rank documents with cosine similarity
-3. `rag.service.js` to retrieve top matches and inject a compact system context message into chat prompts
+1. `npm run ingest` to parse supported files from `src/db/data`, chunk them, generate embeddings, and persist documents plus vectors in PostgreSQL
+2. `src/db/retrieval/retrieval.service.js` to embed the user question and retrieve ranked chunks through `src/db/vector/vector.repository.js`
+3. `rag.service.js` to inject a compact system context message and return frontend-safe `sources`
 
 Chat streaming uses:
-1. `openai.client.resolveChatToolCalls(...)` with `tool_choice: 'auto'` and sequential tool calls
+1. `agent.orchestrator.js` to classify the turn, plan booking/tool steps, and request the final assistant response
 2. tool schemas from `src/ai/schemas/tour.schema.js`
 3. registry validation and dispatch through `src/ai/tools/index.js`
-4. thin tour adapters in `src/ai/tools/tour-tools.js`
-5. tour listing, recommendation, and selection in `src/services/tour.service.js`
-6. reservation orchestration in `src/services/reservation.service.js`
-7. PostgreSQL function calls in `src/db/queries/tour.queries.js` and `src/db/queries/reservation.queries.js`
-8. frontend-safe tool metadata collected on the SSE `done` event `meta` object
-9. `openai.client.streamChatCompletion(...)` for the final assistant response
-10. SSE `start`, `chunk`, optional `replace`, `done`, or `error` events
+4. `ToolExecutor` in `src/ai/tools/tool.executor.js` for retries, trace metadata, and frontend-safe `uiAction` metadata
+5. thin tool adapters in `src/ai/tools/*.tool.js`
+6. tour listing and recommendation in `src/services/tour.service.js`
+7. reservation and availability orchestration in `src/services/reservation.service.js`
+8. PostgreSQL function calls in `src/db/queries/tour.queries.js` and `src/db/queries/reservation.queries.js`
+9. frontend-safe tool metadata collected on the SSE `done` event `meta` object
+10. OpenAI streaming for the final assistant response
+11. SSE `start`, `chunk`, optional `replace`, `done`, or `error` events
 
 `POST /chat` is the single active chat response path. It enters
 `chat.controller.handleStreamChat`, then `chat.service.processMessageStream`.
@@ -77,20 +78,20 @@ response is saved to PostgreSQL on a best-effort basis after streaming finishes;
 aborted streams are not saved as completed exchanges.
 
 The current tour tool set is:
-- `getAvailableTours`
-- `recommendTours`
-- `selectTour`
-- `checkTourAvailability`
-- `calculateTourPrice`
+- `searchTours`
+- `calculateTransportation`
+- `checkAvailability`
+- `calculatePricing`
 - `createReservation`
 
-Tour listing and recommendation results are returned through stream `done` event
-metadata, so assistant text can stay short, such as `I found 2 tours that match
-your preferences.` Recommendation ranking uses explicit filters plus the
-original user query, so species terms such as `quetzal` can promote matching
-tour names and locations. Explicit tour selection can be made by ID or
-clear/partial tour name; service matching resolves names such as
-`Monteverde tour` to the database-backed tour before selection validation.
+Tour listing, recommendation, guided action, transportation, pricing, and
+reservation results are returned through stream `done` event metadata, so
+assistant text can stay short, such as `I found 2 tours that match your
+preferences.` Recommendation ranking uses explicit filters plus the original
+user query, so species terms such as `quetzal` can promote matching tour names
+and locations. Explicit tour selection can be made by ID or clear/partial tour
+name; service matching resolves names such as `Monteverde tour` to the
+database-backed tour before selection validation.
 
 When a selected tour is available but participant count is missing, tool
 metadata includes a `participant_count` `uiAction` with numeric options from
@@ -98,19 +99,23 @@ metadata includes a `participant_count` `uiAction` with numeric options from
 can complete the reservation details and is persisted as `participants` in safe
 response metadata for subsequent turns. If transportation preference is still
 unknown, metadata includes a choice `uiAction` asking whether the customer wants
-transportation before final reservation confirmation. A selected transportation
-option is stored as `selectedTransportation`; an explicit no is stored as
+transportation before final reservation confirmation. `calculateTransportation`
+can return a `transportation_selection` action; the selected option is stored as
+`selectedTransportation`, and an explicit no is stored as
 `transportationDeclined`. `createReservation` runs only after the booking
 details are complete, transportation is either selected or declined, and the
 user confirms through the final confirmation action or an affirmative reply to
 that action.
 
-Tour data, availability, and reservations are stored in PostgreSQL. `createReservation`
-normalizes reservation arguments, calculates the best discount from supported
+Tour data, availability, and reservations are stored in PostgreSQL.
+`createReservation` normalizes reservation arguments, reuses frontend-provided
+customer context when available, calculates the best discount from supported
 discount codes or group size, generates a confirmation code, and calls
 `create_tour_reservation(...)`. The database function locks the tour row,
-verifies available slots, updates availability, calculates the final total, and
-inserts the reservation in one database transaction.
+verifies available slots, updates availability, calculates the tour total, and
+inserts the reservation in one database transaction. Transportation totals and
+itinerary dates are added to frontend-safe metadata but do not replace the
+database reservation record.
 
 Future tools should be added as a group with schemas and handlers keyed by the
 OpenAI `function.name`. The registry rejects duplicate names and schemas without
@@ -122,6 +127,8 @@ The `src/ai/` layer is split by responsibility:
 - `prompts/` owns versioned system prompts, user prompt templates, RAG context formatting, and prompt message construction.
 - `schemas/` owns OpenAI tool schemas and structured output schemas.
 - `tools/` owns thin tool adapters and registry validation for model-callable functions.
+- `agents/` owns booking planner behavior and tool execution wiring.
+- `orchestrators/` owns chat turn planning and coordinates tool execution before final response generation.
 - `evaluations/` owns AI observability and evaluation helpers such as token usage and estimated cost accounting.
 - `guardrails/` owns AI safety checks such as prompt-extraction blocking and sensitive-output fallbacks.
 

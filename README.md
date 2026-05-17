@@ -1,6 +1,6 @@
 # Birdwatching AI API
 
-REST API for Costa Rica birdwatching chat, trip recommendations, and conversation memory. The service is a single Node.js/Express app rooted at `src/` and integrates OpenAI with PostgreSQL persistence.
+REST API for Costa Rica birdwatching chat, trip recommendations, conversation memory, RAG retrieval, and tour reservations. The service is a single Node.js/Express app rooted at `src/` and integrates OpenAI with PostgreSQL persistence.
 
 ## Quick Links
 - Project context for AI agents: [CONTEXT.md](./CONTEXT.md)
@@ -13,7 +13,7 @@ REST API for Costa Rica birdwatching chat, trip recommendations, and conversatio
 
 ## Stack
 - Node.js ESM, Express 5
-- OpenAI SDK chat completions and function tool calls
+- OpenAI SDK chat completions, embeddings, and agent tool orchestration
 - PostgreSQL via `pg`
 - Winston JSON logging
 - Jest 30 with Supertest
@@ -71,21 +71,25 @@ Chat requests do not run ingestion, generate embeddings for source documents, or
 write vectors.
 
 ## Tour Tools
-Chat can use OpenAI tool calling for tour listing, tour recommendations,
-explicit tour selection, availability checks, price calculations, discounts, and
-durable reservation creation. Tool schemas and dispatch live in
-`src/ai/schemas/` and `src/ai/tools/`. Tour listing, recommendations,
+Chat can use agent-orchestrated tool calls for tour search and recommendations,
+availability checks, transportation estimates, price calculations, discounts,
+and durable reservation creation. Tool schemas live in `src/ai/schemas/`, tool
+adapters live in `src/ai/tools/`, and the planning/execution layer coordinates
+multi-step booking flows before final assistant text is streamed. Tour listing,
 selection, and reservation state are stored in PostgreSQL through
 `src/db/queries/tour.queries.js` and `src/db/queries/reservation.queries.js`.
 
-Tour listing and recommendation results are returned through the `/chat`
-response `meta` envelope for frontend rendering, while assistant text stays
-short. Explicit selection can use a tour ID or a clear/partial tour name before
-pricing or reservation.
+Tour listing, recommendation, guided action, pricing, transportation, and
+reservation results are returned through the `/chat` stream `done.meta` object
+for frontend rendering, while assistant text stays short when structured
+metadata is available. Explicit selection can use a tour ID or a clear/partial
+tour name before pricing or reservation.
 
-Reservations can include an optional customer email and discount code. The
-backend calculates group or code-based discounts before calling the transactional
-PostgreSQL reservation function.
+Reservations can reuse `customerContext` supplied by the frontend for customer
+name, email, and itinerary dates. They can also include an optional discount
+code and selected transportation metadata. The backend calculates group or
+code-based discounts before calling the transactional PostgreSQL reservation
+function.
 
 ## Scripts
 ```bash

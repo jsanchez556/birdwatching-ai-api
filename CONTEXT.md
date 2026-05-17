@@ -6,7 +6,7 @@ AI-agent entry point for the Birdwatching AI API. Read this file first, then fol
 This repository is a single Express API for Costa Rica birdwatching assistance. It supports:
 - conversational chat with short-term PostgreSQL memory
 - PostgreSQL-backed RAG over ingested `src/db/data` documents using pgvector
-- OpenAI tool calling for tour discovery, selection, availability, pricing, discounts, and durable reservations
+- OpenAI/agent tool calling for tour search, availability, transportation, pricing, discounts, and durable reservations
 - structured trip recommendations from OpenAI function tool calls
 - normalized JSON responses and centralized error handling
 - Railway-oriented deployment with environment-driven configuration
@@ -41,7 +41,7 @@ POST /chat
   -> conversation.service.buildConversationContext
   -> rag.service.buildContext
   -> PostgreSQL pgvector retrieval
-  -> openai.client resolves required chat tools
+  -> agent orchestrator plans and executes required chat tools
   -> OpenAI streams final assistant text through SSE chunk events with client-disconnect abort support
   -> conversation.service.saveExchange
   -> SSE start/chunk/replace/done/error events
@@ -78,9 +78,10 @@ GET /chat/:conversationId
 - Streaming chat passes an `AbortSignal` to OpenAI and skips saving a completed exchange when the client disconnects before completion.
 - RAG reads only from PostgreSQL pgvector during chat. Use `npm run ingest` to ingest supported files from `src/db/data` before relying on RAG context; chat does not chunk documents, generate source embeddings, or write vectors.
 - Tour data, availability, selection, and reservations are stored in PostgreSQL through functions in `003_create_tour_reservations.sql`.
-- Tour listing and recommendation details are returned in the `/chat` stream `done.meta` object for frontend rendering; assistant text stays short when tours are present.
+- Tour listing, recommendation, guided action, pricing, transportation, and reservation details are returned in the `/chat` stream `done.meta` object for frontend rendering; assistant text stays short when structured metadata is present.
 - Tour selection accepts a tour ID or a clear/partial tour name such as `Monteverde tour` before pricing or reservation.
-- Reservation creation can include optional `customerEmail` and `discountCode`; discounts are calculated in `reservation.service.js` and the final total is computed inside the PostgreSQL function.
+- Chat requests can include `customerContext` with name, email, and itinerary dates plus `conversationContext.recentAssistantMetadata` for continuing guided booking flows.
+- Reservation creation can include optional `customerEmail`, `discountCode`, itinerary dates, and selected transportation metadata; discounts are calculated in `reservation.service.js` and the tour total is computed inside the PostgreSQL function.
 - Database writes for chat memory are best-effort; save failures are logged but do not fail the chat response.
 - Chat persistence uses the `conversations` and `messages` tables plus SQL helper functions from `src/db/migrations/002_create_functions.sql`.
 - Reservation persistence uses `tours` and `reservations` plus PostgreSQL functions from `003_create_tour_reservations.sql`; transaction and row locking logic lives in the database function.

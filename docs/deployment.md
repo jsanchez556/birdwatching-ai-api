@@ -36,14 +36,16 @@ The app expects tables and SQL helper functions from:
 src/db/migrations/001_create_chat_interactions.sql
 src/db/migrations/002_create_functions.sql
 src/db/migrations/003_create_tour_reservations.sql
+src/db/migrations/004_create_vector_knowledge.sql
 ```
 
-Run migrations in order with `psql`, Railway shell, or your deployment platform's database tooling before using chat memory or reservations.
+Run migrations in order with `psql`, Railway shell, or your deployment platform's database tooling before using chat memory, reservations, or pgvector-backed RAG.
 
 Production database connections use SSL with `rejectUnauthorized: false`.
 
 ## Runtime Data
-- Bird RAG data loads from `src/db/data/birds.json`.
+- Bird RAG source files live under `src/db/data` and must be ingested with `npm run ingest` after vector migrations run.
+- RAG retrieval reads PostgreSQL `knowledge_documents` and `knowledge_chunks`; chat requests do not ingest files or write vectors.
 - Tour seed data is stored in `003_create_tour_reservations.sql` and runtime tour data is PostgreSQL-backed.
 - Tour reservation availability is durable PostgreSQL state and is updated transactionally by PostgreSQL functions.
 
@@ -78,3 +80,4 @@ Also verify:
 - OpenAI model access is available for `OPENAI_MODEL`
 - OpenAI embedding model access is available for `OPENAI_EMBEDDING_MODEL`
 - all database migrations have run
+- `npm run ingest` has been run after RAG source file changes

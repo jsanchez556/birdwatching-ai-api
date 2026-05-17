@@ -43,18 +43,35 @@ Body:
 ```json
 {
   "message": "Where can I see quetzals?",
-  "conversationId": "optional-existing-id"
+  "conversationId": "optional-existing-id",
+  "customerContext": {
+    "customerName": "Ana Rivera",
+    "customerEmail": "ana@example.com",
+    "itineraryStartDate": "2026-06-01",
+    "itineraryEndDate": "2026-06-03"
+  },
+  "conversationContext": {
+    "recentAssistantMetadata": {
+      "selectedTourId": 1,
+      "participants": 2,
+      "uiAction": { "type": "reservation_confirmation" }
+    }
+  }
 }
 ```
 
 Validation:
 - `message` is required, trimmed, non-empty, max 4000 characters.
 - `conversationId` is optional, trimmed, non-empty when present, max 128 characters.
+- `customerContext` is optional and must be an object when provided.
+- `customerContext.customerEmail` must be a valid email address when present.
+- `customerContext.itineraryStartDate` and `customerContext.itineraryEndDate` must use `YYYY-MM-DD` when present, and the end date must not be earlier than the start date.
+- `conversationContext` is optional and must be an object when provided. The validator only preserves safe recent assistant metadata used by guided booking flows.
 
 SSE events:
 ```text
 event: start
-data: {"conversationId":"conversation-123","sources":[],"meta":{"promptVersions":{"chat":"2.1.0"}}}
+data: {"conversationId":"conversation-123","sources":[],"meta":{"promptVersions":{"chat":"2.3.0"}}}
 
 event: chunk
 data: {"content":"Hello"}
@@ -63,7 +80,7 @@ event: replace
 data: {"content":"I can help with Costa Rica birdwatching, tours, pricing, or reservations. Could you rephrase what you would like to do next?"}
 
 event: done
-data: {"conversationId":"conversation-123","response":"Hello from AI","sources":[],"meta":{"promptVersions":{"chat":"2.1.0"}}}
+data: {"conversationId":"conversation-123","response":"Hello from AI","sources":[],"meta":{"promptVersions":{"chat":"2.3.0"}}}
 
 event: error
 data: {"code":"STREAM_ERROR","message":"Unable to stream chat response right now."}
@@ -72,8 +89,8 @@ data: {"code":"STREAM_ERROR","message":"Unable to stream chat response right now
 Behavior:
 - Creates a UUID conversation ID when none is provided.
 - Loads recent history for that conversation.
-- Retrieves relevant bird knowledge sources from `src/db/data/birds.json` and returns them as `sources` in `start` and `done` events.
-- Resolves any required OpenAI tool calls first, then streams the final assistant text to the client.
+- Retrieves relevant bird knowledge sources from PostgreSQL pgvector-backed knowledge chunks and returns them as `sources` in `start` and `done` events.
+- Runs agent planning and any required tool calls first, then streams the final assistant text to the client.
 - Sends `start` once the conversation ID and source context are known.
 - Sends one or more `chunk` events as assistant text becomes safe to flush.
 - Sends `replace` only when output guardrails replace already-started streamed text with a safe fallback.
@@ -82,10 +99,10 @@ Behavior:
 - If the client disconnects, aborts the OpenAI stream and stops writing SSE events.
 - Saves the exchange to PostgreSQL on a best-effort basis.
 
-Done `meta` may include frontend-ready tour and reservation data collected from tool calls:
+Done `meta` may include frontend-ready tool data collected during agent execution:
 ```json
 {
-  "toolsCalled": ["recommendTours"],
+  "toolsCalled": ["searchTours"],
   "tours": [
     {
       "tourId": 1,
@@ -96,24 +113,30 @@ Done `meta` may include frontend-ready tour and reservation data collected from 
       "durationHours": 4,
       "difficulty": "moderate"
     }
-  ]
+  ],
+  "uiAction": {
+    "type": "tour_selection",
+    "prompt": "Which tour are you interested in?",
+    "options": []
+  }
 }
 ```
 
 Tour tool notes:
 - Tour and reservation state comes from PostgreSQL.
-- Available tour tools are `getAvailableTours`, `recommendTours`, `selectTour`, `checkTourAvailability`, `calculateTourPrice`, and `createReservation`.
+- Available tour tools are `searchTours`, `calculateTransportation`, `checkAvailability`, `calculatePricing`, and `createReservation`.
 - Users should receive available or recommended tours through response metadata and explicitly select one before pricing or reservation creation.
-- `selectTour` accepts a selected `tourId` or a clear/partial `tourName`; the service resolves matching tour names before validating availability.
+- `searchTours` supports broad listing and recommendation mode. `checkAvailability`, `calculatePricing`, and `createReservation` can accept a selected `tourId` or clear/partial `tourName`; the service resolves matching tour names before validating availability.
 - Species or topic queries such as `where can I see quetzals?` are passed into tour ranking so direct name/location matches like `Monteverde Quetzal Tour` outrank weak generic availability matches.
 - When availability is checked for a selected tour and participant count is still missing, `done.meta.uiAction` may contain a `participant_count` action with `min`, `max`, and numeric `options` from `1` through `availableSlots`.
 - Once supplied, participant count is persisted in safe response metadata as `meta.participants` and reused for pricing, transportation, final confirmation, and reservation creation; the same booking flow should not ask for participant count again.
 - Before final reservation confirmation, booking flows with an unknown transportation preference return a choice `uiAction` asking whether the customer wants transportation. Choosing `show_transportation` triggers transportation options; choosing `decline_transportation` persists `meta.transportationDeclined: true` for the booking flow.
-- `calculateTourPrice` supports optional `discountCode`. Recognized codes are currently `EARLYBIRD`, `STUDENT`, and `LOCAL`; group discounts can also apply.
-- `createReservation` requires `tourId`, `participants`, and `customerName`; it accepts optional `customerEmail` and `discountCode`.
+- `calculateTransportation` estimates shared shuttle and private transfer options for supported tour regions and returns a `transportation_selection` `uiAction` when options are available.
+- `calculatePricing` supports optional `discountCode`. Recognized codes are currently `EARLYBIRD`, `STUDENT`, and `LOCAL`; group discounts can also apply.
+- `createReservation` requires participants and customer name in tool arguments; tour selection can be resolved by `tourId`, `tourName`, or location. It accepts optional `customerEmail`, `discountCode`, and itinerary dates from frontend `customerContext`.
 - A participant-count reply from that UI action can complete the booking context; the backend then asks for transportation preference when unknown and only calls `createReservation` after transportation is selected or declined and final confirmation is received.
 - Final confirmation accepts the structured `confirm_reservation` action and affirmative text such as `Yes` when the previous assistant metadata contained the final confirmation action.
-- Successful reservation tool results include `id`, `reservationId`, `customer_name`, `customerName`, `customerEmail`, `conversationId`, `tour_id`, `tourId`, `tourName`, `participants`, `confirmation_code`, `confirmationCode`, `created_at`, `createdAt`, `total_price`, `totalPrice`, `currency`, `remainingSlots`, `discountRate`, and `discountReason`.
+- Successful reservation tool results include `id`, `reservationId`, `customer_name`, `customerName`, `customerEmail`, `conversationId`, `tour_id`, `tourId`, `tourName`, `participants`, `confirmation_code`, `confirmationCode`, `created_at`, `createdAt`, `total_price`, `totalPrice`, `tourTotalPrice`, optional transportation totals, itinerary dates, `currency`, `remainingSlots`, `discountRate`, and `discountReason`.
 - Reservations are associated with the active chat `conversationId` internally.
 - The public stream does not expose raw tool messages, but safe structured tool data is returned in the `done` event `meta` object for frontend rendering.
 

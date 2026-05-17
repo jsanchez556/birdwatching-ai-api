@@ -33,7 +33,7 @@ This backend provides secure API delivery, OpenAI orchestration, PostgreSQL conv
 ## OpenAI Integration
 - Use role-based messages: `system`, `user`, `assistant`.
 - Use prompt versions from `src/ai/prompts/*`.
-- Keep chat tool schemas in `src/ai/schemas/` and execution/adapters in `src/ai/tools/`; do not put tool logic in controllers.
+- Keep chat tool schemas in `src/ai/schemas/`, execution/adapters in `src/ai/tools/`, and planning in `src/ai/orchestrators/`; do not put tool logic in controllers.
 - Keep tool schemas and handler names aligned exactly; `src/ai/tools/index.js` validates duplicate names and missing handlers at startup.
 - Log OpenAI request IDs and token usage when available.
 - Keep high-cardinality or sensitive metadata out of production logs.
@@ -48,18 +48,19 @@ This backend provides secure API delivery, OpenAI orchestration, PostgreSQL conv
 - Preserve conversation isolation by always filtering chat history by `conversation_id`.
 
 ## RAG Data
-- Runtime bird knowledge lives in `src/db/data/birds.json`.
-- The current data shape is a family-keyed object of bird arrays; the embeddings service flattens those groups at runtime.
+- Runtime bird knowledge source files live under `src/db/data`.
+- The current `birds.json` shape is a family-keyed object of bird arrays, and ingestion flattens those groups into durable knowledge documents and chunks.
 - Keep document fields explicit enough for embedding text: `name`, `location`, and `description`; legacy `locations` arrays remain supported by the adapter.
-- Treat embedded vectors as process-local cache, not durable state.
+- Store embedded vectors in PostgreSQL through pgvector; do not write generated embeddings into source files.
+- Run ingestion with `npm run ingest`; chat requests should only retrieve already-ingested knowledge.
 
 ## Tour Tool Data
 - Runtime tour data and availability live in PostgreSQL; do not reintroduce JSON-backed tour state.
 - Reservation availability must use database-backed transactions and row locks inside PostgreSQL functions.
-- Tour discovery should list or recommend database-backed options before pricing or booking.
-- Tour listing/recommendation details should be returned through `/chat` response metadata so the frontend can render cards without duplicating details in assistant text.
+- Tour discovery should search or recommend database-backed options before pricing or booking.
+- Tour listing/recommendation details and guided UI actions should be returned through `/chat` response metadata so the frontend can render controls without duplicating details in assistant text.
 - Tour selection may use a tour ID or clear/partial tour name.
-- Reservation tools may accept optional customer email and discount code, but must require tour ID, participant count, and customer name for creation.
+- Reservation tools may accept optional customer email, itinerary dates, selected transportation, and discount code. They must require participant count and customer name, and should resolve selected tours by ID or clear name/location before creation.
 - Tool results should be structured and safe for the model to summarize naturally.
 - Future tools should register schemas and handlers together so `src/ai/tools/index.js` can validate duplicate names and missing handlers.
 

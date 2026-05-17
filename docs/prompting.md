@@ -7,6 +7,8 @@ Back to [Project Context](../CONTEXT.md). See [Memory](./memory.md) for how chat
 - Versioned system and tool instructions: `src/ai/prompts/system.prompt.js`
 - RAG context formatting: `src/ai/prompts/rag.context.js`
 - User prompt templates: `src/ai/prompts/user.prompt.js`
+- Booking planner and agent wiring: `src/ai/agents/birdwatching.agent.js`
+- Chat orchestration: `src/ai/orchestrators/agent.orchestrator.js`
 - Structured recommendation schema: `src/ai/schemas/recommendation.schema.js`
 - Chat tour tool schemas: `src/ai/schemas/tour.schema.js`
 
@@ -29,33 +31,36 @@ in this order:
 2. recent historical `user` and `assistant` turns from the same conversation
 3. current `user` message
 
-`rag.service.js` then uses the prompt builder to optionally inject a second `system` message immediately
-after the base system prompt. The retrieved context includes top matching bird
-documents from `src/db/data/birds.json`, similarity scores, locations, and
-descriptions. If retrieval or embedding fails, chat continues with the base
-messages and an empty `sources` array.
+`rag.service.js` then uses the prompt builder to optionally inject a second
+`system` message immediately after the base system prompt. The retrieved context
+comes from PostgreSQL pgvector-backed knowledge chunks created by
+`npm run ingest`; source files live under `src/db/data`. Retrieved sources can
+include similarity scores, locations, snippets, and document metadata. If
+retrieval or embedding fails, chat continues with the base messages and an empty
+`sources` array.
 
-`openai.client.resolveChatToolCalls(...)` sends the messages with tour tools
-enabled. When OpenAI returns tool calls, the app executes them and appends
-`tool` role results. `openai.client.streamChatCompletion(...)` then streams the
-final conversational response. Tool calls are executed sequentially so
-selection, pricing, and reservation steps cannot race each other in one model
-turn.
+`agent.orchestrator.js` plans booking/tool steps, `ToolExecutor` executes the
+registered tools with retry and trace metadata, and the final assistant response
+is streamed after tool work is complete. Tool steps are executed in plan order
+so availability, transportation, pricing, and reservation steps cannot race each
+other in one model turn.
 
-Tour discovery should happen before booking: list or recommend database-backed
-tours, return tour details through stream `done` event metadata, ask the user to
-select a specific tour by ID or clear/partial name, then check availability,
-price, and create the reservation. When tours are returned, the assistant text
-should be minimal, for example: `I found 2 tours that match your preferences.`
+Tour discovery should happen before booking: use `searchTours` to list or
+recommend database-backed tours, return tour details through stream `done` event
+metadata, ask the user to select a specific tour by ID or clear/partial name,
+then check availability, estimate transportation when requested, price, and
+create the reservation. When tours are returned, the assistant text should be
+minimal, for example: `I found 2 tours that match your preferences.`
 
 Pricing supports optional discount codes and group discounts. Reservation
-creation requires tour ID, participant count, and customer name, and may include
-customer email and discount code.
+creation requires participant count and customer name, and can resolve the tour
+from ID, clear tour name, or location. Customer name, email, and itinerary dates
+should come from frontend `customerContext` when present.
 
-Reservation tool results include durable confirmation fields. The final
-assistant response should naturally include the reservation ID, customer name,
-tour ID, participant count, confirmation code, created time, total price, and
-any applied discount when present.
+Reservation tool results include durable confirmation fields and optional
+frontend-safe transportation/itinerary metadata. The final assistant response
+should stay short when `meta.reservation` is present because the frontend renders
+the detailed confirmation card.
 
 For non-tour topics such as bird species, birding locations, birdwatching tips,
 or general questions, the chat prompt asks for 1-2 short sentences and no tour
@@ -72,7 +77,7 @@ event `meta` object for debugging and prompt experiments:
 ```json
 {
   "promptVersions": {
-    "chat": "2.1.0"
+    "chat": "2.3.0"
   }
 }
 ```
