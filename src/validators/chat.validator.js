@@ -1,10 +1,10 @@
+import {
+  normalizeOptionalText,
+  normalizeSelectedTransportation,
+} from '../utils/normalizers.js';
+
 const MAX_CHAT_MESSAGE_LENGTH = 4000;
 const MAX_CONVERSATION_ID_LENGTH = 128;
-const budgets = ['budget', 'moderate', 'luxury'];
-
-function normalizeOptionalText(value) {
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
-}
 
 function isIsoDate(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
@@ -71,33 +71,6 @@ function normalizeTourSummary(tour) {
   };
 }
 
-function normalizeSelectedTransportation(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return undefined;
-  }
-
-  const transportationOption = normalizeOptionalText(value.transportationOption);
-  const pricePerPerson = Number(value.pricePerPerson);
-  const totalPrice = Number(value.totalPrice);
-
-  if (!['shared_shuttle', 'private_transfer'].includes(transportationOption)) {
-    return undefined;
-  }
-
-  return {
-    transportationOption,
-    ...(normalizeOptionalText(value.origin) ? { origin: normalizeOptionalText(value.origin) } : {}),
-    ...(normalizeOptionalText(value.destination) ? { destination: normalizeOptionalText(value.destination) } : {}),
-    ...(normalizeOptionalText(value.label) ? { label: normalizeOptionalText(value.label) } : {}),
-    ...(Number.isFinite(pricePerPerson) ? { pricePerPerson } : {}),
-    ...(Number.isFinite(totalPrice) ? { totalPrice } : {}),
-    ...(normalizeOptionalText(value.currency) ? { currency: normalizeOptionalText(value.currency) } : {}),
-    ...(normalizeOptionalText(value.estimatedTravelTime)
-      ? { estimatedTravelTime: normalizeOptionalText(value.estimatedTravelTime) }
-      : {}),
-  };
-}
-
 function normalizeConversationContext(rawContext, errors) {
   if (rawContext === undefined || rawContext === null) {
     return undefined;
@@ -152,6 +125,7 @@ export function validateChatBody(req) {
     conversationId,
     customerContext,
     conversationContext,
+    role,
   } = req.body;
   const errors = [];
   const normalizedCustomerContext = normalizeCustomerContext(customerContext, errors);
@@ -179,34 +153,7 @@ export function validateChatBody(req) {
       conversationId: typeof conversationId === 'string' ? conversationId.trim() : undefined,
       customerContext: normalizedCustomerContext,
       conversationContext: normalizedConversationContext,
-    },
-  };
-}
-
-export function validateRecommendationBody(req) {
-  const { location, budget, days } = req.body;
-  const errors = [];
-
-  if (!location || typeof location !== 'string' || !location.trim()) {
-    errors.push('Location is required and must be a non-empty string');
-  }
-
-  if (!budget || typeof budget !== 'string' || !budgets.includes(budget.toLowerCase())) {
-    errors.push('Budget is required and must be one of: budget, moderate, luxury');
-  }
-
-  const daysNumber = Number(days);
-  if (!Number.isInteger(daysNumber) || daysNumber <= 0 || daysNumber > 30) {
-    errors.push('Days is required and must be an integer between 1 and 30');
-  }
-
-  return {
-    message: 'Invalid recommendation payload',
-    errors,
-    value: {
-      location: typeof location === 'string' ? location.trim() : location,
-      budget: typeof budget === 'string' ? budget.toLowerCase() : budget,
-      days: daysNumber,
+      role: role === 'visitor' ? 'visitor' : undefined,
     },
   };
 }

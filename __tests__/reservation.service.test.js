@@ -3,10 +3,12 @@ import { jest } from '@jest/globals';
 const mockGetTourById = jest.fn();
 const mockGetAvailableTours = jest.fn();
 const mockCreateReservation = jest.fn();
+const mockGetLatestByConversationId = jest.fn();
 
 await jest.unstable_mockModule('../src/db/queries/reservation.queries.js', () => ({
   default: {
     createReservation: mockCreateReservation,
+    getLatestByConversationId: mockGetLatestByConversationId,
   },
 }));
 
@@ -99,6 +101,7 @@ describe('ReservationService', () => {
         confirmationCode: 'BW-ABC123',
         createdAt,
         totalPrice: 240,
+        metadata: {},
       },
       tour: {
         id: 1,
@@ -117,16 +120,22 @@ describe('ReservationService', () => {
     expect(result).toMatchObject({
       success: true,
       id: 42,
-      customer_name: 'Ana Gomez',
+      reservationId: 42,
+      customerName: 'Ana Gomez',
       conversationId: 'conversation-123',
-      tour_id: 1,
+      tourId: 1,
       participants: 2,
-      confirmation_code: 'BW-ABC123',
-      created_at: createdAt,
-      total_price: 240,
+      confirmationCode: 'BW-ABC123',
+      createdAt,
       totalPrice: 240,
+      tourTotalPrice: 240,
       remainingSlots: 3,
     });
+    expect(result).not.toHaveProperty('customer_name');
+    expect(result).not.toHaveProperty('tour_id');
+    expect(result).not.toHaveProperty('confirmation_code');
+    expect(result).not.toHaveProperty('created_at');
+    expect(result).not.toHaveProperty('total_price');
     expect(mockCreateReservation).toHaveBeenCalledWith(expect.objectContaining({
       tourId: 1,
       participants: 2,
@@ -136,6 +145,84 @@ describe('ReservationService', () => {
       discountRate: 0,
       confirmationCode: expect.stringMatching(/^BW-/),
     }));
+  });
+
+  it('passes transportation metadata for reservation context without duplicating it in the reservation result', async () => {
+    const createdAt = new Date('2026-05-09T10:00:00.000Z');
+    const transportation = {
+      transportationOption: 'shared_shuttle',
+      label: 'Shared shuttle',
+      origin: 'San Jose',
+      destination: 'Monteverde',
+      pricePerPerson: 65,
+      totalPrice: 130,
+      currency: 'USD',
+    };
+
+    mockGetTourById.mockResolvedValue({
+      id: 1,
+      name: 'Monteverde Quetzal Tour',
+      price: 120,
+      availableSlots: 5,
+      location: 'Monteverde',
+      durationHours: 4,
+      difficulty: 'moderate',
+    });
+    mockCreateReservation.mockResolvedValue({
+      success: true,
+      reservation: {
+        id: 42,
+        userId: 7,
+        customerName: 'Ana Gomez',
+        customerEmail: 'ana@example.com',
+        conversationId: 'conversation-123',
+        tourId: 1,
+        participants: 2,
+        confirmationCode: 'BW-ABC123',
+        createdAt,
+        totalPrice: 240,
+        metadata: {
+          transportation,
+          itineraryStartDate: '2026-06-01',
+          itineraryEndDate: '2026-06-03',
+        },
+      },
+      tour: {
+        id: 1,
+        name: 'Monteverde Quetzal Tour',
+        availableSlots: 3,
+      },
+    });
+
+    const result = await reservationService.createReservation({
+      tourId: 1,
+      participants: 2,
+      customerName: 'Ana Gomez',
+      customerEmail: 'ana@example.com',
+      conversationId: 'conversation-123',
+    }, {
+      userId: 7,
+      selectedTransportation: transportation,
+      customerContext: {
+        itineraryStartDate: '2026-06-01',
+        itineraryEndDate: '2026-06-03',
+      },
+    });
+
+    expect(mockCreateReservation).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: {
+        transportation,
+        itineraryStartDate: '2026-06-01',
+        itineraryEndDate: '2026-06-03',
+      },
+    }));
+    expect(result).toMatchObject({
+      itineraryStartDate: '2026-06-01',
+      itineraryEndDate: '2026-06-03',
+    });
+    expect(result).not.toHaveProperty('transportation');
+    expect(result).not.toHaveProperty('transportationPrice');
+    expect(result).not.toHaveProperty('grandTotalPrice');
   });
 
   it('creates a Cerro de la Muerte reservation by location when no tour ID is provided', async () => {
@@ -220,6 +307,58 @@ describe('ReservationService', () => {
     expect(mockCreateReservation).not.toHaveBeenCalled();
   });
 
+  it('passes authenticated user ID into reservation persistence', async () => {
+    const createdAt = new Date('2026-05-09T10:00:00.000Z');
+    mockGetTourById.mockResolvedValue({
+      id: 1,
+      name: 'Monteverde Quetzal Tour',
+      price: 120,
+      availableSlots: 5,
+      location: 'Monteverde',
+      durationHours: 4,
+      difficulty: 'moderate',
+    });
+    mockCreateReservation.mockResolvedValue({
+      success: true,
+      reservation: {
+        id: 45,
+        userId: 7,
+        customerName: 'Ana Gomez',
+        customerEmail: 'ana@example.com',
+        conversationId: 'conversation-123',
+        tourId: 1,
+        participants: 2,
+        confirmationCode: 'BW-USER',
+        createdAt,
+        totalPrice: 240,
+      },
+      tour: {
+        id: 1,
+        name: 'Monteverde Quetzal Tour',
+        availableSlots: 3,
+      },
+    });
+
+    const result = await reservationService.createReservation({
+      tourId: 1,
+      participants: 2,
+      customerName: 'Ana Gomez',
+      customerEmail: 'ana@example.com',
+      conversationId: 'conversation-123',
+    }, {
+      userId: 7,
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      userId: 7,
+      customerEmail: 'ana@example.com',
+    });
+    expect(mockCreateReservation).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 7,
+    }));
+  });
+
   it('passes metadata conversation ID into reservation persistence', async () => {
     const createdAt = new Date('2026-05-09T10:00:00.000Z');
     mockGetTourById.mockResolvedValue({
@@ -262,6 +401,38 @@ describe('ReservationService', () => {
     expect(mockCreateReservation).toHaveBeenCalledWith(expect.objectContaining({
       conversationId: 'conversation-456',
     }));
+  });
+
+  it('loads latest reservation for a conversation without embedded transportation metadata', async () => {
+    const createdAt = new Date('2026-05-09T10:00:00.000Z');
+    mockGetLatestByConversationId.mockResolvedValue({
+      reservation: {
+        id: 42,
+        userId: 7,
+        customerName: 'Ana Gomez',
+        customerEmail: 'ana@example.com',
+        conversationId: 'conversation-123',
+        tourId: 1,
+        participants: 2,
+        confirmationCode: 'BW-ABC123',
+        createdAt,
+        totalPrice: 240,
+        metadata: {},
+      },
+      tour: {
+        id: 1,
+        name: 'Monteverde Quetzal Tour',
+        availableSlots: 3,
+      },
+    });
+
+    await expect(reservationService.getLatestReservationForConversation('conversation-123', {
+      userId: '7',
+    })).resolves.toMatchObject({
+      reservationId: 42,
+      conversationId: 'conversation-123',
+    });
+    expect(mockGetLatestByConversationId).toHaveBeenCalledWith('conversation-123', 7);
   });
 
   it('returns structured validation errors', async () => {

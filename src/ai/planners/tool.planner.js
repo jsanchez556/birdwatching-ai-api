@@ -1,3 +1,5 @@
+import { normalizeTextOrEmpty } from '../../utils/normalizers.js';
+
 const TOUR_KEYWORDS = [
   'tour',
   'birdwatching',
@@ -21,14 +23,10 @@ const CONFIRMATION_KEYWORDS = [
   'create the reservation',
 ];
 
-function normalizeText(value) {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
 function getPriorUserMessage(messages = []) {
   const userMessages = messages
     .filter((message) => message?.role === 'user')
-    .map((message) => normalizeText(message.content))
+    .map((message) => normalizeTextOrEmpty(message.content))
     .filter(Boolean);
 
   return userMessages.length > 1 ? userMessages[userMessages.length - 2] : '';
@@ -44,7 +42,7 @@ function getRecentUserMessages(messages = []) {
   return [...messages]
     .reverse()
     .filter((message) => message?.role === 'user')
-    .map((message) => normalizeText(message.content))
+    .map((message) => normalizeTextOrEmpty(message.content))
     .filter(Boolean);
 }
 
@@ -68,13 +66,13 @@ function isAffirmativeConfirmation(text, context = {}) {
   return Boolean(
     hasConfirmAction
       && /^(yes|yeah|yep|sure|ok|okay|confirm|please confirm|yes book it|yes,? book it|go ahead|proceed)$/i
-        .test(normalizeText(text))
+        .test(normalizeTextOrEmpty(text))
   );
 }
 
 function extractParticipantActionSelection(text, context = {}) {
   const action = context.recentMetadata?.uiAction;
-  const match = normalizeText(text).match(/^\d{1,2}$/);
+  const match = normalizeTextOrEmpty(text).match(/^\d{1,2}$/);
 
   if (action?.type !== 'participant_count' || !match) {
     return undefined;
@@ -99,7 +97,7 @@ function extractTourId(text) {
 }
 
 function extractTourSelectionText(message) {
-  const match = normalizeText(message).match(/\b(?:i choose|select|pick|book|reserve)\s+(?:tour\s+\d+\s*:?\s*)?(.+)$/i);
+  const match = normalizeTextOrEmpty(message).match(/\b(?:i choose|select|pick|book|reserve)\s+(?:tour\s+\d+\s*:?\s*)?(.+)$/i);
   return match?.[1]?.trim();
 }
 
@@ -121,7 +119,7 @@ function extractLocation(text) {
 }
 
 function normalizeForMatch(value) {
-  return normalizeText(value).toLowerCase().replace(/[_-]+/g, ' ');
+  return normalizeTextOrEmpty(value).toLowerCase().replace(/[_-]+/g, ' ');
 }
 
 function extractTransportationSelection(message, context = {}) {
@@ -171,7 +169,7 @@ function extractTransportationSelection(message, context = {}) {
 
 function extractTransportationDecline(message) {
   return /\b(no transportation|no transport|own car|drive myself|driving myself|i'?ll drive|do not need (?:transport|transportation)|don'?t need (?:transport|transportation)|have my own (?:transport|transportation))\b/i
-    .test(normalizeText(message));
+    .test(normalizeTextOrEmpty(message));
 }
 
 function hasTransportationPreference(context = {}) {
@@ -276,7 +274,7 @@ function hasRequiredReservationDetails(args) {
 }
 
 function parseGuidedIntent(message, context = {}) {
-  const normalized = normalizeText(message).toLowerCase();
+  const normalized = normalizeTextOrEmpty(message).toLowerCase();
 
   if (/^show_transportation$|^show transportation$|^yes,? show transportation$|^yes transportation$|^i need transportation$|^i need a shuttle$/.test(normalized)) {
     return { intent: 'show_transportation' };
@@ -286,7 +284,7 @@ function parseGuidedIntent(message, context = {}) {
     return { intent: 'decline_transportation' };
   }
 
-  if (/^i choose .*(shared shuttle|private transfer)/i.test(normalizeText(message))) {
+  if (/^i choose .*(shared shuttle|private transfer)/i.test(normalizeTextOrEmpty(message))) {
     return { intent: 'select_transportation' };
   }
 
@@ -308,13 +306,13 @@ function parseGuidedIntent(message, context = {}) {
 
   const selectionId = extractTourId(message);
 
-  if (selectionId && /^i choose tour\b/i.test(normalizeText(message))) {
+  if (selectionId && /^i choose tour\b/i.test(normalizeTextOrEmpty(message))) {
     return { intent: 'select_tour', tourId: selectionId };
   }
 
   const selectedTourText = extractTourSelectionText(message);
 
-  if (selectedTourText && /^i choose\b|^select\b|^pick\b/i.test(normalizeText(message))) {
+  if (selectedTourText && /^i choose\b|^select\b|^pick\b/i.test(normalizeTextOrEmpty(message))) {
     return { intent: 'select_tour', tourName: selectedTourText };
   }
 
@@ -346,10 +344,10 @@ function findRecentTour(context = {}, tourId, selectedText) {
 }
 
 function isAffirmativeDetailsRequest(text, context = {}) {
-  const lastAssistant = normalizeText(getLastAssistantMessage(context.messages)).toLowerCase();
-  const priorUserMessage = normalizeText(getPriorUserMessage(context.messages));
+  const lastAssistant = normalizeTextOrEmpty(getLastAssistantMessage(context.messages)).toLowerCase();
+  const priorUserMessage = normalizeTextOrEmpty(getPriorUserMessage(context.messages));
   const isAffirmative = /^(yes|yeah|yep|sure|ok|okay|please|sounds good|tell me more|more details|details)$/i
-    .test(normalizeText(text));
+    .test(normalizeTextOrEmpty(text));
 
   return Boolean(
     isAffirmative
@@ -360,14 +358,14 @@ function isAffirmativeDetailsRequest(text, context = {}) {
 
 export class ToolPlanner {
   plan({ message, context = {} } = {}) {
-    const originalMessage = normalizeText(message);
+    const originalMessage = normalizeTextOrEmpty(message);
     const guidedIntent = parseGuidedIntent(originalMessage, context);
     const detailsFollowUp = guidedIntent?.intent === 'show_details'
       || isAffirmativeDetailsRequest(originalMessage, context);
     const planningMessage = detailsFollowUp || guidedIntent?.intent === 'proceed_booking'
       ? getPriorUserMessage(context.messages)
       : originalMessage;
-    const text = normalizeText(planningMessage).toLowerCase();
+    const text = normalizeTextOrEmpty(planningMessage).toLowerCase();
     const extracted = {
       participants: extractParticipants(planningMessage)
         || extractParticipantActionSelection(originalMessage, context),

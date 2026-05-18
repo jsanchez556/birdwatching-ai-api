@@ -1,9 +1,7 @@
 export const CHAT_SYSTEM_PROMPT_VERSION = '2.3.0';
-export const RECOMMENDATION_PROMPT_VERSION = '1.0.0';
 
 const PROMPT_VERSIONS = {
   chat: CHAT_SYSTEM_PROMPT_VERSION,
-  recommendation: RECOMMENDATION_PROMPT_VERSION,
 };
 
 const CHAT_BASE_PROMPT = `You are a birdwatching expert in Costa Rica who helps users discover and book tours.
@@ -60,10 +58,6 @@ const CHAT_TONE_PROMPT = `Tone:
 - Preserve conversation context such as earlier location, budget, group size, and difficulty preferences.
 - Always give clear next steps and say what information you still need.`;
 
-const RECOMMENDATION_SYSTEM_PROMPT = `You are a birdwatching expert in Costa Rica.
-Return practical birdwatching recommendations that match the user's location, budget, and trip duration.
-Prefer specific Costa Rica locations, realistic timing, and beginner-friendly explanations.`;
-
 const systemPrompts = {
   chat: {
     [CHAT_SYSTEM_PROMPT_VERSION]: [
@@ -72,9 +66,6 @@ const systemPrompts = {
       CHAT_NON_TOUR_PROMPT,
       CHAT_TONE_PROMPT,
     ].join('\n\n'),
-  },
-  recommendation: {
-    [RECOMMENDATION_PROMPT_VERSION]: RECOMMENDATION_SYSTEM_PROMPT,
   },
 };
 
@@ -99,4 +90,3 @@ export function getSystemPrompt(promptName = 'chat', version = getPromptVersion(
 }
 
 export const CHAT_SYSTEM_PROMPT = getSystemPrompt('chat');
-export const RECOMMENDATION_PROMPT = getSystemPrompt('recommendation');

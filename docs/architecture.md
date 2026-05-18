@@ -124,18 +124,13 @@ matching handlers.
 ## AI Layer
 The `src/ai/` layer is split by responsibility:
 - `openai.client.js` and `openai.service.js` own provider calls, retry use, tool-call loops, and chat response handling.
-- `prompts/` owns versioned system prompts, user prompt templates, RAG context formatting, and prompt message construction.
-- `schemas/` owns OpenAI tool schemas and structured output schemas.
+- `prompts/` owns versioned system prompts, RAG context formatting, and prompt message construction.
+- `schemas/` owns OpenAI tool schemas.
 - `tools/` owns thin tool adapters and registry validation for model-callable functions.
 - `agents/` owns booking planner behavior and tool execution wiring.
 - `orchestrators/` owns chat turn planning and coordinates tool execution before final response generation.
 - `evaluations/` owns AI observability and evaluation helpers such as token usage and estimated cost accounting.
 - `guardrails/` owns AI safety checks such as prompt-extraction blocking and sensitive-output fallbacks.
-
-Recommendations use:
-1. `RECOMMENDATION_PROMPT`
-2. a generated user message with location, budget, and days
-3. `recommendationSchema` as a forced OpenAI function tool response
 
 ## Persistence
 The `conversations` table stores one row per conversation:

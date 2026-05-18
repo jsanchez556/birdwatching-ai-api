@@ -1,0 +1,498 @@
+Implement full authentication for the Birdwatching AI platform across the backend and frontend.
+
+Use the existing project context and architecture rules:
+
+- Backend context: `/home/jose/Documents/projects/birdwatching-ai-api/CONTEXT.md`
+- Frontend context: `/home/jose/Documents/projects/birdwatching-ai-ui/CONTEXT.md`
+
+## Goal
+
+Add email/password authentication so users can sign up, log in, persist a session in the browser, and access protected AI features only when authenticated.
+
+## Backend Requirements
+
+Implement authentication in the Express API using the existing controller-service-query architecture.
+
+### Endpoints
+
+Add:
+
+```http
+POST /auth/signup
+POST /auth/login
+```
+
+Both endpoints should return the normalized backend envelope:
+
+```js
+{ success, data, meta }
+```
+
+### Signup
+
+`POST /auth/signup`
+
+Accept:
+
+```js
+{
+  "email": "user@example.com",
+  "password": "secure-password",
+  "name": "Optional Name"
+}
+```
+
+Behavior:
+
+- Validate email and password.
+- Normalize email before persistence.
+- Reject duplicate emails with a safe user-facing error.
+- Hash passwords with `bcrypt`.
+- Create a user record through a user repository/query layer.
+- Return a JWT and safe user profile data.
+- Never return password hashes.
+
+### Login
+
+`POST /auth/login`
+
+Accept:
+
+```js
+{
+  "email": "user@example.com",
+  "password": "secure-password"
+}
+```
+
+Behavior:
+
+- Validate request body.
+- Look up user by normalized email.
+- Compare password with `bcrypt`.
+- Return a JWT and safe user profile data on success.
+- Use a generic invalid-credentials error for failed login attempts.
+
+### JWT Authentication
+
+Add JWT support using environment-driven configuration.
+
+Required environment variables:
+
+```bash
+JWT_SECRET=
+JWT_EXPIRES_IN=7d
+```
+
+Behavior:
+
+- Sign tokens with user ID and email.
+- Verify tokens from the `Authorization: Bearer <token>` header.
+- Attach authenticated user data to `req.user`.
+- Keep JWT logic isolated in auth utilities/services.
+
+### Protected AI Endpoints
+
+Protect the active AI endpoints with auth middleware:
+
+- `POST /chat`
+- `GET /chat/latest`
+
+Use a clean `requireAuth` middleware. If an `optionalAuth` placeholder already exists, either replace or extend it cleanly.
+
+### Backend Architecture
+
+Follow the existing project structure:
+
+- `src/routes/auth.routes.js`
+- `src/controllers/auth.controller.js`
+- `src/services/auth.service.js`
+- `src/db/queries/user.queries.js`
+- `src/middleware/auth.middleware.js`
+- `src/validators/auth.validators.js`
+- shared JWT/password helpers where appropriate
+
+Do not put auth logic directly in route files or AI services.
+
+### Database
+
+Add a migration for users.
+
+Suggested fields:
+
+```sql
+id
+email
+name
+password_hash
+created_at
+updated_at
+```
+
+Requirements:
+
+- Unique email constraint.
+- Parameterized queries only.
+- No plaintext passwords.
+- Keep database access inside the query/repository layer.
+
+### Backend Tests
+
+Add focused tests for:
+
+- Successful signup.
+- Duplicate signup.
+- Successful login.
+- Invalid login.
+- Missing/invalid JWT.
+- Protected endpoint rejects unauthenticated requests.
+- Protected endpoint accepts authenticated requests.
+
+Run:
+
+```bash
+npm test
+```
+
+Update backend docs as needed:
+
+- `docs/api.md`
+- `docs/deployment.md`
+- `docs/backend-guidelines.md`, only if conventions change
+
+## Frontend Requirements
+
+Implement authentication in the React/Vite UI while preserving the current chat experience.
+
+### Pages / Views
+
+The app currently has no React Router dependency. Choose the smallest clean approach that fits the existing app.
+
+Add:
+
+- Login view
+- Signup view
+- Authenticated chat view
+
+Users should be able to:
+
+- Sign up.
+- Log in.
+- Log out.
+- Stay logged in after refresh.
+- Access chat only when authenticated.
+
+### Auth API Layer
+
+Add an API adapter separate from chat:
+
+- `src/api/authApi.js`
+
+Support:
+
+```js
+signup({ email, password, name })
+login({ email, password })
+```
+
+Requirements:
+
+- Use the backend envelope `{ success, data, meta }`.
+- Validate response shapes at the API boundary.
+- Surface safe backend errors with friendly fallbacks.
+- Keep fetch calls out of components.
+
+### Auth Context / Hook
+
+Add auth state orchestration in hooks/context:
+
+- `src/hooks/useAuth.js` or `src/context/AuthContext.jsx`
+
+Track:
+
+```js
+{
+  user,
+  token,
+  isAuthenticated,
+  isLoading,
+  error
+}
+```
+
+Provide:
+
+```js
+login()
+signup()
+logout()
+```
+
+### Token Persistence
+
+Persist the JWT and safe user profile in `localStorage`.
+
+Requirements:
+
+- Guard all `localStorage` reads/writes with `try/catch`.
+- Do not persist passwords or sensitive backend secrets.
+- Clear persisted auth data on logout.
+- Restore auth state on refresh.
+
+### Authenticated Chat Requests
+
+Update `src/api/chatApi.js` so authenticated requests include:
+
+```http
+Authorization: Bearer <token>
+```
+
+Apply this to:
+
+- streaming `POST /chat`
+- `GET /chat/latest`
+
+Keep API URL behavior unchanged:
+
+- relative `/chat` in local dev through Vite proxy
+- `VITE_API_URL` in production
+
+### UI Requirements
+
+- Keep `src/App.jsx` as composition glue.
+- Keep presentational auth UI in `src/components/`.
+- Use existing CSS token patterns in `src/index.css`.
+- Mobile-first layout.
+- Accessible labels, form errors, and loading states.
+- Preserve the existing chat UI, customer context flow, streaming behavior, cancellation, and local conversation persistence.
+
+### Frontend Tests
+
+Add React Testing Library tests for:
+
+- Login form submission.
+- Signup form submission.
+- Auth state restoration from localStorage.
+- Logout clears auth state.
+- Chat API sends bearer token.
+- Unauthenticated users see auth views instead of chat.
+
+Run:
+
+```bash
+npm test
+```
+
+Update frontend docs as needed:
+
+- `docs/api.md`
+- `docs/memory.md`
+- `docs/frontend-guidelines.md`, only if conventions change
+
+## Security Expectations
+
+- Never expose password hashes to the frontend.
+- Never store plaintext passwords.
+- Never store backend secrets in frontend code or `VITE_` variables.
+- Use generic invalid-login errors.
+- Keep auth middleware reusable.
+- Keep protected routes explicit.
+- Avoid leaking whether an email exists during login.
+- Validate request bodies before service logic.
+
+## Acceptance Criteria
+
+The implementation is complete when:
+
+1. A new user can sign up from the frontend.
+2. The same user can log in from the frontend.
+3. The frontend persists the token and user profile across refresh.
+4. The user can log out and clear local auth state.
+5. Unauthenticated requests to protected AI endpoints are rejected.
+6. Authenticated chat and conversation hydration work with the bearer token.
+7. Backend and frontend tests pass with `npm test`.
+8. Relevant docs and environment examples are updated.
+
+---
+
+
+## ITERATION 2
+
+Associate conversations and reservations with authenticated users across the Birdwatching AI backend and frontend.
+
+Use the existing auth implementation and project architecture.
+
+## Goal
+
+When a user is authenticated, all chat conversations and reservations should be tied to that user. Users must only be able to load or continue conversations and reservations that belong to them. The frontend should use the logged-in user profile as the default customer context source.
+
+## Backend Requirements
+
+### Database
+
+Add migrations to support user ownership:
+
+- Add `user_id` to `conversations`
+- Add `user_id` to `reservations`
+
+Requirements:
+
+- `user_id` should reference `users(id)`
+- Preserve existing rows safely with nullable or staged migration behavior
+- Add indexes for ownership lookups:
+  - `conversations(user_id)`
+  - `reservations(user_id)`
+- Avoid breaking existing conversation/reservation functions unexpectedly
+
+### Conversation Ownership
+
+Update conversation persistence and retrieval so authenticated requests associate conversations with `req.user.id`.
+
+For `POST /chat`:
+
+- Use authenticated `req.user.id` as the conversation owner
+- When creating or saving a conversation, persist `user_id`
+- When continuing an existing `conversationId`, verify:
+  - conversation does not exist yet, or
+  - conversation belongs to the authenticated user
+- Reject access to another user’s conversation with `403 FORBIDDEN` or `404 NOT_FOUND`, whichever matches existing API conventions
+
+### Reservation Ownership
+
+Update reservation creation so authenticated users are linked to reservations.
+
+Requirements:
+
+- Pass authenticated `userId` into reservation creation flow
+- Persist `user_id` on reservations
+- When reading, rendering, or returning reservation metadata, ensure reservation data belongs to the authenticated user or the active owned conversation
+- Do not expose another user’s reservation metadata through chat continuation or hydration
+
+### Authenticated Customer Context
+
+When `req.user` exists:
+
+- Prefer logged-in user profile data for customer identity
+- Use authenticated user email as the authoritative customer email
+- Use authenticated user name as the default customer name when available
+- Do not allow frontend-provided `customerContext.customerEmail` to impersonate another email
+- Preserve itinerary dates from frontend `customerContext`
+
+Suggested merge behavior:
+
+```js
+customerContext: {
+  customerName: req.user.name || customerContext.customerName,
+  customerEmail: req.user.email,
+  itineraryStartDate: customerContext.itineraryStartDate,
+  itineraryEndDate: customerContext.itineraryEndDate
+}
+```
+
+If `req.user.name` is not currently available from JWT claims, update auth middleware to load or attach safe user profile data as needed.
+
+### Architecture
+
+Keep clean separation:
+
+- Middleware verifies auth and attaches user identity/profile
+- Controllers pass authenticated user context into services
+- Services enforce ownership rules
+- Query modules own SQL and parameterized database calls
+- Reservation/user ownership logic should not be implemented in frontend code
+
+Likely files:
+
+- `src/middleware/auth.middleware.js`
+- `src/controllers/chat.controller.js`
+- `src/services/chat.service.js`
+- `src/services/conversation.service.js`
+- `src/services/reservation.service.js`
+- `src/db/queries/conversation.queries.js`
+- `src/db/queries/reservation.queries.js`
+- `src/db/migrations/*`
+- PostgreSQL helper functions affected by conversations/reservations
+
+### Tests
+
+Add or update backend tests for:
+
+- New conversations are saved with authenticated `user_id`
+- Existing owned conversations can continue
+- Another user’s conversation cannot be loaded
+- Another user’s conversation cannot be continued
+- Reservations created during chat store `user_id`
+- Authenticated email overrides frontend-provided customer email
+- Authenticated name is used as default customer name
+- Itinerary dates from customer context are preserved
+
+Run:
+
+```bash
+npm test
+```
+
+## Frontend Requirements
+
+### Customer Context
+
+When the user is logged in:
+
+- Pre-fill customer context name/email from auth user
+- Do not ask the user to re-enter email if auth user email exists
+- Prevent changing customer email away from the authenticated email
+- Preserve itinerary date collection
+- Continue sending `customerContext` through `chatApi`
+
+Suggested behavior:
+
+- If `auth.user.name` exists, prefill name
+- Always use `auth.user.email` for `customerEmail`
+- The customer context form may still collect itinerary dates
+- If name is missing from auth profile, allow user to enter a display/customer name
+
+### Token-Aware Requests
+
+Keep sending bearer token on:
+
+- `POST /chat`
+- `GET /chat/latest`
+
+Do not rely on local conversation IDs for authorization. Backend remains source of truth.
+
+### Tests
+
+Add or update frontend tests for:
+
+- Customer context form pre-fills from authenticated user
+- Authenticated email is sent as customer context email
+- User cannot submit a different email than the logged-in account
+- Existing chat behavior still works with bearer token
+
+Run:
+
+```bash
+npm test
+```
+
+## Security Expectations
+
+- Never trust frontend `customerContext.customerEmail` over authenticated identity
+- Enforce ownership in backend services/queries
+- Do not leak whether another user’s conversation or reservation exists if using `404`
+- Keep all SQL parameterized
+- Keep JWT/user identity handling centralized
+- Do not store additional sensitive data in frontend localStorage
+
+## Acceptance Criteria
+
+1. Conversations created by authenticated users store `user_id`.
+2. Reservations created by authenticated users store `user_id`.
+3. Users cannot load or continue conversations owned by another user.
+4. Reservation metadata cannot leak across users.
+5. Logged-in user email is authoritative for customer context.
+6. Logged-in user name is used when available.
+7. Frontend customer context uses auth profile defaults.
+8. Backend and frontend tests pass.
+
+---

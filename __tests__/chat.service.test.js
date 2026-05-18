@@ -1,16 +1,17 @@
 import { jest } from '@jest/globals';
 
 const mockBuildConversationContext = jest.fn();
-const mockGetConversationMessages = jest.fn();
 const mockSaveExchange = jest.fn();
+const mockAssertCanAccess = jest.fn();
 const mockBuildContext = jest.fn();
 const mockStreamResponseWithTools = jest.fn();
+const mockRecordOpenAiUsage = jest.fn();
 
 await jest.unstable_mockModule('../src/services/conversation.service.js', () => ({
   default: {
     buildConversationContext: mockBuildConversationContext,
-    getConversationMessages: mockGetConversationMessages,
     saveExchange: mockSaveExchange,
+    assertCanAccess: mockAssertCanAccess,
   },
 }));
 
@@ -23,6 +24,12 @@ await jest.unstable_mockModule('../src/ai/openai.service.js', () => ({
 await jest.unstable_mockModule('../src/services/rag.service.js', () => ({
   default: {
     buildContext: mockBuildContext,
+  },
+}));
+
+await jest.unstable_mockModule('../src/services/usage.service.js', () => ({
+  default: {
+    recordOpenAiUsage: mockRecordOpenAiUsage,
   },
 }));
 
@@ -39,6 +46,8 @@ const { default: chatService } = await import('../src/services/chat.service.js')
 describe('ChatService streaming orchestration', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAssertCanAccess.mockResolvedValue(undefined);
+    mockRecordOpenAiUsage.mockResolvedValue(null);
     mockBuildContext.mockImplementation((messages) => ({
       messages,
       sources: [],
@@ -90,6 +99,7 @@ describe('ChatService streaming orchestration', () => {
       {
         clientIP: '127.0.0.1',
         conversationId: 'conversation-123',
+        role: 'visitor',
       },
       {
         onChunk: expect.any(Function),
@@ -151,6 +161,7 @@ describe('ChatService streaming orchestration', () => {
     expect(mockStreamResponseWithTools).toHaveBeenCalledWith(augmentedMessages, {
       clientIP: '127.0.0.1',
       conversationId: 'conversation-123',
+      role: 'visitor',
     }, {
       onChunk: expect.any(Function),
       signal: undefined,
@@ -183,6 +194,7 @@ describe('ChatService streaming orchestration', () => {
         origin: 'San Jose',
         destination: 'Monteverde',
       };
+      metadata.participants = 3;
       await options.onChunk('I found a Monteverde tour.');
       return 'I found a Monteverde tour.';
     });
@@ -191,12 +203,23 @@ describe('ChatService streaming orchestration', () => {
       'Recommend Monteverde tours.',
       'conversation-123',
       '127.0.0.1',
-      { onStart: jest.fn(), onChunk: jest.fn() }
+      { onStart: jest.fn(), onChunk: jest.fn() },
+      {
+        authUser: {
+          id: '7',
+          email: 'logged@example.com',
+          role: 'customer',
+        },
+      }
     );
 
     expect(result.meta).toEqual({
       promptVersions: {
         chat: '2.3.0',
+      },
+      customerContext: {
+        customerEmail: 'logged@example.com',
+        customerName: undefined,
       },
       toolsCalled: ['searchTours'],
       tours,
@@ -205,8 +228,180 @@ describe('ChatService streaming orchestration', () => {
         origin: 'San Jose',
         destination: 'Monteverde',
       },
+      participants: 3,
     });
+    expect(mockSaveExchange).toHaveBeenCalledWith(
+      'conversation-123',
+      'Recommend Monteverde tours.',
+      'I found a Monteverde tour.',
+      {
+        userId: '7',
+        metadata: {
+          customerContext: {
+            customerEmail: 'logged@example.com',
+            customerName: undefined,
+          },
+          selectedTransportation: {
+            transportationOption: 'shared_shuttle',
+            origin: 'San Jose',
+            destination: 'Monteverde',
+          },
+          participants: 3,
+        },
+      }
+    );
     expect(result.meta.agentDebugTrace).toBeUndefined();
+  });
+
+  it('uses authenticated customer context for tool metadata', async () => {
+    const conversationMessages = [
+      { role: 'system', content: 'System prompt' },
+      { role: 'user', content: 'Book a tour.' },
+    ];
+
+    mockBuildConversationContext.mockResolvedValue(conversationMessages);
+    mockStreamResponseWithTools.mockImplementation(async (messages, metadata) => {
+      expect(metadata.userId).toBe('7');
+      expect(metadata.customerContext).toEqual({
+        customerName: 'Logged User',
+        customerEmail: 'logged@example.com',
+        itineraryStartDate: '2026-06-01',
+        itineraryEndDate: '2026-06-02',
+      });
+      return 'Ready to book.';
+    });
+
+    await chatService.processMessageStream(
+      'Book a tour.',
+      'conversation-123',
+      '127.0.0.1',
+      {},
+      {
+        authUser: {
+          id: '7',
+          email: 'logged@example.com',
+          name: 'Logged User',
+          role: 'customer',
+        },
+        customerContext: {
+          customerName: 'Impostor Name',
+          customerEmail: 'other@example.com',
+          itineraryStartDate: '2026-06-01',
+          itineraryEndDate: '2026-06-02',
+        },
+      }
+    );
+
+    expect(mockBuildConversationContext).toHaveBeenCalledWith(
+      'Book a tour.',
+      'conversation-123',
+      { userId: '7' }
+    );
+    expect(mockSaveExchange).toHaveBeenCalledWith(
+      'conversation-123',
+      'Book a tour.',
+      'Ready to book.',
+      {
+        userId: '7',
+        metadata: {
+          customerContext: {
+            customerName: 'Logged User',
+            customerEmail: 'logged@example.com',
+            itineraryStartDate: '2026-06-01',
+            itineraryEndDate: '2026-06-02',
+          },
+        },
+      }
+    );
+  });
+
+  it('records OpenAI token usage for authenticated chat requests', async () => {
+    const conversationMessages = [
+      { role: 'system', content: 'System prompt' },
+      { role: 'user', content: 'Tell me about quetzals.' },
+    ];
+    const openAiUsage = {
+      promptTokens: 1000,
+      completionTokens: 250,
+      estimatedCostUsd: 0.005,
+      hasEstimatedCost: true,
+    };
+
+    mockBuildConversationContext.mockResolvedValue(conversationMessages);
+    mockStreamResponseWithTools.mockImplementation(async (messages, metadata) => {
+      metadata.openAiUsage = openAiUsage;
+      return 'Quetzals favor cloud forest habitat.';
+    });
+
+    await chatService.processMessageStream(
+      'Tell me about quetzals.',
+      'conversation-123',
+      '127.0.0.1',
+      {},
+      {
+        authUser: {
+          id: '7',
+          email: 'logged@example.com',
+          role: 'customer',
+        },
+      }
+    );
+
+    expect(mockRecordOpenAiUsage).toHaveBeenCalledWith('7', openAiUsage);
+  });
+
+  it('blocks visitor reservation requests before AI orchestration', async () => {
+    await expect(chatService.processMessageStream(
+      'Can I reserve a quetzal tour?',
+      'conversation-123',
+      '127.0.0.1',
+      {}
+    )).rejects.toMatchObject({
+      status: 403,
+      code: 'VISITOR_FORBIDDEN',
+    });
+
+    expect(mockBuildConversationContext).not.toHaveBeenCalled();
+    expect(mockStreamResponseWithTools).not.toHaveBeenCalled();
+    expect(mockSaveExchange).not.toHaveBeenCalled();
+  });
+
+  it('allows authenticated customers to start reservation flows', async () => {
+    const conversationMessages = [
+      { role: 'system', content: 'System prompt' },
+      { role: 'user', content: 'Can I reserve a quetzal tour?' },
+    ];
+
+    mockBuildConversationContext.mockResolvedValue(conversationMessages);
+    mockStreamResponseWithTools.mockResolvedValue('I can help with that.');
+
+    await chatService.processMessageStream(
+      'Can I reserve a quetzal tour?',
+      'conversation-123',
+      '127.0.0.1',
+      {},
+      {
+        authUser: {
+          id: '7',
+          email: 'logged@example.com',
+          role: 'customer',
+        },
+      }
+    );
+
+    expect(mockBuildConversationContext).toHaveBeenCalledWith(
+      'Can I reserve a quetzal tour?',
+      'conversation-123',
+      { userId: '7' }
+    );
+    expect(mockStreamResponseWithTools).toHaveBeenCalledWith(
+      conversationMessages,
+      expect.objectContaining({
+        role: 'customer',
+        userId: '7',
+      }),
+      expect.any(Object)
+    );
   });
 
   it('streams the input guardrail refusal without calling OpenAI', async () => {
@@ -253,7 +448,14 @@ describe('ChatService streaming orchestration', () => {
       'What can you do?',
       'conversation-123',
       '127.0.0.1',
-      events
+      events,
+      {
+        authUser: {
+          id: '7',
+          email: 'logged@example.com',
+          role: 'customer',
+        },
+      }
     );
 
     expect(result.response).toBe(
@@ -263,7 +465,16 @@ describe('ChatService streaming orchestration', () => {
     expect(mockSaveExchange).toHaveBeenCalledWith(
       'conversation-123',
       'What can you do?',
-      result.response
+      result.response,
+      {
+        userId: '7',
+        metadata: {
+          customerContext: {
+            customerEmail: 'logged@example.com',
+            customerName: undefined,
+          },
+        },
+      }
     );
   });
 
@@ -303,18 +514,4 @@ describe('ChatService streaming orchestration', () => {
     expect(mockSaveExchange).not.toHaveBeenCalled();
   });
 
-  it('delegates conversation loading to the memory service', async () => {
-    mockGetConversationMessages.mockResolvedValue([
-      { role: 'user', content: 'I am visiting Monteverde.' },
-      { role: 'assistant', content: 'Monteverde is excellent for cloud forest species.' },
-    ]);
-
-    const messages = await chatService.getConversationMessages('conversation-123');
-
-    expect(messages).toEqual([
-      { role: 'user', content: 'I am visiting Monteverde.' },
-      { role: 'assistant', content: 'Monteverde is excellent for cloud forest species.' },
-    ]);
-    expect(mockGetConversationMessages).toHaveBeenCalledWith('conversation-123');
-  });
 });

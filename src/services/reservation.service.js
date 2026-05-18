@@ -1,30 +1,20 @@
 import { randomBytes } from 'crypto';
 import reservationQueries from '../db/queries/reservation.queries.js';
 import tourQueries from '../db/queries/tour.queries.js';
+import { DEFAULT_CURRENCY } from '../constants/business.js';
 import logger from '../utils/logger.js';
+import {
+  normalizeComparableText,
+  normalizeOptionalText,
+  normalizeSelectedTransportation,
+  normalizeText,
+} from '../utils/normalizers.js';
+import { invalidArguments, toPositiveInteger } from '../utils/toolResponses.js';
 
 const MAX_CONFIRMATION_ATTEMPTS = 3;
 
-function invalidArguments(error) {
-  return {
-    success: false,
-    code: 'INVALID_TOOL_ARGUMENTS',
-    message: error.message,
-  };
-}
-
-function toPositiveInteger(value, fieldName) {
-  const numberValue = Number(value);
-
-  if (!Number.isInteger(numberValue) || numberValue <= 0) {
-    throw new Error(`${fieldName} must be a positive integer`);
-  }
-
-  return numberValue;
-}
-
 function normalizeCustomerName(customerName) {
-  const reservationName = typeof customerName === 'string' ? customerName.trim() : '';
+  const reservationName = normalizeText(customerName);
 
   if (!reservationName) {
     throw new Error('customerName is required');
@@ -33,24 +23,44 @@ function normalizeCustomerName(customerName) {
   return reservationName;
 }
 
-function normalizeCustomerEmail(customerEmail) {
-  return typeof customerEmail === 'string' && customerEmail.trim()
-    ? customerEmail.trim()
-    : null;
+function buildReservationMetadata(args = {}, metadata = {}) {
+  const selectedTransportation = normalizeSelectedTransportation(metadata.selectedTransportation);
+  const itineraryStartDate = normalizeOptionalText(args.itineraryStartDate || metadata.customerContext?.itineraryStartDate);
+  const itineraryEndDate = normalizeOptionalText(args.itineraryEndDate || metadata.customerContext?.itineraryEndDate);
+
+  return {
+    ...(selectedTransportation ? { transportation: selectedTransportation } : {}),
+    ...(itineraryStartDate ? { itineraryStartDate } : {}),
+    ...(itineraryEndDate ? { itineraryEndDate } : {}),
+  };
 }
 
-function normalizeConversationId(conversationId) {
-  return typeof conversationId === 'string' && conversationId.trim()
-    ? conversationId.trim()
-    : null;
-}
+function buildReservationResult({ reservation, tour, discount }) {
+  const reservationMetadata = reservation.metadata || {};
+  const totalPrice = reservation.totalPrice;
 
-function normalizeText(value) {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
-function normalizeComparableText(value) {
-  return normalizeText(value)?.toLowerCase() || '';
+  return {
+    success: true,
+    id: reservation.id,
+    reservationId: reservation.id,
+    userId: reservation.userId,
+    customerName: reservation.customerName,
+    customerEmail: reservation.customerEmail,
+    conversationId: reservation.conversationId,
+    tourId: reservation.tourId,
+    tourName: tour.name,
+    participants: reservation.participants,
+    confirmationCode: reservation.confirmationCode,
+    createdAt: reservation.createdAt,
+    totalPrice,
+    tourTotalPrice: totalPrice,
+    ...(reservationMetadata.itineraryStartDate ? { itineraryStartDate: reservationMetadata.itineraryStartDate } : {}),
+    ...(reservationMetadata.itineraryEndDate ? { itineraryEndDate: reservationMetadata.itineraryEndDate } : {}),
+    currency: DEFAULT_CURRENCY,
+    remainingSlots: tour.availableSlots,
+    discountRate: discount.discountRate,
+    discountReason: discount.discountReason,
+  };
 }
 
 function textMatchesTour(tour, selectedText) {
@@ -124,7 +134,7 @@ function calculatePriceForTour(tour, participantCount, discountCode) {
     discountReason: discount.discountReason,
     totalPrice,
     total: totalPrice,
-    currency: 'USD',
+    currency: DEFAULT_CURRENCY,
   };
 }
 
@@ -284,6 +294,8 @@ class ReservationService {
     customerEmail,
     discountCode,
     conversationId,
+    itineraryStartDate,
+    itineraryEndDate,
   } = {}, metadata = {}) {
     let participantCount;
     let reservationName;
@@ -317,10 +329,15 @@ class ReservationService {
           tourId: normalizedTourId,
           participants: participantCount,
           customerName: reservationName,
-          customerEmail: normalizeCustomerEmail(customerEmail),
-          conversationId: normalizeConversationId(conversationId || metadata.conversationId),
+          customerEmail: normalizeText(customerEmail),
+          conversationId: normalizeText(conversationId || metadata.conversationId),
           confirmationCode,
           discountRate: discount.discountRate,
+          userId: metadata.userId,
+          metadata: buildReservationMetadata({
+            itineraryStartDate,
+            itineraryEndDate,
+          }, metadata),
         });
 
         if (!result.success) {
@@ -329,30 +346,7 @@ class ReservationService {
 
         const { reservation, tour } = result;
 
-        return {
-          success: true,
-          id: reservation.id,
-          reservationId: reservation.id,
-          customer_name: reservation.customerName,
-          customerName: reservation.customerName,
-          customerEmail: reservation.customerEmail,
-          conversationId: reservation.conversationId,
-          tour_id: reservation.tourId,
-          tourId: reservation.tourId,
-          tourName: tour.name,
-          participants: reservation.participants,
-          confirmation_code: reservation.confirmationCode,
-          confirmationCode: reservation.confirmationCode,
-          created_at: reservation.createdAt,
-          createdAt: reservation.createdAt,
-          total_price: reservation.totalPrice,
-          totalPrice: reservation.totalPrice,
-          tourTotalPrice: reservation.totalPrice,
-          currency: 'USD',
-          remainingSlots: tour.availableSlots,
-          discountRate: discount.discountRate,
-          discountReason: discount.discountReason,
-        };
+        return buildReservationResult({ reservation, tour, discount });
       } catch (error) {
         if (error.code === '23505' && attempt < MAX_CONFIRMATION_ATTEMPTS) {
           logger.warn('Reservation confirmation code collision; retrying', {
@@ -368,6 +362,30 @@ class ReservationService {
 
     throw new Error('Failed to generate a unique reservation confirmation code');
   }
+
+  async getLatestReservationForConversation(conversationId, { userId } = {}) {
+    const normalizedConversationId = normalizeText(conversationId);
+    const normalizedUserId = userId === undefined || userId === null ? null : Number(userId);
+
+    if (!normalizedConversationId || normalizedUserId === null || Number.isNaN(normalizedUserId)) {
+      return null;
+    }
+
+    const result = await reservationQueries.getLatestByConversationId(normalizedConversationId, normalizedUserId);
+
+    if (!result?.reservation) {
+      return null;
+    }
+
+    return buildReservationResult({
+      reservation: result.reservation,
+      tour: result.tour,
+      discount: {
+        discountRate: 0,
+        discountReason: null,
+      },
+    });
+  }
 }
 
 export {
@@ -375,6 +393,7 @@ export {
   calculatePriceForTour,
   generateConfirmationCode,
   invalidArguments,
+  normalizeSelectedTransportation,
   toPositiveInteger,
 };
 

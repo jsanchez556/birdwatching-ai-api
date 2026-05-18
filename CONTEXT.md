@@ -7,8 +7,8 @@ This repository is a single Express API for Costa Rica birdwatching assistance. 
 - conversational chat with short-term PostgreSQL memory
 - PostgreSQL-backed RAG over ingested `src/db/data` documents using pgvector
 - OpenAI/agent tool calling for tour search, availability, transportation, pricing, discounts, and durable reservations
-- structured trip recommendations from OpenAI function tool calls
 - normalized JSON responses and centralized error handling
+- email/password authentication with bcrypt password hashes and JWT-protected AI routes
 - Railway-oriented deployment with environment-driven configuration
 
 ## Source Of Truth Map
@@ -29,15 +29,19 @@ The app uses a controller-service-query split:
 - `src/db/queries/*` owns parameterized calls to PostgreSQL functions through `src/db/pool.js`.
 - `src/db/vector`, `src/db/retrieval`, `src/db/ingestion`, and `src/db/chunking` own durable RAG storage, search, ingestion, and chunking.
 - `src/ai/*` owns OpenAI client calls, prompt assets, structured schemas, and chat tool adapters.
-- `src/middleware/*` owns validation, rate limiting, errors, and future auth hooks.
+- `src/middleware/*` owns validation, sanitization, security headers, CORS protection, rate limiting, errors, and auth hooks.
 
 ## Runtime Flows
 Chat:
 ```text
 POST /chat
+  -> optionalAuth
+  -> authenticated AI rate limit or visitor AI rate limit
   -> validateChatBody
   -> chat.controller.handleStreamChat
   -> chat.service.processMessageStream
+  -> visitor role/topic authorization when no JWT is present
+  -> conversation.service.assertCanAccess
   -> conversation.service.buildConversationContext
   -> rag.service.buildContext
   -> PostgreSQL pgvector retrieval
@@ -47,44 +51,38 @@ POST /chat
   -> SSE start/chunk/replace/done/error events
 ```
 
-Recommendation:
+Latest conversation lookup:
 ```text
-POST /recommend
-  -> validateRecommendationBody
-  -> recommendation.controller.handleRecommendation
-  -> recommendation.service.getRecommendations
-  -> openai.client.createStructuredRecommendation
-  -> OpenAI function tool: get_bird_recommendation
-  -> { success, data, meta }
-```
-
-Conversation lookup:
-```text
-GET /chat/:conversationId
-  -> chat.controller.handleGetConversation
-  -> chat.service.getConversationMessages
-  -> conversation.service.getConversationMessages
+GET /chat/latest
+  -> requireAuth
+  -> chat.controller.handleGetLatestConversation
+  -> chat.service.getLatestConversation
+  -> conversation.service.getLatestConversationForUser
+  -> conversation.queries.getLatestByUserId
   -> conversation.queries.getByConversationId
 ```
 
 ## Important Implementation Facts
 - ESM is enabled through `"type": "module"` in `package.json`.
 - Express JSON payloads are limited to `64kb`.
-- CORS is manually implemented in `src/app.js` from `CORS_ORIGINS`.
+- Security headers, CORS protection, and request sanitization are applied through `src/middleware/security.middleware.js`; CORS uses `CORS_ORIGINS`.
 - Rate limiting is an in-memory per-IP bucket: 60 requests per minute.
-- `optionalAuth` exists as a placeholder; active routes are currently public.
-- `NODE_ENV=test` bypasses required `OPENAI_API_KEY` and `DATABASE_URL` validation.
+- `POST /auth/signup`, `POST /auth/login`, `POST /auth/refresh`, and `POST /auth/logout` are public; login/signup issue access tokens plus DB-backed rotating refresh tokens, refresh rotates sessions, and logout revokes the supplied refresh token.
+- `POST /chat` accepts JWT-authenticated customer/admin users or unauthenticated visitor requests, while `GET /chat/latest` requires JWT bearer auth through `requireAuth`.
+- Visitor chat is limited to bird-related questions, cannot execute tour/reservation tools, and uses a stricter in-memory IP limit.
+- `NODE_ENV=test` bypasses required `OPENAI_API_KEY`, `DATABASE_URL`, and `JWT_SECRET` validation.
 - OpenAI retry behavior lives in `src/utils/asyncRetry.js` and is used for transient OpenAI statuses.
 - Streaming chat passes an `AbortSignal` to OpenAI and skips saving a completed exchange when the client disconnects before completion.
 - RAG reads only from PostgreSQL pgvector during chat. Use `npm run ingest` to ingest supported files from `src/db/data` before relying on RAG context; chat does not chunk documents, generate source embeddings, or write vectors.
 - Tour data, availability, selection, and reservations are stored in PostgreSQL through functions in `003_create_tour_reservations.sql`.
 - Tour listing, recommendation, guided action, pricing, transportation, and reservation details are returned in the `/chat` stream `done.meta` object for frontend rendering; assistant text stays short when structured metadata is present.
 - Tour selection accepts a tour ID or a clear/partial tour name such as `Monteverde tour` before pricing or reservation.
-- Chat requests can include `customerContext` with name, email, and itinerary dates plus `conversationContext.recentAssistantMetadata` for continuing guided booking flows.
+- `GET /chat/latest` loads the most recent conversation for `req.user.id` before the frontend creates a new conversation ID. If that conversation has a reservation, the response includes frontend-safe `meta.reservation` details plus chat-level booking state such as `meta.participants` and `meta.selectedTransportation`. Chat requests can include `customerContext` with name, email, and itinerary dates plus `conversationContext.recentAssistantMetadata` for continuing guided booking flows. For authenticated requests, the JWT user email is authoritative and the JWT user name is preferred when available.
 - Reservation creation can include optional `customerEmail`, `discountCode`, itinerary dates, and selected transportation metadata; discounts are calculated in `reservation.service.js` and the tour total is computed inside the PostgreSQL function.
 - Database writes for chat memory are best-effort; save failures are logged but do not fail the chat response.
-- Chat persistence uses the `conversations` and `messages` tables plus SQL helper functions from `src/db/migrations/002_create_functions.sql`.
-- Reservation persistence uses `tours` and `reservations` plus PostgreSQL functions from `003_create_tour_reservations.sql`; transaction and row locking logic lives in the database function.
+- Authenticated chat requests persist OpenAI prompt tokens, completion tokens, and estimated cost to `usage_logs` on a best-effort basis after the streamed response completes.
+- Chat persistence uses the `conversations` and `messages` tables plus SQL helper functions from `src/db/migrations/002_create_functions.sql`. User authentication uses the `users` table from `src/db/migrations/005_create_users.sql`; ownership links for conversations and reservations are added in `src/db/migrations/006_add_user_ownership.sql`.
+- Reservation persistence uses `tours` and `reservations` plus PostgreSQL functions from `003_create_tour_reservations.sql`; transaction, row locking, and authenticated `user_id` persistence live in the database function after ownership migration. Chat-level booking metadata such as transportation selections is stored in `conversations.metadata`.
 
 ## Testing
 Tests live in `__tests__/` and cover routes, services, and query helpers with ESM module mocks.

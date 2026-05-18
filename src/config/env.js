@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 
 dotenv.config({ quiet: true });
 
-const required = ['OPENAI_API_KEY', 'DATABASE_URL'];
+const required = ['OPENAI_API_KEY', 'DATABASE_URL', 'JWT_SECRET'];
 const nodeEnv = process.env.NODE_ENV || 'development';
 const allowedNodeEnvs = new Set(['development', 'test', 'production']);
 
@@ -12,6 +12,19 @@ if (!allowedNodeEnvs.has(nodeEnv)) {
 
 if (process.env.PORT && Number.isNaN(Number(process.env.PORT))) {
   throw new Error('PORT must be a number');
+}
+
+const numericEnvKeys = [
+  'RATE_LIMIT_WINDOW_MS',
+  'RATE_LIMIT_MAX_REQUESTS',
+  'AI_RATE_LIMIT_WINDOW_MS',
+  'AI_RATE_LIMIT_MAX_REQUESTS',
+];
+
+for (const key of numericEnvKeys) {
+  if (process.env[key] && Number.isNaN(Number(process.env[key]))) {
+    throw new Error(`${key} must be a number`);
+  }
 }
 
 if (
@@ -41,8 +54,15 @@ const env = {
   openAiModel: process.env.OPENAI_MODEL || 'gpt-4o',
   openAiEmbeddingModel: process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small',
   databaseUrl: process.env.DATABASE_URL,
+  jwtSecret: nodeEnv === 'test' ? 'test-jwt-secret' : process.env.JWT_SECRET,
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  refreshTokenExpiresInDays: Number(process.env.REFRESH_TOKEN_EXPIRES_IN_DAYS) || 30,
   corsOrigins,
   logFilesEnabled: process.env.LOG_FILES_ENABLED === 'true',
+  rateLimitWindowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 60 * 1000,
+  rateLimitMaxRequests: Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 60,
+  aiRateLimitWindowMs: Number(process.env.AI_RATE_LIMIT_WINDOW_MS) || 60 * 1000,
+  aiRateLimitMaxRequests: Number(process.env.AI_RATE_LIMIT_MAX_REQUESTS) || 12,
 };
 
 export default env;

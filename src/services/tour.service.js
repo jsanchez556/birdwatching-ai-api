@@ -1,43 +1,12 @@
 import tourQueries from '../db/queries/tour.queries.js';
+import { normalizeComparableText, normalizeText } from '../utils/normalizers.js';
+import { invalidArguments, toPositiveInteger } from '../utils/toolResponses.js';
 
 const budgetMaxPrice = {
   budget: 110,
   moderate: 155,
   luxury: null,
 };
-
-function invalidArguments(error) {
-  return {
-    success: false,
-    code: 'INVALID_TOOL_ARGUMENTS',
-    message: error.message,
-  };
-}
-
-function toPositiveInteger(value, fieldName, fallback = null) {
-  if (value === undefined || value === null) {
-    if (fallback !== null) {
-      return fallback;
-    }
-    throw new Error(`${fieldName} must be a positive integer`);
-  }
-
-  const numberValue = Number(value);
-
-  if (!Number.isInteger(numberValue) || numberValue <= 0) {
-    throw new Error(`${fieldName} must be a positive integer`);
-  }
-
-  return numberValue;
-}
-
-function normalizeText(value) {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
-function normalizeComparableText(value) {
-  return normalizeText(value)?.toLowerCase() || '';
-}
 
 function singularizeToken(token) {
   return token.length > 3 && token.endsWith('s') ? token.slice(0, -1) : token;

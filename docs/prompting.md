@@ -6,10 +6,8 @@ Back to [Project Context](../CONTEXT.md). See [Memory](./memory.md) for how chat
 - Prompt builder and message composition: `src/ai/prompts/prompt.builder.js`
 - Versioned system and tool instructions: `src/ai/prompts/system.prompt.js`
 - RAG context formatting: `src/ai/prompts/rag.context.js`
-- User prompt templates: `src/ai/prompts/user.prompt.js`
 - Booking planner and agent wiring: `src/ai/agents/birdwatching.agent.js`
 - Chat orchestration: `src/ai/orchestrators/agent.orchestrator.js`
-- Structured recommendation schema: `src/ai/schemas/recommendation.schema.js`
 - Chat tour tool schemas: `src/ai/schemas/tour.schema.js`
 
 Prompt modules export both content and a semantic prompt version. Keep version changes intentional and loggable.
@@ -82,29 +80,11 @@ event `meta` object for debugging and prompt experiments:
 }
 ```
 
-## Recommendation Prompt Flow
-`openai.client.js` asks `prompt.builder.js` to send:
-1. `system`: `RECOMMENDATION_PROMPT`
-2. `user`: generated request containing location, budget, and days
-3. forced tool call: `get_bird_recommendation`
-
-The parsed tool arguments become the API response body. If the tool response is absent or malformed, the service returns a provider error.
-
-`POST /recommend` responses include recommendation prompt version metadata:
-```json
-{
-  "promptVersions": {
-    "recommendation": "1.0.0"
-  }
-}
-```
-
 ## Change Rules
 - Do not place prompt text in controllers or route files.
 - Update prompt versions when behavior meaningfully changes.
 - Keep prompts Costa Rica-specific unless the product scope changes.
 - Keep chat tool instructions aligned with `src/ai/schemas/tour.schema.js`.
-- Keep recommendation schema changes backward-aware; update [API Contracts](./api.md) and tests with schema changes.
 - Prefer small prompt edits plus test cases over broad rewrites.
 
 ## Prompt History

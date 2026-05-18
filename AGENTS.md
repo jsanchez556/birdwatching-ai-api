@@ -18,6 +18,7 @@ This backend provides secure API delivery, OpenAI orchestration, PostgreSQL conv
 ## Architecture Rules
 - Keep controllers thin and request-focused.
 - Use service/query separation for business logic and persistence.
+- Extract repeated logic with the same intent into a shared helper instead of keeping multiple narrowly named functions with identical implementations.
 - Keep prompt assets and OpenAI schemas in `src/ai/`, never in controllers.
 - Keep validators at the middleware boundary.
 - Normalize all success and error responses through `src/utils/apiResponse.js`.

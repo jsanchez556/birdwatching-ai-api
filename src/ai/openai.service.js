@@ -51,6 +51,8 @@ class ChatCompletionService {
         : null,
     });
 
+    metadata.openAiUsage = usage.openAiUsage || null;
+
     return response;
   }
 }

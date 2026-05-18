@@ -1,4 +1,5 @@
 import logger from '../../utils/logger.js';
+import { DEFAULT_CURRENCY, TRANSPORTATION_LABELS } from '../../constants/business.js';
 
 export const TOOL_EXECUTION_FAILED_MESSAGE = 'I could not complete that action right now. Please try again in a moment.';
 const REDACTED = '[redacted]';
@@ -22,6 +23,7 @@ const RETRYABLE_ERROR_CODES = new Set([
   'DATABASE_UNAVAILABLE',
 ]);
 const PERMANENT_FAILURE_PATTERN = /^(INVALID_|VALIDATION_|MISSING_|UNKNOWN_TOOL|TOUR_NOT_FOUND|TOUR_SELECTION_|TOUR_SELECTION_MISMATCH|TRANSPORTATION_LOCATION_REQUIRED)/;
+const VISITOR_BLOCKED_TOOL_MESSAGE = 'Visitors can ask about birds only. Please log in to plan tours or make reservations.';
 const toOptions = (options) => options.map(([label, value]) => ({ label, value }));
 const wait = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs));
 
@@ -100,13 +102,12 @@ function buildTransportationPreferenceAction() {
   };
 }
 
-function formatMoney(amount, currency = 'USD') {
+function formatMoney(amount, currency = DEFAULT_CURRENCY) {
   return `${currency} ${amount}`;
 }
 
 function formatTransportationType(type) {
-  if (type === 'shared_shuttle') return 'Shared shuttle';
-  if (type === 'private_transfer') return 'Private transfer';
+  if (TRANSPORTATION_LABELS[type]) return TRANSPORTATION_LABELS[type];
   return type
     .split('_')
     .filter(Boolean)
@@ -511,6 +512,26 @@ export class ToolExecutor {
     const handler = this.handlers.get(name);
     const attempts = [];
     const retryOptions = this.getRetryOptions(name, options.step);
+
+    if (metadata.role === 'visitor') {
+      attempts.push({
+        attempt: 1,
+        status: 'failed',
+        retryable: false,
+        result: { success: false, code: 'VISITOR_TOOL_FORBIDDEN', message: VISITOR_BLOCKED_TOOL_MESSAGE },
+      });
+      this.logger.warn('Visitor attempted restricted agent tool', {
+        toolName: name,
+        conversationId: metadata.conversationId,
+      });
+
+      return attachAttempts({
+        success: false,
+        code: 'VISITOR_TOOL_FORBIDDEN',
+        message: VISITOR_BLOCKED_TOOL_MESSAGE,
+        retryable: false,
+      }, attempts);
+    }
 
     if (!handler) {
       attempts.push({

@@ -1,0 +1,62 @@
+import { jest } from '@jest/globals';
+import request from 'supertest';
+
+process.env.CORS_ORIGINS = 'https://app.example.com';
+
+await jest.unstable_mockModule('../src/utils/logger.js', () => ({
+  default: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  },
+}));
+
+const { default: app } = await import('../src/app.js');
+const { sanitizeRequestValue } = await import('../src/middleware/security.middleware.js');
+
+describe('security middleware', () => {
+  it('sets helmet security headers and allows configured CORS origins', async () => {
+    const res = await request(app)
+      .get('/health')
+      .set('Origin', 'https://app.example.com');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['access-control-allow-origin']).toBe('https://app.example.com');
+    expect(res.headers.vary).toContain('Origin');
+  });
+
+  it('rejects disallowed CORS origins', async () => {
+    const res = await request(app)
+      .get('/health')
+      .set('Origin', 'https://evil.example.com');
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body.error.code).toBe('CORS_ORIGIN_DENIED');
+  });
+
+  it('sanitizes prototype pollution keys and null bytes', () => {
+    const sanitized = sanitizeRequestValue({
+      name: 'Ana\0',
+      nested: {
+        safe: true,
+        constructor: { prototype: { polluted: true } },
+      },
+      list: [
+        'quetzal\0',
+        { prototype: { polluted: true }, species: 'toucan' },
+      ],
+    });
+
+    expect(sanitized).toEqual({
+      name: 'Ana',
+      nested: {
+        safe: true,
+      },
+      list: [
+        'quetzal',
+        { species: 'toucan' },
+      ],
+    });
+  });
+});

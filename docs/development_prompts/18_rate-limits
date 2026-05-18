@@ -1,0 +1,39 @@
+
+Context: Read and follow `/birdwatching-ai-api/AGENTS.md` before making changes.
+
+Task: Implement rate limiting for AI-powered API endpoints to protect OpenAI usage costs and prevent abuse.
+
+Requirements:
+- Add request-per-minute rate limiting to endpoints that trigger AI/OpenAI calls.
+- Choose a sensible default limit, preferably configurable through environment variables.
+- Scope limits by a stable client identifier, such as authenticated user ID when available, otherwise IP address.
+- Return a proper HTTP error when the limit is exceeded:
+  - Status: `429 Too Many Requests`
+  - Include a clear JSON error response.
+  - Include useful rate-limit headers when practical, such as retry/reset timing.
+- Keep rate limiting logic reusable middleware/service code rather than duplicating it inside route handlers.
+- Preserve existing endpoint behavior for requests under the limit.
+- Do not rate-limit unrelated health checks or non-AI endpoints unless the existing architecture already centralizes this behavior.
+- Add or update tests covering:
+  - Requests under the limit succeed.
+  - Requests over the limit return `429`.
+  - The error response shape is stable.
+  - Limits are applied only to AI endpoints.
+
+Expected result on error:
+
+```http
+HTTP/1.1 429 Too Many Requests
+Content-Type: application/json
+```
+
+```json
+{
+  "success": false,
+  "error": {
+    "message": "Too many requests. Please try again later."
+  }
+}
+```
+
+Also run the relevant test suite before handing off and summarize the files changed.

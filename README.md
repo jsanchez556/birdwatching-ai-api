@@ -42,6 +42,10 @@ psql "$DATABASE_URL" -f src/db/migrations/001_create_chat_interactions.sql
 psql "$DATABASE_URL" -f src/db/migrations/002_create_functions.sql
 psql "$DATABASE_URL" -f src/db/migrations/003_create_tour_reservations.sql
 psql "$DATABASE_URL" -f src/db/migrations/004_create_vector_knowledge.sql
+psql "$DATABASE_URL" -f src/db/migrations/005_create_users.sql
+psql "$DATABASE_URL" -f src/db/migrations/006_add_user_ownership.sql
+psql "$DATABASE_URL" -f src/db/migrations/007_save_conversation_metadata.sql
+psql "$DATABASE_URL" -f src/db/migrations/008_create_usage_logs.sql
 ```
 
 ## Bird Knowledge Base
@@ -102,8 +106,7 @@ npm test       # Jest ESM test runner
 ## Runtime Endpoints
 - `GET /health`
 - `POST /chat`
-- `GET /chat/:conversationId`
-- `POST /recommend`
+- `GET /chat/latest`
 
 Responses use the normalized envelope from `src/utils/apiResponse.js`.
 

@@ -1,0 +1,59 @@
+Use the repository instructions before making changes:
+
+- Frontend guidance: `birdwatching-ai-ui/AGENTS.md`
+- Backend guidance: `birdwatching-ai-api/AGENTS.md`
+
+Implement role-based authorization across the Birdwatching AI frontend and backend.
+
+Roles:
+- `admin`: authenticated user with full access.
+- `customer`: authenticated user who can use normal chat and make reservations.
+- `tour guide`: customer + claim for a tour, query your associated tours and reservations.
+- `visitor`: unauthenticated user. No login required. Can enter the chat, but can only ask about birds. Visitors cannot make reservations and should have usage limitations.
+
+Frontend requirements:
+- Add an option on the auth/start screen to enter the chat as a visitor.
+- Visitor entry should not require login credentials.
+- Clearly preserve the existing login/customer flow.
+- The chat UI should understand the active role.
+- For visitors, prevent or gracefully block reservation-related actions.
+- If the backend returns an authorization or usage-limit error, surface it in the chat with a friendly message.
+- Keep frontend API calls inside `src/api/`; do not call `fetch` directly from components.
+- Keep stateful orchestration in hooks and presentational UI in components.
+- Persist only safe frontend state such as role, rendered messages, conversation ID, and customer context.
+
+Backend requirements:
+- Add role-aware authorization around chat/tool behavior.
+- Visitor users should only be allowed to ask bird-related questions.
+- Visitor users must not be allowed to create reservations, access reservation tools, or trigger customer-only business flows.
+- Customer users should retain normal reservation capability.
+- Admin users should have full access.
+- Keep durable conversation memory, reservations, RAG, tours, and tool behavior backend-owned.
+- Do not expose secrets or sensitive metadata to the frontend.
+
+Implementation expectations:
+- Inspect both repos before editing.
+- Follow the existing architecture and naming patterns.
+- Add or update tests for role behavior, especially visitor restrictions and customer reservation access.
+- Run the relevant test suites before handing off, including frontend `npm test` and backend tests if available.
+- Do not make unrelated refactors.
+- Summarize changed files, behavior added, and any tests that could not be run.
+
+---
+## Iteration 2
+
+Add refresh token support and session expiration handling.
+
+---
+
+## Iteration 3
+
+Add security middleware:
+- helmet
+- CORS protection
+- request validation
+- sanitization
+
+Ensure authentication into modular middleware and services.
+
+---

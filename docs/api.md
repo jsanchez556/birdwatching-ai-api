@@ -36,8 +36,71 @@ Success data:
 }
 ```
 
+## `POST /auth/signup`
+Creates a user account with a bcrypt-hashed password and returns an access token, refresh token, expiry timestamps, and safe profile data.
+
+Body:
+```json
+{
+  "email": "ana@example.com",
+  "password": "secure-password",
+  "name": "Ana Rivera"
+}
+```
+
+Validation:
+- `email` is required, normalized to lowercase, and must be a valid email address.
+- `password` is required and must be 8 to 128 characters.
+- `name` is optional and must be text when provided.
+
+Success data:
+```json
+{
+  "token": "jwt",
+  "accessTokenExpiresAt": "2026-06-01T12:00:00.000Z",
+  "refreshToken": "opaque-refresh-token",
+  "refreshTokenExpiresAt": "2026-07-01T12:00:00.000Z",
+  "user": {
+    "id": "user-1",
+    "email": "ana@example.com",
+    "name": "Ana Rivera",
+    "role": "customer"
+  }
+}
+```
+
+Duplicate emails return `409` with code `EMAIL_ALREADY_EXISTS`. Password hashes are never returned.
+
+## `POST /auth/login`
+Authenticates an existing user and returns the same session shape as signup.
+
+Body:
+```json
+{
+  "email": "ana@example.com",
+  "password": "secure-password"
+}
+```
+
+Invalid credentials return `401` with code `INVALID_CREDENTIALS` and the generic message `Invalid email or password`.
+
+## `POST /auth/refresh`
+Rotates a refresh token and returns a fresh access token plus a new refresh token.
+
+Body:
+```json
+{
+  "refreshToken": "opaque-refresh-token"
+}
+```
+
+Expired, revoked, or unknown refresh tokens return `401` with code `SESSION_EXPIRED`.
+
+## `POST /auth/logout`
+Revokes the current refresh token when one is provided.
+
 ## `POST /chat`
-Streams an assistant response with Server-Sent Events.
+Streams an assistant response with Server-Sent Events. Authenticated customer/admin requests include `Authorization: Bearer <token>` and existing authenticated conversations can only be continued by their owner. Unauthenticated visitor requests are accepted for bird-only questions and are blocked from tour planning, pricing, transportation, and reservations.
 
 Body:
 ```json
@@ -56,14 +119,16 @@ Body:
       "participants": 2,
       "uiAction": { "type": "reservation_confirmation" }
     }
-  }
+  },
+  "role": "customer"
 }
 ```
 
 Validation:
 - `message` is required, trimmed, non-empty, max 4000 characters.
 - `conversationId` is optional, trimmed, non-empty when present, max 128 characters.
-- `customerContext` is optional and must be an object when provided.
+- `role` may be `"visitor"` for unauthenticated visitor mode; authenticated user roles come from the JWT.
+- `customerContext` is optional and must be an object when provided. For authenticated requests, `req.user.email` overrides `customerContext.customerEmail`; `req.user.name` is preferred for `customerContext.customerName` when present.
 - `customerContext.customerEmail` must be a valid email address when present.
 - `customerContext.itineraryStartDate` and `customerContext.itineraryEndDate` must use `YYYY-MM-DD` when present, and the end date must not be earlier than the start date.
 - `conversationContext` is optional and must be an object when provided. The validator only preserves safe recent assistant metadata used by guided booking flows.
@@ -88,6 +153,7 @@ data: {"code":"STREAM_ERROR","message":"Unable to stream chat response right now
 
 Behavior:
 - Creates a UUID conversation ID when none is provided.
+- Persists `user_id` on new authenticated conversations and rejects attempts to continue another user's conversation.
 - Loads recent history for that conversation.
 - Retrieves relevant bird knowledge sources from PostgreSQL pgvector-backed knowledge chunks and returns them as `sources` in `start` and `done` events.
 - Runs agent planning and any required tool calls first, then streams the final assistant text to the client.
@@ -97,7 +163,7 @@ Behavior:
 - Sends `done` with the final persisted response and frontend-safe metadata.
 - Sends `error` as an SSE event if the stream fails after headers are open.
 - If the client disconnects, aborts the OpenAI stream and stops writing SSE events.
-- Saves the exchange to PostgreSQL on a best-effort basis.
+- Saves the exchange and durable chat-level metadata to PostgreSQL on a best-effort basis.
 
 Done `meta` may include frontend-ready tool data collected during agent execution:
 ```json
@@ -122,6 +188,14 @@ Done `meta` may include frontend-ready tool data collected during agent executio
 }
 ```
 
+`meta.customerContext`, `meta.reservation`, `meta.selectedTour`,
+`meta.selectedTourId`, `meta.selectedTransportation`, and `meta.participants`
+are chat-level fields.
+They are merged into `conversations.metadata` and should not be duplicated onto
+individual message records by clients. Per-turn UI fields such as `uiAction`,
+`tours`, `pricing`, and `toolsCalled` may still be associated with the
+assistant turn that produced them.
+
 Tour tool notes:
 - Tour and reservation state comes from PostgreSQL.
 - Available tour tools are `searchTours`, `calculateTransportation`, `checkAvailability`, `calculatePricing`, and `createReservation`.
@@ -133,61 +207,94 @@ Tour tool notes:
 - Before final reservation confirmation, booking flows with an unknown transportation preference return a choice `uiAction` asking whether the customer wants transportation. Choosing `show_transportation` triggers transportation options; choosing `decline_transportation` persists `meta.transportationDeclined: true` for the booking flow.
 - `calculateTransportation` estimates shared shuttle and private transfer options for supported tour regions and returns a `transportation_selection` `uiAction` when options are available.
 - `calculatePricing` supports optional `discountCode`. Recognized codes are currently `EARLYBIRD`, `STUDENT`, and `LOCAL`; group discounts can also apply.
-- `createReservation` requires participants and customer name in tool arguments; tour selection can be resolved by `tourId`, `tourName`, or location. It accepts optional `customerEmail`, `discountCode`, and itinerary dates from frontend `customerContext`.
+- `createReservation` requires participants and customer name in tool arguments; tour selection can be resolved by `tourId`, `tourName`, or location. It accepts optional `customerEmail`, `discountCode`, and itinerary dates from frontend `customerContext`. Authenticated reservations persist `user_id` and use the authenticated email supplied through merged customer context.
 - A participant-count reply from that UI action can complete the booking context; the backend then asks for transportation preference when unknown and only calls `createReservation` after transportation is selected or declined and final confirmation is received.
 - Final confirmation accepts the structured `confirm_reservation` action and affirmative text such as `Yes` when the previous assistant metadata contained the final confirmation action.
-- Successful reservation tool results include `id`, `reservationId`, `customer_name`, `customerName`, `customerEmail`, `conversationId`, `tour_id`, `tourId`, `tourName`, `participants`, `confirmation_code`, `confirmationCode`, `created_at`, `createdAt`, `total_price`, `totalPrice`, `tourTotalPrice`, optional transportation totals, itinerary dates, `currency`, `remainingSlots`, `discountRate`, and `discountReason`.
+- Successful reservation tool results include `id`, `reservationId`, `userId`, `customerName`, `customerEmail`, `conversationId`, `tourId`, `tourName`, `participants`, `confirmationCode`, `createdAt`, `totalPrice`, `tourTotalPrice`, itinerary dates, `currency`, `remainingSlots`, `discountRate`, and `discountReason`. Transportation selection and transportation-derived totals are calculated from chat-level `meta.selectedTransportation`, not embedded as `meta.reservation.transportation`.
 - Reservations are associated with the active chat `conversationId` internally.
 - The public stream does not expose raw tool messages, but safe structured tool data is returned in the `done` event `meta` object for frontend rendering.
 
-## `GET /chat/:conversationId`
-Returns up to 100 persisted messages for one conversation as alternating user and assistant messages.
+## `GET /chat/latest`
+Returns the most recent conversation owned by the authenticated user. Requires `Authorization: Bearer <token>` and uses `req.user.id`; no user ID is accepted from the client.
 
-Success data:
+Success data when a conversation exists:
 ```json
 {
-  "conversationId": "conversation-123",
-  "messages": [
-    { "role": "user", "content": "I am visiting Monteverde.", "createdAt": "..." },
-    { "role": "assistant", "content": "Monteverde is excellent...", "createdAt": "..." }
-  ]
+  "success": true,
+  "data": {
+    "conversationId": "conversation-123",
+    "messages": [
+      { "role": "user", "content": "Hello", "createdAt": "..." },
+      { "role": "assistant", "content": "Hi!", "createdAt": "..." }
+    ]
+  },
+  "meta": {}
 }
 ```
 
-## `POST /recommend`
-Body:
+The response `meta` includes persisted chat-level metadata from
+`conversations.metadata`, such as `customerContext`, participants, selected
+tour state, and selected transportation. If the latest owned conversation has an associated
+reservation, `meta.reservation` contains the same frontend-safe reservation
+shape used by the `POST /chat` stream `done` event. Transportation is exposed
+through `meta.selectedTransportation`, not `meta.reservation.transportation`:
 ```json
 {
-  "location": "Monteverde",
-  "budget": "moderate",
-  "days": 3
-}
-```
-
-Validation:
-- `location` is required, trimmed, non-empty.
-- `budget` must be `budget`, `moderate`, or `luxury`.
-- `days` must be an integer from 1 to 30.
-
-Success data is the parsed OpenAI function tool response:
-```json
-{
-  "location": "Monteverde",
-  "budget": "moderate",
-  "days": 3,
-  "recommendations": {
-    "birdSpecies": [],
-    "bestSpots": [],
-    "suggestedItinerary": []
+  "success": true,
+  "data": {
+    "conversationId": "conversation-123",
+    "messages": []
+  },
+  "meta": {
+    "participants": 2,
+    "selectedTransportation": {
+      "transportationOption": "shared_shuttle",
+      "origin": "San Jose",
+      "destination": "Monteverde",
+      "totalPrice": 130,
+      "currency": "USD"
+    },
+    "reservation": {
+      "reservationId": 42,
+      "customerName": "Ana Gomez",
+      "customerEmail": "ana@example.com",
+      "conversationId": "conversation-123",
+      "tourId": 1,
+      "tourName": "Monteverde Quetzal Tour",
+      "participants": 2,
+      "confirmationCode": "BW-ABC123",
+      "totalPrice": 240,
+      "tourTotalPrice": 240,
+      "currency": "USD"
+    }
   }
 }
 ```
 
+Success data when no owned conversation exists:
+```json
+{
+  "conversationId": null,
+  "messages": []
+}
+```
+
+The lookup orders conversations by `last_message_at DESC NULLS LAST, created_at DESC`.
+
 ## Current Protection
-Routes are public. The app applies global in-memory IP rate limiting at 60 requests per minute, but does not yet enforce JWT, sessions, or API keys.
+`GET /chat/latest` requires JWT bearer authentication. `POST /chat` accepts authenticated customer/admin users or unauthenticated visitors; visitors can only ask bird-related questions, cannot execute tool-backed tour or reservation actions, and have a stricter 10-request-per-hour IP limit. Conversation and reservation `user_id` ownership is enforced server-side. `POST /auth/signup`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, and `GET /health` remain public.
+
+Request protection includes:
+- Helmet security headers through `security.middleware.js`.
+- CORS origin allow-listing from `CORS_ORIGINS`; disallowed browser origins receive `403 CORS_ORIGIN_DENIED`.
+- JSON body size limit of `64kb`.
+- Recursive JSON body and route-param sanitization that strips null bytes and prototype-pollution keys.
+- Route-specific validation through `validate(...)` before service execution.
+- Global in-memory IP rate limiting at 60 requests per minute.
 
 ## Common Errors
 - Validation failures return `400` with code `VALIDATION_ERROR`.
+- Missing or invalid bearer tokens return `401` with code `UNAUTHORIZED`.
 - Rate limit failures return `429` with code `RATE_LIMITED`.
 - Unknown routes return `404` with code `NOT_FOUND`.
 - Empty or malformed AI provider responses return `502` with code `AI_EMPTY_RESPONSE`.

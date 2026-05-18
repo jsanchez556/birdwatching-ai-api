@@ -44,6 +44,46 @@ describe('ConversationQueries', () => {
       );
     });
 
+    it('should save a chat message with an authenticated owner', async () => {
+      const mockMessage = {
+        id: 1,
+        conversation_id: 'conversation-123',
+        user_input: 'Hello',
+        ai_output: 'Hi there!',
+      };
+      mockQuery.mockResolvedValue({ rows: [mockMessage] });
+
+      await conversationQueries.saveMessage('conversation-123', 'Hello', 'Hi there!', 7);
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('save_message'),
+        ['conversation-123', 'Hello', 'Hi there!', 7]
+      );
+    });
+
+    it('should save chat-level metadata with a message', async () => {
+      const mockMessage = {
+        id: 1,
+        conversation_id: 'conversation-123',
+        user_input: 'Hello',
+        ai_output: 'Hi there!',
+      };
+      const metadata = {
+        customerContext: {
+          customerName: 'Ana Gomez',
+        },
+        selectedTourId: 1,
+      };
+      mockQuery.mockResolvedValue({ rows: [mockMessage] });
+
+      await conversationQueries.saveMessage('conversation-123', 'Hello', 'Hi there!', 7, metadata);
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('save_message'),
+        ['conversation-123', 'Hello', 'Hi there!', 7, JSON.stringify(metadata)]
+      );
+    });
+
     it('should throw error when database fails', async () => {
       mockQuery.mockRejectedValue(new Error('Database error'));
 
@@ -70,6 +110,17 @@ describe('ConversationQueries', () => {
         ['conversation-123', 2]
       );
     });
+
+    it('should scope recent messages to an authenticated user', async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
+
+      await conversationQueries.getLastMessages('conversation-123', 2, 7);
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('get_last_messages'),
+        ['conversation-123', 2, 7]
+      );
+    });
   });
 
   describe('getByConversationId', () => {
@@ -92,6 +143,60 @@ describe('ConversationQueries', () => {
         expect.stringContaining('get_conversation_messages'),
         ['conversation-123', 100]
       );
+    });
+
+    it('should scope loaded messages to an authenticated user', async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
+
+      await conversationQueries.getByConversationId('conversation-123', 100, 7);
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('get_conversation_messages'),
+        ['conversation-123', 100, 7]
+      );
+    });
+  });
+
+  describe('getLatestByUserId', () => {
+    it('should return the latest conversation for a user', async () => {
+      mockQuery.mockResolvedValue({ rows: [{ conversation_id: 'conversation-latest' }] });
+
+      await expect(conversationQueries.getLatestByUserId(7)).resolves.toBe('conversation-latest');
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('ORDER BY last_message_at DESC NULLS LAST, created_at DESC'),
+        [7]
+      );
+    });
+
+    it('should return null when the user has no conversations', async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
+
+      await expect(conversationQueries.getLatestByUserId(7)).resolves.toBeNull();
+    });
+  });
+
+  describe('getOwner', () => {
+    it('should return the conversation owner', async () => {
+      mockQuery.mockResolvedValue({ rows: [{ user_id: 7 }] });
+
+      await expect(conversationQueries.getOwner('conversation-123')).resolves.toBe(7);
+      expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining('FROM conversations'), ['conversation-123']);
+    });
+  });
+
+  describe('getMetadata', () => {
+    it('should return conversation metadata', async () => {
+      const metadata = { selectedTourId: 1 };
+      mockQuery.mockResolvedValue({ rows: [{ metadata }] });
+
+      await expect(conversationQueries.getMetadata('conversation-123', 7)).resolves.toEqual(metadata);
+      expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining('FROM conversations'), ['conversation-123', 7]);
+    });
+
+    it('should return empty metadata when the conversation is missing', async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
+
+      await expect(conversationQueries.getMetadata('conversation-123', 7)).resolves.toEqual({});
     });
   });
 

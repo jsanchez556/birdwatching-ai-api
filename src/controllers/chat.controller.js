@@ -15,6 +15,7 @@ class ChatController {
       conversationId,
       customerContext,
       conversationContext,
+      role,
     } = req.body;
     const abortController = new AbortController();
     let streamCompleted = false;
@@ -52,6 +53,8 @@ class ChatController {
           signal: abortController.signal,
           customerContext,
           conversationContext,
+          authUser: req.user,
+          role,
         }
       );
 
@@ -85,12 +88,12 @@ class ChatController {
     }
   }
 
-  async handleGetConversation(req, res) {
-    const { conversationId } = req.params;
-    logger.info('Conversation load requested', { conversationId });
+  async handleGetLatestConversation(req, res) {
+    logger.info('Latest conversation load requested', { userId: req.user?.id });
 
-    const messages = await chatService.getConversationMessages(conversationId);
-    return sendSuccess(res, { conversationId, messages });
+    const result = await chatService.getLatestConversation(req.user);
+    const { meta = {}, ...data } = result;
+    return sendSuccess(res, data, meta);
   }
 }
 

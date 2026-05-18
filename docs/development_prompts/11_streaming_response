@@ -184,7 +184,7 @@ In `birdwatching-ai-api`:
 4. Preserve existing streaming contract.
    - Keep `start`, `chunk`, `replace`, `done`, and `error`.
    - Keep `POST /chat` as the active endpoint.
-   - Keep `GET /chat/:conversationId` unchanged.
+   - Keep `GET /chat/latest` unchanged.
    - Keep guardrails, RAG, tool calling, metadata, and best-effort persistence for completed responses.
 
 5. Update backend tests.

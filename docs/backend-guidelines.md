@@ -16,8 +16,6 @@ Back to [Project Context](../CONTEXT.md). Pair this with [API Contracts](./api.m
 - Preserve current constraints unless product requirements change:
   - chat message max: 4000 characters
   - conversation ID max: 128 characters
-  - recommendation days: 1 to 30
-  - recommendation budgets: `budget`, `moderate`, `luxury`
 
 ## Errors
 - Use `HttpError` for expected request, validation, rate limit, and provider failures.
@@ -30,7 +28,6 @@ Back to [Project Context](../CONTEXT.md). Pair this with [API Contracts](./api.m
 - Use centralized prompts from `src/ai/prompts/`.
 - Keep token usage and cost-estimation helpers in `src/ai/evaluations/`.
 - Keep AI safety, refusal, or policy checks in `src/ai/guardrails/`.
-- Keep structured recommendation output aligned with `src/ai/schemas/recommendation.schema.js`.
 - Keep chat tool schemas in `src/ai/schemas/`, adapters in `src/ai/tools/`, and multi-step planning in `src/ai/orchestrators/`.
 - Feed tool results into final response context before returning conversational text.
 - Log model, request ID, token usage, prompt version, and response length where available.

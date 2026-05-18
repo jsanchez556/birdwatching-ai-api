@@ -1,4 +1,6 @@
-const DEFAULT_CURRENCY = 'USD';
+import { DEFAULT_CURRENCY, TRANSPORTATION_OPTIONS } from '../../constants/business.js';
+import { normalizeText } from '../../utils/normalizers.js';
+import { invalidArguments, toPositiveInteger } from '../../utils/toolResponses.js';
 
 const transportationProfiles = [
   {
@@ -31,24 +33,6 @@ const transportationProfiles = [
   },
 ];
 
-function normalizeText(value) {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
-function toPositiveInteger(value, fieldName, fallback = 1) {
-  if (value === undefined || value === null || value === '') {
-    return fallback;
-  }
-
-  const numberValue = Number(value);
-
-  if (!Number.isInteger(numberValue) || numberValue <= 0) {
-    throw new Error(`${fieldName} must be a positive integer`);
-  }
-
-  return numberValue;
-}
-
 function resolveProfile({ destination, location, tourName } = {}) {
   const selector = [destination, location, tourName]
     .map(normalizeText)
@@ -62,13 +46,11 @@ export async function calculateTransportation(args = {}) {
   let participants;
 
   try {
-    participants = toPositiveInteger(args.participants, 'participants', 1);
+    participants = toPositiveInteger(args.participants, 'participants', 1, {
+      allowEmptyFallback: true,
+    });
   } catch (error) {
-    return {
-      success: false,
-      code: 'INVALID_TOOL_ARGUMENTS',
-      message: error.message,
-    };
+    return invalidArguments(error);
   }
 
   const profile = resolveProfile(args);
@@ -90,18 +72,20 @@ export async function calculateTransportation(args = {}) {
     estimatedTravelTime: profile.estimatedTravelTime,
     options: [
       {
-        type: 'shared_shuttle',
+        type: TRANSPORTATION_OPTIONS.SHARED_SHUTTLE,
         pricePerPerson: profile.sharedShuttleUsd,
         totalPrice: sharedTotal,
         currency: DEFAULT_CURRENCY,
       },
       {
-        type: 'private_transfer',
+        type: TRANSPORTATION_OPTIONS.PRIVATE_TRANSFER,
         totalPrice: profile.privateTransferUsd,
         currency: DEFAULT_CURRENCY,
       },
     ],
-    recommendedOption: participants >= 4 ? 'private_transfer' : 'shared_shuttle',
+    recommendedOption: participants >= 4
+      ? TRANSPORTATION_OPTIONS.PRIVATE_TRANSFER
+      : TRANSPORTATION_OPTIONS.SHARED_SHUTTLE,
   };
 }
 

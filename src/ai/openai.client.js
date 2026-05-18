@@ -1,14 +1,9 @@
 import OpenAI from 'openai';
-import { recommendationSchema } from './schemas/recommendation.schema.js';
 import env from '../config/env.js';
 import asyncRetry from '../utils/asyncRetry.js';
 import logger from '../utils/logger.js';
 import { availableTools, executeToolCall } from './tools/index.js';
 import { addCompletionUsage } from './evaluations/token.usage.js';
-import {
-  buildRecommendationMessages,
-  RECOMMENDATION_PROMPT_VERSION,
-} from './prompts/index.js';
 
 const retryableStatuses = new Set([408, 409, 429, 500, 502, 503, 504]);
 
@@ -190,43 +185,6 @@ class OpenAIClient {
     }
 
     return embeddings;
-  }
-
-  async createStructuredRecommendation(location, budget, days) {
-    const completion = await asyncRetry(() => this.client.chat.completions.create({
-      model: this.model,
-      messages: buildRecommendationMessages({ location, budget, days }),
-      tools: [
-        {
-          type: 'function',
-          function: recommendationSchema,
-        },
-      ],
-      tool_choice: { type: 'function', function: { name: 'get_bird_recommendation' } },
-    }), {
-      retries: 2,
-      shouldRetry: isRetryableOpenAIError,
-    });
-
-    this.logCompletionUsage('structured_recommendation', completion, {
-      promptVersion: RECOMMENDATION_PROMPT_VERSION,
-    });
-
-    const toolCall = completion.choices[0]?.message?.tool_calls?.[0];
-
-    if (toolCall) {
-      try {
-        return JSON.parse(toolCall.function.arguments);
-      } catch (error) {
-        logger.error('Failed to parse OpenAI recommendation tool response', {
-          error: error.message,
-          model: this.model,
-        });
-        return null;
-      }
-    }
-
-    return null;
   }
 
   parseToolArguments(toolCall) {

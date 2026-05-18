@@ -1,12 +1,10 @@
 import {
   buildPrompt,
   buildChatMessages,
-  buildRecommendationMessages,
   injectRagContextMessage,
 } from '../src/ai/prompts/prompt.builder.js';
 import {
   CHAT_SYSTEM_PROMPT,
-  RECOMMENDATION_PROMPT,
 } from '../src/ai/prompts/system.prompt.js';
 
 describe('prompt builder', () => {
@@ -88,22 +86,4 @@ describe('prompt builder', () => {
     ]);
   });
 
-  it('builds structured recommendation messages', () => {
-    expect(buildRecommendationMessages({
-      location: 'Monteverde',
-      budget: '$500',
-      days: 3,
-    })).toEqual([
-      { role: 'system', content: RECOMMENDATION_PROMPT },
-      {
-        role: 'user',
-        content: [
-          'Generate birdwatching recommendations for:',
-          '- Location: Monteverde',
-          '- Budget: $500',
-          '- Days: 3',
-        ].join('\n'),
-      },
-    ]);
-  });
 });

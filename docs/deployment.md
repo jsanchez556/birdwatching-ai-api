@@ -19,6 +19,7 @@ The server listens on `0.0.0.0` and uses `PORT` from `src/config/env.js`.
 Required outside tests:
 - `OPENAI_API_KEY`
 - `DATABASE_URL`
+- `JWT_SECRET`
 
 Optional:
 - `PORT`, defaults to `3000`
@@ -27,6 +28,7 @@ Optional:
 - `OPENAI_EMBEDDING_MODEL`, defaults to `text-embedding-3-small`
 - `CORS_ORIGINS`, comma-separated allowed origins; empty means no CORS allow-origin header is set
 - `LOG_FILES_ENABLED`, `true` or `false`; defaults to console-only logging
+- `JWT_EXPIRES_IN`, defaults to `7d`
 
 Do not commit `.env` files. The local `.gitignore` excludes them.
 
@@ -37,9 +39,13 @@ src/db/migrations/001_create_chat_interactions.sql
 src/db/migrations/002_create_functions.sql
 src/db/migrations/003_create_tour_reservations.sql
 src/db/migrations/004_create_vector_knowledge.sql
+src/db/migrations/005_create_users.sql
+src/db/migrations/006_add_user_ownership.sql
+src/db/migrations/007_save_conversation_metadata.sql
+src/db/migrations/008_create_usage_logs.sql
 ```
 
-Run migrations in order with `psql`, Railway shell, or your deployment platform's database tooling before using chat memory, reservations, or pgvector-backed RAG.
+Run migrations in order with `psql`, Railway shell, or your deployment platform's database tooling before using chat memory, reservations, users, or pgvector-backed RAG.
 
 Production database connections use SSL with `rejectUnauthorized: false`.
 
@@ -79,5 +85,6 @@ Also verify:
 - `CORS_ORIGINS` matches the frontend origin
 - OpenAI model access is available for `OPENAI_MODEL`
 - OpenAI embedding model access is available for `OPENAI_EMBEDDING_MODEL`
+- `JWT_SECRET` is set to a strong secret and not exposed to the frontend
 - all database migrations have run
 - `npm run ingest` has been run after RAG source file changes

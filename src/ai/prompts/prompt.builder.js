@@ -1,6 +1,5 @@
 import { getSystemPrompt } from './system.prompt.js';
 import { createRagContextMessage } from './rag.context.js';
-import { formatRecommendationUserPrompt } from './user.prompt.js';
 
 const VALID_MESSAGE_ROLES = new Set(['system', 'user', 'assistant', 'tool']);
 
@@ -113,23 +112,5 @@ export function injectRagContextMessage(messages, documents = []) {
     messages[0],
     createRagContextMessage(documents),
     ...messages.slice(1),
-  ];
-}
-
-export function buildRecommendationMessages({
-  location,
-  budget,
-  days,
-  systemPromptVersion,
-} = {}) {
-  return [
-    {
-      role: 'system',
-      content: getSystemPrompt('recommendation', systemPromptVersion),
-    },
-    {
-      role: 'user',
-      content: formatRecommendationUserPrompt({ location, budget, days }),
-    },
   ];
 }

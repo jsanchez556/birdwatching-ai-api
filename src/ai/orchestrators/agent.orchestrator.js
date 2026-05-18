@@ -78,6 +78,22 @@ function buildPlannerMessage(plan) {
   };
 }
 
+function buildVisitorScopeMessage(metadata = {}) {
+  if (metadata.role !== 'visitor') {
+    return null;
+  }
+
+  return {
+    role: 'system',
+    content: [
+      'The current user is an unauthenticated visitor.',
+      'Answer only bird-related questions.',
+      'Do not discuss tours, pricing, transportation, reservations, booking steps, or customer-specific planning.',
+      'If the user asks for restricted help, tell them to log in.',
+    ].join('\n'),
+  };
+}
+
 function buildReservationFailureMessage(toolResults = {}) {
   const failedReservation = (toolResults.errors || []).find((error) => error.tool === 'createReservation');
 
@@ -169,10 +185,16 @@ export class AgentOrchestrator {
       recentToolCount: conversationContext.recentToolsCalled.length,
     });
 
-    const plan = this.agent.planner.plan({
-      message: userMessage,
-      context: conversationContext,
-    });
+    const plan = metadata.role === 'visitor'
+      ? {
+        status: 'visitor_bird_answer',
+        steps: [],
+        message: 'Answer the visitor question with bird information only. Do not offer tours, bookings, reservations, prices, or transportation.',
+      }
+      : this.agent.planner.plan({
+        message: userMessage,
+        context: conversationContext,
+      });
 
     metadata.agentPlan = {
       status: plan.status,
@@ -211,11 +233,13 @@ export class AgentOrchestrator {
     });
     const debugTrace = attachDebugTraceSummary(metadata, plan, toolResults);
     const toolContextMessage = buildToolContextMessage(plan, toolResults);
+    const visitorScopeMessage = buildVisitorScopeMessage(metadata);
     const knownBookingContextMessage = buildKnownBookingContextMessage(metadata);
     const reservationFailureMessage = buildReservationFailureMessage(toolResults);
     const plannerMessage = buildPlannerMessage(plan);
     const finalMessages = [
       ...messages,
+      visitorScopeMessage,
       toolContextMessage,
       knownBookingContextMessage,
       reservationFailureMessage,
