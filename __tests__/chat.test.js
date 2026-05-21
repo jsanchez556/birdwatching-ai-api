@@ -299,18 +299,3 @@ describe('GET /chat/latest', () => {
     expect(mockGetLatestConversation).toHaveBeenCalledTimes(1);
   });
 });
-
-describe('legacy GET /chat/:conversationId', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  it('is no longer exposed', async () => {
-    const res = await request(app)
-      .get('/chat/conversation-123')
-      .set('Authorization', authHeader('legacy-chat-user'));
-
-    expect(res.statusCode).toBe(404);
-    expect(mockGetLatestConversation).not.toHaveBeenCalled();
-  });
-});

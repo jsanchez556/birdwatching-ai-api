@@ -35,6 +35,11 @@ Common optional variables:
 - `OPENAI_EMBEDDING_MODEL` defaults to `text-embedding-3-small`
 - `CORS_ORIGINS` accepts a comma-separated allowlist
 - `LOG_FILES_ENABLED` accepts `true` or `false`
+- `E_BIRD_API_BASE_URL` and `E_BIRD_API_KEY` enable eBird ingestion clients
+- `INATURALIST_API_BASE_URL` enables iNaturalist taxa lookups
+- `XENO_CANTO_API_BASE_URL` and `XENO_CANTO_API_KEY` enable Xeno-canto recording lookups
+- `EXTERNAL_API_RATE_LIMIT_MAX_REQUESTS` defaults to `40` and cannot exceed `40`
+- `S3_ENDPOINT_URL`, `S3_REGION`, `S3_BUCKET_NAME`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` enable media asset uploads to the Railway bucket
 
 Run database migrations before using chat memory:
 ```bash
@@ -50,22 +55,78 @@ psql "$DATABASE_URL" -f src/db/migrations/008_create_usage_logs.sql
 
 ## Bird Knowledge Base
 Chat responses use a PostgreSQL-backed RAG flow with `pgvector`. Documents must
-be ingested from `src/db/data` before retrieval can return RAG context. The
-ingestion command parses supported source files, chunks each document, embeds
+be ingested from `src/db/ingestion/data` before retrieval can return RAG context. The
+ingestion command parses normalized JSON datasets, chunks each document, embeds
 chunks with the OpenAI embeddings API, and persists documents, chunks, metadata,
 and vectors in PostgreSQL.
 
 Run ingestion after migrations and whenever source knowledge files change:
 ```bash
-npm run ingest              # ingest all supported files in src/db/data
+npm run ingest              # ingest all .json datasets in src/db/ingestion/data
 npm run ingest -- birds.json
-npm run ingest -- file1.json file2.md
+npm run ingest -- birds     # dataset names without .json are accepted
+npm run ingest -- file1.json file2.json
 npm run ingest -- --all
 ```
 
-Supported source files currently include `.json` and `.md`. The current
-`birds.json` shape is a family-keyed object of bird arrays, and generic JSON
-document arrays or `{ "documents": [...] }` files are also supported.
+Supported source files are normalized `.json` arrays. `birds.json` is the
+reference contract: each document requires stable `externalId` and `name`, and
+may include `description`, `locations`, `documentType`, `category`, `tags`, and
+structured `metadata`. Media URLs stay in metadata; generated embeddings are
+stored only in PostgreSQL.
+
+Reusable external API clients for future ingestion jobs live in
+`src/external/clients/`. eBird fetches Costa Rica species codes and recent
+observations, iNaturalist searches taxa by name with one request, and
+Xeno-canto fetches Costa Rica bird song recordings across all available pages by
+default. `src/external/export.service.js` and the focused services under
+`src/external/services/` orchestrate provider exports, while
+`src/external/rateLimiter.js` keeps calls at or below 40 requests per minute.
+Fetched provider data should be normalized before passing documents into the
+existing vector ingestion service.
+
+Media assets can be copied from provider URLs into an S3-compatible Railway
+bucket through `src/external/services/mediaAsset.service.js`. The uploader
+builds deterministic object keys from the provider, media type, and URL path, so
+re-running ingestion skips objects that are already present before downloading.
+Configure the Railway bucket by copying its S3-compatible endpoint, region,
+bucket name, access key, and secret key into local `.env` or Railway variables:
+`S3_ENDPOINT_URL`, `S3_REGION`, `S3_BUCKET_NAME`, `S3_ACCESS_KEY_ID`, and
+`S3_SECRET_ACCESS_KEY`. Keep those values out of source control and logs.
+
+When media-rich bird RAG uses relative keys such as `/photos/123_medium.jpg`,
+`songs/123.mp3`, or `sonograms/123_grey-small.png`, those values are metadata
+references, not public static paths. Browser clients should call
+`GET /files/:folderName/:filename` to receive the normalized response envelope
+with a short-lived presigned `data.url`, then render that URL. Absolute provider
+URLs may still be returned and can be rendered directly by clients.
+
+External provider responses can be exported to `src/external/data` for
+inspection or later normalization:
+```bash
+npm run external
+npm run external -- taxo
+npm run external -- sounds
+npm run external -- photos
+npm run external -- taxo sounds photos
+```
+
+With no arguments, `npm run external` runs `taxo`, `sounds`, then `photos`.
+The `taxo` export writes `ebird-species-list-cr.json` and
+`ebird-species-taxo-cr.json`, then incrementally refreshes
+`ebird-recent-observations-cr.json`. Species lists are reused for one year.
+Taxonomy exports read the generated species list, fetch missing species in
+chunks of 50 codes, and preserve existing keyed taxonomy records. Recent
+observations read the species list, fetch eBird sightings per species code, and
+write after each species. The observations file is keyed by species code, with
+each entry containing sorted `locations` observation objects and `lstDt` for the
+most recent sighting. The `sounds` export follows all provider pages, then writes
+`xenocanto-costa-rica-bird-songs.json` as a simplified object keyed by English
+name for ingestion, and it is reused for one year. The `photos` export reads
+`ebird-species-taxo-cr.json`, searches taxa by common name, and writes
+`inaturalist-costa-rica-bird-images.json` as a species-code keyed object with
+image URLs and per-entry update dates. Each iNaturalist species lookup is reused
+for one year.
 
 Semantic retrieval runs through `src/db/retrieval/retrieval.service.js` and
 `src/db/vector/vector.repository.js`, with optional metadata filters for fields
@@ -99,7 +160,8 @@ function.
 ```bash
 npm start      # node src/server.js
 npm run dev    # nodemon src/server.js
-npm run ingest # ingest all supported src/db/data files into pgvector
+npm run ingest # ingest all normalized src/db/ingestion/data JSON datasets into pgvector
+npm run external # export external provider JSON into src/external/data
 npm test       # Jest ESM test runner
 ```
 
@@ -107,6 +169,7 @@ npm test       # Jest ESM test runner
 - `GET /health`
 - `POST /chat`
 - `GET /chat/latest`
+- `GET /files/:folderName/:filename`
 
 Responses use the normalized envelope from `src/utils/apiResponse.js`.
 

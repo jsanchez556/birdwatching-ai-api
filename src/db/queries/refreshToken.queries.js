@@ -16,7 +16,7 @@ function mapRefreshToken(row) {
   };
 }
 
-export class RefreshTokenQueries {
+class RefreshTokenQueries {
   async create({ userId, tokenHash, expiresAt }) {
     try {
       const query = `

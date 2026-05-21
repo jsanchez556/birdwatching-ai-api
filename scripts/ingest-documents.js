@@ -7,9 +7,9 @@ import logger from '../src/utils/logger.js';
 
 const DATA_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  '../src/db/data'
+  '../src/db/ingestion/data'
 );
-const SUPPORTED_EXTENSIONS = new Set(['.json', '.md']);
+const SUPPORTED_EXTENSIONS = new Set(['.json']);
 
 function isMainModule() {
   return process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
@@ -26,12 +26,18 @@ function parseArgs(args = []) {
   };
 }
 
+function normalizeFileName(fileName) {
+  const extension = path.extname(fileName);
+  return extension ? fileName : `${fileName}.json`;
+}
+
 function assertSafeDataPath(fileName, dataDir = DATA_DIR) {
-  const filePath = path.resolve(dataDir, fileName);
+  const normalizedFileName = normalizeFileName(fileName);
+  const filePath = path.resolve(dataDir, normalizedFileName);
   const relativePath = path.relative(dataDir, filePath);
 
   if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
-    throw new Error(`Refusing to read outside src/db/data: ${fileName}`);
+    throw new Error(`Refusing to read outside src/db/ingestion/data: ${fileName}`);
   }
 
   return filePath;
@@ -47,48 +53,25 @@ async function discoverSupportedFiles(dataDir = DATA_DIR) {
     .sort((left, right) => left.localeCompare(right));
 }
 
-function parseMarkdown(rawContent, fileName) {
-  const titleMatch = rawContent.match(/^#\s+(.+)$/m);
-  const title = titleMatch?.[1]?.trim() || path.basename(fileName, path.extname(fileName));
-
-  return [{
-    id: path.basename(fileName, path.extname(fileName)),
-    title,
-    content: rawContent.trim(),
-    source: fileName,
-    documentType: 'markdown',
-    metadata: {
-      fileName,
-    },
-  }];
-}
-
-function parseJson(rawContent) {
+function parseJson(rawContent, fileName = 'dataset.json') {
   const parsed = JSON.parse(rawContent);
 
   if (Array.isArray(parsed)) {
     return parsed;
   }
 
-  if (Array.isArray(parsed?.documents)) {
-    return parsed.documents;
-  }
-
-  if (parsed?.title || parsed?.name || parsed?.content || parsed?.text) {
-    return [parsed];
-  }
-
-  return parsed;
+  throw new Error(`Invalid ingestion dataset shape in ${fileName}: expected a JSON array of normalized documents`);
 }
 
 async function readDocumentsFromFile(fileName, options = {}) {
   const dataDir = options.dataDir || DATA_DIR;
   const filePath = assertSafeDataPath(fileName, dataDir);
+  const resolvedFileName = path.basename(filePath);
   const extension = path.extname(filePath).toLowerCase();
 
   if (!SUPPORTED_EXTENSIONS.has(extension)) {
     return {
-      fileName,
+      fileName: resolvedFileName,
       skipped: true,
       reason: `Unsupported file type: ${extension || 'unknown'}`,
       documents: [],
@@ -96,12 +79,10 @@ async function readDocumentsFromFile(fileName, options = {}) {
   }
 
   const rawContent = await readFile(filePath, 'utf8');
-  const documents = extension === '.md'
-    ? parseMarkdown(rawContent, fileName)
-    : parseJson(rawContent);
+  const documents = parseJson(rawContent, resolvedFileName);
 
   return {
-    fileName,
+    fileName: resolvedFileName,
     skipped: false,
     documents,
   };
@@ -129,17 +110,16 @@ async function ingestFiles(fileNames, options = {}) {
 
       const summary = await ingestionService.ingestDocuments(parsed.documents, {
         force: options.force,
-        source: fileName,
-        documentType: path.extname(fileName).toLowerCase() === '.md' ? 'markdown' : undefined,
+        source: parsed.fileName,
       });
 
       logger.info('Ingestion file processed', {
-        fileName,
+        fileName: parsed.fileName,
         ...summary,
       });
 
       results.push({
-        fileName,
+        fileName: parsed.fileName,
         skipped: false,
         ...summary,
       });
@@ -228,8 +208,9 @@ export {
   closeCliResources,
   discoverSupportedFiles,
   ingestFiles,
+  normalizeFileName,
   parseArgs,
-  parseMarkdown,
+  parseJson,
   readDocumentsFromFile,
   runIngestionCli,
 };

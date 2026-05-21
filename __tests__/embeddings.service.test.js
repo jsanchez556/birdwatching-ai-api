@@ -27,8 +27,8 @@ describe('EmbeddingsService helpers', () => {
     jest.clearAllMocks();
   });
 
-  it('flattens the family-keyed birds knowledge base into bird documents', () => {
-    const documents = normalizeKnowledgeBase({
+  it('rejects legacy family-keyed bird knowledge bases', () => {
+    expect(() => normalizeKnowledgeBase({
       Trogonidae: [
         {
           name: 'Resplendent Quetzal',
@@ -43,22 +43,7 @@ describe('EmbeddingsService helpers', () => {
           description: 'Bright-billed toucan.',
         },
       ],
-    });
-
-    expect(documents).toEqual([
-      {
-        family: 'Trogonidae',
-        name: 'Resplendent Quetzal',
-        location: 'Monteverde, San Gerardo de Dota',
-        description: 'Cloud forest bird.',
-      },
-      {
-        family: 'Ramphastidae',
-        name: 'Keel-billed Toucan',
-        location: 'Sarapiqui, Tortuguero',
-        description: 'Bright-billed toucan.',
-      },
-    ]);
+    })).toThrow('Knowledge source must contain an array of normalized ingestion documents');
   });
 
   it('keeps array knowledge bases compatible', () => {
@@ -78,6 +63,64 @@ describe('EmbeddingsService helpers', () => {
       'Family: Trogonidae',
       'Locations: Monteverde, San Gerardo de Dota',
       'Description: Cloud forest bird.',
+    ].join('\n'));
+  });
+
+  it('formats bird profile text with scientific name, observation, and media availability', () => {
+    expect(documentToText({
+      family: 'Tinamous',
+      name: 'Great Tinamou',
+      locations: ['La Cusinga Lodge'],
+      description: 'Large ground bird.',
+      metadata: {
+        scientificName: 'Tinamus major',
+        lastObservation: {
+          locName: 'La Cusinga Lodge',
+          obsDt: '2026-05-21 04:58',
+          howMany: 1,
+        },
+        recentObservations: {
+          locations: [
+            { locName: 'La Cusinga Lodge' },
+            { locName: 'Rainforest Trail' },
+          ],
+        },
+        media: {
+          photoUrl: 'https://example.com/photo.jpg',
+          songUrl: 'https://example.com/song.mp3',
+          sonogramUrl: null,
+        },
+      },
+    })).toBe([
+      'Name: Great Tinamou',
+      'Scientific name: Tinamus major',
+      'Family: Tinamous',
+      'Locations: La Cusinga Lodge',
+      'Description: Large ground bird.',
+      'Recent observation: location La Cusinga Lodge, date 2026-05-21 04:58, count 1',
+      'Recent observation locations: La Cusinga Lodge, Rainforest Trail',
+      'Media available: photo, song recording',
+    ].join('\n'));
+  });
+
+  it('omits blank descriptions from bird profile text', () => {
+    expect(documentToText({
+      family: 'Ducks, Geese, and Waterfowl',
+      name: 'Blue-winged x Cinnamon Teal (hybrid)',
+      locations: [],
+      description: null,
+      metadata: {
+        scientificName: 'Spatula discors x cyanoptera',
+        media: {
+          photoUrl: null,
+          songUrl: null,
+          sonogramUrl: null,
+        },
+      },
+    })).toBe([
+      'Name: Blue-winged x Cinnamon Teal (hybrid)',
+      'Scientific name: Spatula discors x cyanoptera',
+      'Family: Ducks, Geese, and Waterfowl',
     ].join('\n'));
   });
 

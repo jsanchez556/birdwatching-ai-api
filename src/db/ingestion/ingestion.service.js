@@ -9,14 +9,33 @@ import logger from '../../utils/logger.js';
 import chunkingService from '../chunking/chunking.service.js';
 import vectorRepository from '../vector/vector.repository.js';
 
+const REQUIRED_DOCUMENT_FIELDS = ['externalId', 'name'];
+
 function hashContent(content) {
   return crypto.createHash('sha256').update(content).digest('hex');
 }
 
+function normalizeText(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function validateNormalizedDocument(document, index = 0) {
+  if (!document || typeof document !== 'object' || Array.isArray(document)) {
+    throw new Error(`Invalid normalized document at index ${index}: expected an object`);
+  }
+
+  const missingFields = REQUIRED_DOCUMENT_FIELDS.filter((field) => !normalizeText(document[field]));
+
+  if (missingFields.length > 0) {
+    throw new Error(`Invalid normalized document at index ${index}: missing ${missingFields.join(', ')}`);
+  }
+}
+
 function normalizeDocument(document, index = 0, defaults = {}) {
-  const title = document.name || document.title || `Knowledge document ${index + 1}`;
+  validateNormalizedDocument(document, index);
+  const title = normalizeText(document.name);
   const locations = normalizeLocations(document);
-  const content = document.content || document.text || documentToText({
+  const content = documentToText({
     ...document,
     name: title,
     location: locations,
@@ -27,22 +46,19 @@ function normalizeDocument(document, index = 0, defaults = {}) {
     description: document.description,
     ...(document.metadata || {}),
   };
+  const externalId = normalizeText(document.externalId);
 
   return {
-    externalId: String(document.id || title)
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '') || `knowledge-document-${index + 1}`,
+    externalId,
     title,
     content,
     source: document.source || defaults.source || 'knowledge',
     documentType: document.documentType
-      || document.type
       || defaults.documentType
-      || (document.family ? 'bird_profile' : 'knowledge_document'),
+      || 'knowledge_document',
     category: document.category || document.family || null,
     locale: document.locale || 'en-CR',
-    tags: document.tags || [document.family, ...String(locations || '').split(',')],
+    tags: Array.isArray(document.tags) ? document.tags : [],
     metadata,
     active: document.active !== false,
   };
@@ -53,10 +69,6 @@ class IngestionService {
     await vectorRepository.initializeSchema();
 
     const documents = normalizeKnowledgeBase(rawDocuments)
-      .filter((document) => (
-        (document?.name || document?.title)
-        && (document?.description || document?.content || document?.text)
-      ))
       .map((document, index) => normalizeDocument(document, index, {
         source: options.source,
         documentType: options.documentType,
@@ -118,5 +130,6 @@ class IngestionService {
 export {
   hashContent,
   normalizeDocument,
+  validateNormalizedDocument,
 };
 export default new IngestionService();

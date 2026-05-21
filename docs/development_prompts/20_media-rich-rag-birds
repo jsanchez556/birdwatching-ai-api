@@ -1,0 +1,161 @@
+Context:
+
+Backend repo:
+- `/home/jose/Documents/projects/birdwatching-ai-api/AGENTS.md`
+- `/home/jose/Documents/projects/birdwatching-ai-api/src/db/ingestion/data/birds.json`
+- `/home/jose/Documents/projects/birdwatching-ai-api/scripts/generate-ingest.js`
+- `/home/jose/Documents/projects/birdwatching-ai-api/src/db/ingestion/ingestion.service.js`
+- `/home/jose/Documents/projects/birdwatching-ai-api/src/db/retrieval/retrieval.service.js`
+- `/home/jose/Documents/projects/birdwatching-ai-api/src/ai/prompts/rag.context.js`
+- `/home/jose/Documents/projects/birdwatching-ai-api/src/services/rag.service.js`
+- `/home/jose/Documents/projects/birdwatching-ai-api/src/controllers/chat.controller.js`
+- `/home/jose/Documents/projects/birdwatching-ai-api/src/db/vector/`
+
+Frontend repo:
+- `/home/jose/Documents/projects/birdwatching-ai-ui/AGENTS.md`
+- `/home/jose/Documents/projects/birdwatching-ai-ui/src/api/chatApi.js`
+- `/home/jose/Documents/projects/birdwatching-ai-ui/src/hooks/useChat.js`
+- `/home/jose/Documents/projects/birdwatching-ai-ui/src/components/ChatMessages.jsx`
+- `/home/jose/Documents/projects/birdwatching-ai-ui/src/index.css`
+
+Task:
+
+Implement support for media-rich bird RAG results.
+
+Important current data shape:
+
+`birds.json` is already normalized as an array of documents like:
+
+- `externalId`: stable ID such as `bird-gretin1`
+- `name`: common bird name
+- `family`
+- `description`
+- `locations`
+- `documentType`: `bird_profile`
+- `category`
+- `tags`
+- `metadata.speciesCode`
+- `metadata.commonName`
+- `metadata.scientificName`
+- `metadata.familyCommonName`
+- `metadata.familyScientificName`
+- `metadata.lastObservation`
+- `metadata.media.photoUrl`
+- `metadata.media.squarePhotoUrl`
+- `metadata.media.photoAttribution`
+- `metadata.media.wikiTitle`
+- `metadata.media.songUrl`
+- `metadata.media.sonogramUrl`
+- `metadata.media.songAttributionHtml`
+
+Please inspect the real files before editing.
+
+Backend requirements:
+
+1. Update ingestion so `normalizeDocument()` preserves `document.externalId`.
+   - Current behavior appears to use only `document.id || title`.
+   - Use `document.externalId || document.id || title`.
+   - Keep backward compatibility with older document shapes.
+
+2. Improve bird embedding text generation.
+   - Keep media files/URLs out of embeddings as raw data.
+   - Include searchable text hints such as:
+     - common name
+     - scientific name
+     - family
+     - locations
+     - description
+     - recent observation location/date/count when present
+     - media availability: photo, song recording, sonogram
+   - Do not embed image/audio binary data.
+   - Keep media URLs in metadata only.
+
+3. Ensure retrieved bird results preserve useful metadata.
+   - `retrieval.service.js` should continue returning merged metadata.
+   - For `bird_profile` documents, expose enough structured data to build frontend cards.
+
+4. Extend RAG source formatting.
+   - `toKnowledgeSource()` may include safe optional fields for bird sources, but do not overload `sources` as the UI media payload.
+   - Add a separate structured metadata field for UI rendering, preferably `meta.birdMatches`.
+
+5. Add backend support for `meta.birdMatches` on `/chat`.
+   - When RAG retrieval returns bird profile documents, convert relevant results into compact bird match objects:
+     ```js
+     {
+       speciesCode,
+       commonName,
+       scientificName,
+       family,
+       description,
+       locations,
+       lastObservation,
+       media: {
+         photoUrl,
+         squarePhotoUrl,
+         photoAttribution,
+         wikiTitle,
+         songUrl,
+         sonogramUrl,
+         songAttributionHtml
+       }
+     }
+     ```
+   - Only include fields that exist.
+   - Deduplicate by `speciesCode` or document ID.
+   - Limit to a small number, e.g. top 3.
+   - Keep the original assistant text visible and unchanged.
+   - Keep existing tour/reservation metadata behavior intact.
+
+6. Update tests or add focused tests for:
+   - `normalizeDocument()` preserving `externalId`
+   - bird document text containing scientific name, observation/media availability hints
+   - RAG/bird metadata conversion returning `birdMatches` without breaking normal sources
+
+Frontend requirements:
+
+1. Update the chat response handling only if needed so `meta.birdMatches` is preserved on assistant messages.
+   - Current SSE `done` parsing already stores `metadata: data.meta || {}`; verify this path works through `useChat`.
+
+2. Add a presentational component, for example:
+   - `src/components/BirdMediaCard.jsx`
+
+3. Render bird cards in assistant messages when `message.metadata?.birdMatches` exists.
+   - Keep assistant text visible above the cards.
+   - Render optional media defensively:
+     - image only when `photoUrl` exists
+     - thumbnail image should prefer `squarePhotoUrl` and fall back to `photoUrl`
+     - audio player only when `songUrl` exists
+     - sonogram image only when `sonogramUrl` exists
+     - photo attribution text only when `photoAttribution` exists
+     - song attribution text only when `songAttributionHtml` exists, rendered safely rather than injected as trusted HTML
+   - Do not assume every bird has every media type.
+   - Keep accessible labels and alt text.
+   - Avoid putting backend logic in the frontend.
+
+4. Add CSS in `src/index.css`.
+   - Mobile-first.
+   - Works in light and dark mode using existing semantic tokens.
+   - Avoid layout shifts.
+   - Keep cards compact inside assistant messages.
+
+5. Add React Testing Library tests for user-visible behavior:
+   - assistant message with `birdMatches` renders bird name/details
+   - image/audio/sonogram render only when URLs exist
+   - missing media does not render broken controls
+   - original assistant message text remains visible
+
+Constraints:
+
+- Follow each repo’s `AGENTS.md`.
+- Backend: keep controllers thin, service/query separation, normalized API response behavior.
+- Frontend: keep API calls in `src/api`, orchestration in hooks, presentational UI in components.
+- Do not add backend OpenAI/RAG/database logic to the frontend.
+- Do not store media files in pgvector.
+- Do not store API keys or private tokens.
+- Do not change `birds.json` unless a bug in the normalized shape is discovered.
+- Run backend/frontend tests relevant to the changes. At minimum run `npm test` in changed repos if feasible.
+- Update .md files with the recent changes
+
+Goal:
+
+After this change, a user can ask about a bird such as “Tell me about the Great Tinamou,” the backend retrieves the bird profile through RAG, the assistant answers normally, and the frontend displays any available photo, song, and sonogram from `meta.birdMatches`.

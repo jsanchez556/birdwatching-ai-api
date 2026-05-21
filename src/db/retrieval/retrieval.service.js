@@ -77,6 +77,7 @@ function mapRetrievedChunk(row) {
     score: Number(row.score),
     semanticScore: Number(row.semantic_score ?? row.score),
     keywordScore: Number(row.keyword_score ?? 0),
+    mediaPriority: Number(row.media_priority ?? 0),
   };
 }
 

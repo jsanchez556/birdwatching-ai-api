@@ -32,10 +32,18 @@ in this order:
 `rag.service.js` then uses the prompt builder to optionally inject a second
 `system` message immediately after the base system prompt. The retrieved context
 comes from PostgreSQL pgvector-backed knowledge chunks created by
-`npm run ingest`; source files live under `src/db/data`. Retrieved sources can
+`npm run ingest`; source files live under `src/db/ingestion/data` as normalized
+JSON arrays. Retrieved sources can
 include similarity scores, locations, snippets, and document metadata. If
 retrieval or embedding fails, chat continues with the base messages and an empty
 `sources` array.
+
+Bird profile ingestion embeds searchable text such as common name, scientific
+name, family, locations, descriptions, recent observations, and media
+availability hints. Media URLs for photos, songs, and sonograms stay in document
+metadata and can be exposed to the UI through `done.meta.birdMatches`; the model
+should answer from retrieved text rather than treating media URLs as embedded
+knowledge.
 
 `agent.orchestrator.js` plans booking/tool steps, `ToolExecutor` executes the
 registered tools with retry and trace metadata, and the final assistant response

@@ -19,18 +19,4 @@ pool.on('error', (err) => {
   });
 });
 
-export async function testConnection() {
-  try {
-    const client = await pool.connect();
-    client.release();
-    logger.info('Database connected successfully');
-    return true;
-  } catch (error) {
-    logger.error('Database connection failed', {
-      error: error.message,
-    });
-    return false;
-  }
-}
-
 export default pool;

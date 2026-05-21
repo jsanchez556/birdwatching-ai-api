@@ -5,7 +5,9 @@ AI-agent entry point for the Birdwatching AI API. Read this file first, then fol
 ## What This Is
 This repository is a single Express API for Costa Rica birdwatching assistance. It supports:
 - conversational chat with short-term PostgreSQL memory
-- PostgreSQL-backed RAG over ingested `src/db/data` documents using pgvector
+- PostgreSQL-backed RAG over ingested `src/db/ingestion/data` documents using pgvector
+- reusable external bird data clients for eBird, iNaturalist, and Xeno-canto ingestion jobs
+- media file lookup for relative bird media keys through `GET /files/:folderName/:filename`
 - OpenAI/agent tool calling for tour search, availability, transportation, pricing, discounts, and durable reservations
 - normalized JSON responses and centralized error handling
 - email/password authentication with bcrypt password hashes and JWT-protected AI routes
@@ -28,6 +30,8 @@ The app uses a controller-service-query split:
 - `src/services/*` owns orchestration, AI calls, memory construction, and persistence decisions.
 - `src/db/queries/*` owns parameterized calls to PostgreSQL functions through `src/db/pool.js`.
 - `src/db/vector`, `src/db/retrieval`, `src/db/ingestion`, and `src/db/chunking` own durable RAG storage, search, ingestion, and chunking.
+- `src/external/` owns provider HTTP clients and shared external API rate limiting for bird data ingestion.
+- `src/storage/` and `src/routes/media.routes.js` own S3-compatible media lookup and presigned URL creation for relative media keys.
 - `src/ai/*` owns OpenAI client calls, prompt assets, structured schemas, and chat tool adapters.
 - `src/middleware/*` owns validation, sanitization, security headers, CORS protection, rate limiting, errors, and auth hooks.
 
@@ -45,6 +49,7 @@ POST /chat
   -> conversation.service.buildConversationContext
   -> rag.service.buildContext
   -> PostgreSQL pgvector retrieval
+  -> frontend-safe sources and media-rich birdMatches metadata when matching bird profiles are retrieved
   -> agent orchestrator plans and executes required chat tools
   -> OpenAI streams final assistant text through SSE chunk events with client-disconnect abort support
   -> conversation.service.saveExchange
@@ -73,7 +78,11 @@ GET /chat/latest
 - `NODE_ENV=test` bypasses required `OPENAI_API_KEY`, `DATABASE_URL`, and `JWT_SECRET` validation.
 - OpenAI retry behavior lives in `src/utils/asyncRetry.js` and is used for transient OpenAI statuses.
 - Streaming chat passes an `AbortSignal` to OpenAI and skips saving a completed exchange when the client disconnects before completion.
-- RAG reads only from PostgreSQL pgvector during chat. Use `npm run ingest` to ingest supported files from `src/db/data` before relying on RAG context; chat does not chunk documents, generate source embeddings, or write vectors.
+- RAG reads only from PostgreSQL pgvector during chat. Use `npm run ingest` to ingest normalized JSON datasets from `src/db/ingestion/data` before relying on RAG context; chat does not chunk documents, generate source embeddings, or write vectors.
+- Bird RAG metadata may include `meta.birdMatches[].media` with absolute URLs or relative object keys such as `/photos/123_medium.jpg`, `songs/123.mp3`, or `sonograms/123_grey-small.png`. Relative keys are intentionally not public static paths; the UI resolves them through `GET /files/:folderName/:filename`, which returns a normalized envelope containing a presigned `data.url`.
+- `GET /files/:folderName/:filename` normalizes and validates path segments, checks object existence in the configured S3-compatible bucket, and returns short-lived presigned GET URLs without exposing bucket credentials.
+- External bird data clients live under `src/external/clients/` and export orchestration lives under `src/external/services/` behind `src/external/export.service.js`. They are intended for ingestion jobs, not request handlers, and share a configurable rate limiter capped at 40 requests per minute.
+- `npm run external` exports provider JSON into `src/external/data` in `taxo`, `sounds`, `photos` order with file-age and per-species cache checks before future normalization or ingestion steps. eBird recent observations are fetched per species code from the Costa Rica species list and written incrementally as keyed `{ locations, lstDt }` summaries.
 - Tour data, availability, selection, and reservations are stored in PostgreSQL through functions in `003_create_tour_reservations.sql`.
 - Tour listing, recommendation, guided action, pricing, transportation, and reservation details are returned in the `/chat` stream `done.meta` object for frontend rendering; assistant text stays short when structured metadata is present.
 - Tour selection accepts a tour ID or a clear/partial tour name such as `Monteverde tour` before pricing or reservation.

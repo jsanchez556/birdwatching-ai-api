@@ -41,13 +41,21 @@ Back to [Project Context](../CONTEXT.md). Pair this with [API Contracts](./api.m
 - Add migrations under `src/db/migrations/` for schema changes.
 
 ## RAG Data
-- Keep runtime bird knowledge source files under `src/db/data`.
-- Preserve the family-keyed bird JSON shape unless intentionally migrating it.
-- Preserve simple document fields used by embeddings: `name`, `location`, and `description`; legacy `locations` arrays remain supported by the adapter.
+- Keep runtime knowledge source files under `src/db/ingestion/data`.
+- Use normalized JSON arrays for ingestion datasets; `birds.json` is the reference contract.
+- Preserve normalized document fields used by embeddings and UI metadata: required `externalId` and `name`, plus optional `description`, `locations`, `documentType`, `category`, `tags`, and `metadata`.
 - Store generated embeddings in PostgreSQL through `src/db/vector/vector.repository.js`; do not write generated embeddings into source files.
 - Keep chunking in `src/db/chunking`, ingestion in `src/db/ingestion`, and semantic retrieval in `src/db/retrieval`.
 - Keep metadata filters parameterized and limited to known document fields, tags, and JSONB containment.
 - Run document ingestion through `npm run ingest`; do not run source document ingestion from chat or request handlers.
+
+## External Bird Data
+- Keep provider clients in `src/external/clients/` and ingestion orchestration in services.
+- Use `src/external/httpClient.js` for provider requests so non-2xx responses, malformed JSON, and unexpected response shapes are normalized.
+- Share `src/external/rateLimiter.js` across provider clients for ingestion jobs; do not configure external provider traffic above 40 requests per minute.
+- Read eBird, iNaturalist, and Xeno-canto base URLs and API keys from `src/config/env.js`; never hardcode provider secrets.
+- Keep external provider JSON export and cache behavior in `src/external/export.service.js` or scripts, not in provider client classes.
+- Normalize fetched provider data before writing documents into `src/db/ingestion/data` or passing it to vector ingestion.
 
 ## Tour Tools
 - Keep tour data and reservation state in PostgreSQL; do not reintroduce JSON-backed tour state.

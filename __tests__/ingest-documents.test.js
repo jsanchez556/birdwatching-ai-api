@@ -29,8 +29,9 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
 const {
   assertSafeDataPath,
   discoverSupportedFiles,
+  normalizeFileName,
   parseArgs,
-  parseMarkdown,
+  parseJson,
   readDocumentsFromFile,
   runIngestionCli,
 } = await import('../scripts/ingest-documents.js');
@@ -48,10 +49,10 @@ describe('ingest-documents CLI helpers', () => {
   });
 
   it('parses explicit files and default all-files mode', () => {
-    expect(parseArgs(['birds.json', 'notes.md'])).toEqual({
+    expect(parseArgs(['birds.json', 'tours'])).toEqual({
       force: false,
       all: false,
-      files: ['birds.json', 'notes.md'],
+      files: ['birds.json', 'tours'],
     });
 
     expect(parseArgs([])).toEqual({
@@ -67,37 +68,36 @@ describe('ingest-documents CLI helpers', () => {
     });
   });
 
-  it('rejects paths outside src/db/data', () => {
-    expect(() => assertSafeDataPath('../secrets.json', dataDir))
-      .toThrow('Refusing to read outside src/db/data');
+  it('normalizes dataset names to JSON file names', () => {
+    expect(normalizeFileName('birds')).toBe('birds.json');
+    expect(normalizeFileName('birds.json')).toBe('birds.json');
   });
 
-  it('discovers supported files in deterministic order', async () => {
-    await writeFile(path.join(dataDir, 'z.md'), '# Z');
+  it('rejects paths outside src/db/ingestion/data', () => {
+    expect(() => assertSafeDataPath('../secrets.json', dataDir))
+      .toThrow('Refusing to read outside src/db/ingestion/data');
+  });
+
+  it('discovers normalized JSON files in deterministic order', async () => {
     await writeFile(path.join(dataDir, 'a.json'), '[]');
+    await writeFile(path.join(dataDir, 'z.json'), '[]');
+    await writeFile(path.join(dataDir, 'notes.md'), '# Notes');
     await writeFile(path.join(dataDir, 'ignore.txt'), 'nope');
 
-    await expect(discoverSupportedFiles(dataDir)).resolves.toEqual(['a.json', 'z.md']);
+    await expect(discoverSupportedFiles(dataDir)).resolves.toEqual(['a.json', 'z.json']);
   });
 
-  it('parses markdown into one document', () => {
-    expect(parseMarkdown('# Bird Notes\n\nCloud forest context.', 'notes.md')).toEqual([{
-      id: 'notes',
-      title: 'Bird Notes',
-      content: '# Bird Notes\n\nCloud forest context.',
-      source: 'notes.md',
-      documentType: 'markdown',
-      metadata: {
-        fileName: 'notes.md',
-      },
-    }]);
+  it('rejects JSON shapes that are not normalized document arrays', () => {
+    expect(() => parseJson('{"documents":[]}', 'wrapped.json'))
+      .toThrow('Invalid ingestion dataset shape in wrapped.json');
   });
 
   it('reads JSON document arrays and calls ingestion for one file', async () => {
     await writeFile(path.join(dataDir, 'birds.json'), JSON.stringify([
       {
-        title: 'Resplendent Quetzal',
-        content: 'Cloud forest bird.',
+        externalId: 'bird-quetza1',
+        name: 'Resplendent Quetzal',
+        description: 'Cloud forest bird.',
       },
     ]));
     mockIngestDocuments.mockResolvedValue({
@@ -116,19 +116,41 @@ describe('ingest-documents CLI helpers', () => {
 
     expect(mockIngestDocuments).toHaveBeenCalledWith([
       {
-        title: 'Resplendent Quetzal',
-        content: 'Cloud forest bird.',
+        externalId: 'bird-quetza1',
+        name: 'Resplendent Quetzal',
+        description: 'Cloud forest bird.',
       },
     ], {
       force: false,
       source: 'birds.json',
-      documentType: undefined,
+    });
+  });
+
+  it('allows explicit dataset names without the json extension', async () => {
+    await writeFile(path.join(dataDir, 'birds.json'), '[]');
+    mockIngestDocuments.mockResolvedValue({
+      documentCount: 0,
+      chunkCount: 0,
+      skippedCount: 0,
+    });
+
+    await expect(runIngestionCli(['birds'], { dataDir })).resolves.toEqual([{
+      fileName: 'birds.json',
+      skipped: false,
+      documentCount: 0,
+      chunkCount: 0,
+      skippedCount: 0,
+    }]);
+
+    expect(mockIngestDocuments).toHaveBeenCalledWith([], {
+      force: false,
+      source: 'birds.json',
     });
   });
 
   it('processes all supported files when no files are specified', async () => {
     await writeFile(path.join(dataDir, 'birds.json'), '[]');
-    await writeFile(path.join(dataDir, 'notes.md'), '# Notes');
+    await writeFile(path.join(dataDir, 'tours.json'), '[]');
     mockIngestDocuments.mockResolvedValue({
       documentCount: 0,
       chunkCount: 0,

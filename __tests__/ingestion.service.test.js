@@ -39,6 +39,7 @@ await jest.unstable_mockModule('../src/db/vector/vector.repository.js', () => ({
 const {
   hashContent,
   normalizeDocument,
+  validateNormalizedDocument,
 } = await import('../src/db/ingestion/ingestion.service.js');
 
 describe('IngestionService helpers', () => {
@@ -49,12 +50,14 @@ describe('IngestionService helpers', () => {
 
   it('normalizes bird documents for durable vector storage', () => {
     expect(normalizeDocument({
+      externalId: 'bird-quetza1',
       family: 'Trogonidae',
       name: 'Resplendent Quetzal',
       location: 'Monteverde',
       description: 'Cloud forest bird.',
+      documentType: 'bird_profile',
     })).toMatchObject({
-      externalId: 'resplendent-quetzal',
+      externalId: 'bird-quetza1',
       title: 'Resplendent Quetzal',
       source: 'knowledge',
       documentType: 'bird_profile',
@@ -67,5 +70,20 @@ describe('IngestionService helpers', () => {
       },
       active: true,
     });
+  });
+
+  it('rejects documents outside the normalized ingestion contract', () => {
+    expect(() => validateNormalizedDocument({
+      title: 'Legacy title',
+      content: 'Legacy content.',
+    }, 0)).toThrow('Invalid normalized document at index 0: missing externalId, name');
+  });
+
+  it('allows normalized bird documents without descriptions', () => {
+    expect(() => validateNormalizedDocument({
+      externalId: 'bird-bwxtea1',
+      name: 'Blue-winged x Cinnamon Teal (hybrid)',
+      description: null,
+    }, 17)).not.toThrow();
   });
 });

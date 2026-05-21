@@ -17,7 +17,7 @@ function mapUser(row) {
   };
 }
 
-export class UserQueries {
+class UserQueries {
   async create({ email, name, passwordHash }) {
     try {
       const query = 'INSERT INTO users (email, name, password_hash) VALUES ($1, $2, $3) RETURNING id, email, name, role, password_hash, created_at, updated_at';

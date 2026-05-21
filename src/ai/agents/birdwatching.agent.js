@@ -6,7 +6,7 @@ import checkAvailability from '../tools/checkAvailability.tool.js';
 import createReservation from '../tools/createReservation.tool.js';
 import toolPlanner from '../planners/tool.planner.js';
 
-export const birdwatchingToolHandlers = {
+const birdwatchingToolHandlers = {
   searchTours,
   calculateTransportation,
   calculatePricing,
@@ -14,7 +14,7 @@ export const birdwatchingToolHandlers = {
   createReservation,
 };
 
-export function createBirdwatchingAgent(options = {}) {
+function createBirdwatchingAgent(options = {}) {
   return {
     planner: options.planner || toolPlanner,
     executor: options.executor || new ToolExecutor(birdwatchingToolHandlers, options),

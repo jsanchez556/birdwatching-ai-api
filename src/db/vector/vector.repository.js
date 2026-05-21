@@ -11,6 +11,7 @@ const schemaPath = path.resolve(
 
 const DEFAULT_SEMANTIC_WEIGHT = 0.75;
 const DEFAULT_KEYWORD_WEIGHT = 0.25;
+const DEFAULT_MEDIA_PRIORITY_WEIGHT = 0.02;
 const DEFAULT_MIN_SCORE = 0.2;
 const DEFAULT_MIN_SEMANTIC_SCORE = 0.15;
 const KEYWORD_STOP_WORDS = new Set([
@@ -320,10 +321,25 @@ class VectorRepository {
       || setweight(to_tsvector('simple', array_to_string(COALESCE(d.tags, '{}'::text[]), ' ')), 'C')
       || setweight(to_tsvector('simple', COALESCE(c.content, '')), 'D')
     `;
+    const hasImageSql = `(
+      NULLIF(d.metadata->'media'->>'photoUrl', '') IS NOT NULL
+      OR NULLIF(d.metadata->'media'->>'squarePhotoUrl', '') IS NOT NULL
+    )`;
+    const hasSoundSql = `NULLIF(d.metadata->'media'->>'songUrl', '') IS NOT NULL`;
+    const mediaPrioritySql = `
+      CASE
+        WHEN d.document_type = 'bird_profile' AND ${hasImageSql} AND ${hasSoundSql} THEN 4
+        WHEN d.document_type = 'bird_profile' AND ${hasImageSql} THEN 3
+        WHEN d.document_type = 'bird_profile' AND ${hasSoundSql} THEN 2
+        ELSE 1
+      END
+    `;
     const keywordScoreSql = hasKeywordQuery
       ? `ts_rank_cd((${searchVectorSql}), plainto_tsquery('simple', ${keywordPlaceholder}))`
       : '0';
     const hybridScoreSql = `(${semanticWeight} * (${semanticScoreSql})) + (${keywordWeight} * (${keywordScoreSql}))`;
+    const mediaBoostSql = `(${DEFAULT_MEDIA_PRIORITY_WEIGHT} * ((${mediaPrioritySql}) - 1))`;
+    const finalScoreSql = `(${hybridScoreSql}) + (${mediaBoostSql})`;
 
     if (hasMinScore) {
       values.push(minScore);
@@ -352,7 +368,8 @@ class VectorRepository {
           d.metadata AS document_metadata,
           ${semanticScoreSql} AS semantic_score,
           ${keywordScoreSql} AS keyword_score,
-          ${hybridScoreSql} AS score
+          ${mediaPrioritySql} AS media_priority,
+          ${finalScoreSql} AS score
         FROM knowledge_chunks AS c
         INNER JOIN knowledge_documents AS d ON d.id = c.document_id
         WHERE ${clause}
@@ -360,7 +377,7 @@ class VectorRepository {
       WHERE 1 = 1
         ${hasMinScore ? `AND score >= $${hasMinSemanticScore ? values.length - 1 : values.length}` : ''}
         ${hasMinSemanticScore ? `AND (semantic_score >= $${values.length} OR keyword_score > 0)` : ''}
-      ORDER BY score DESC, semantic_score DESC, keyword_score DESC
+      ORDER BY score DESC, media_priority DESC, semantic_score DESC, keyword_score DESC
       LIMIT $${values.length + 1};
     `;
 

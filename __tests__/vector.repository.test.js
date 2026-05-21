@@ -102,7 +102,11 @@ describe('VectorRepository helpers', () => {
     expect(query).toContain("plainto_tsquery('simple', $6)");
     expect(query).toContain('semantic_score');
     expect(query).toContain('keyword_score');
-    expect(query).toContain('ORDER BY score DESC, semantic_score DESC, keyword_score DESC');
+    expect(query).toContain('media_priority');
+    expect(query).toContain("d.metadata->'media'->>'photoUrl'");
+    expect(query).toContain("d.metadata->'media'->>'squarePhotoUrl'");
+    expect(query).toContain("d.metadata->'media'->>'songUrl'");
+    expect(query).toContain('ORDER BY score DESC, media_priority DESC, semantic_score DESC, keyword_score DESC');
     expect(query).toContain('AND score >= $7');
     expect(query).toContain('semantic_score >= $8 OR keyword_score > 0');
     expect(query).toContain('LIMIT $9');

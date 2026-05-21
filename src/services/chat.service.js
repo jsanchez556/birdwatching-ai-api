@@ -255,7 +255,10 @@ class ChatService {
       conversationId: activeConversationId,
       response: finalResponse,
       sources: ragContext.sources,
-      meta: mergeChatMeta(messageMeta, conversationMeta),
+      meta: mergeChatMeta({
+        ...messageMeta,
+        ...(ragContext.birdMatches?.length ? { birdMatches: ragContext.birdMatches } : {}),
+      }, conversationMeta),
     };
   }
 

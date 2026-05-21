@@ -53,6 +53,7 @@ describe('RetrievalService helpers', () => {
       document_metadata: { locations: 'Monteverde' },
       semantic_score: '0.88',
       keyword_score: '0.12',
+      media_priority: '4',
       score: '0.91',
     })).toMatchObject({
       id: 'resplendent-quetzal',
@@ -63,6 +64,7 @@ describe('RetrievalService helpers', () => {
       score: 0.91,
       semanticScore: 0.88,
       keywordScore: 0.12,
+      mediaPriority: 4,
     });
   });
 

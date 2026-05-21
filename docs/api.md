@@ -188,6 +188,52 @@ Done `meta` may include frontend-ready tool data collected during agent executio
 }
 ```
 
+Bird RAG responses may also include frontend-ready bird matches in `done.meta`.
+Media files are not embedded in pgvector; the vector store embeds searchable
+bird text and stores media references as document metadata. `meta.birdMatches`
+is limited to the top matching bird profiles and may include only fields that
+exist for that bird:
+```json
+{
+  "birdMatches": [
+    {
+      "speciesCode": "gretin1",
+      "commonName": "Great Tinamou",
+      "scientificName": "Tinamus major",
+      "family": "Tinamous",
+      "description": "Large ground bird.",
+      "locations": "La Cusinga Lodge",
+      "lastObservation": {
+        "locations": ["La Cusinga Lodge"],
+        "obsDt": "2026-05-21 04:58",
+        "howMany": 1
+      },
+      "media": {
+        "photoUrl": "/photos/123_medium.jpg",
+        "squarePhotoUrl": "/photos/123_square.jpg",
+        "photoAttribution": "Photo by Example Birder",
+        "wikiTitle": "Great_tinamou",
+        "songUrl": "songs/123.mp3",
+        "sonogramUrl": "sonograms/123_grey-small.png",
+        "songLength": "0:42",
+        "songAttributionHtml": "<p>Sound recording by Example Recordist. Licensed under CC BY-NC-SA 3.0.</p>"
+      }
+    }
+  ]
+}
+```
+
+Bird media fields may be absolute URLs or relative object keys from ingestion.
+Relative media keys are intentionally resolved through the API media endpoint,
+not treated as UI static files. The frontend integration contract is:
+- absolute media URLs can be rendered directly by clients
+- relative keys such as `/photos/...`, `songs/...`, and `sonograms/...` must be exchanged through `GET /files/:folderName/:filename`
+- clients should prefer `squarePhotoUrl` for thumbnails and `photoUrl` for larger bird detail images when both are present
+- clients should use `songLength` as the preferred audio duration for synchronizing sonograms when it is present
+- `photoAttribution`, `wikiTitle`, and `songAttributionHtml` are copied from the source bird document metadata; clients should render attribution safely and avoid direct HTML injection unless sanitization is added
+- the media endpoint returns a normalized JSON envelope with a short-lived `data.url`
+- bucket credentials, S3 endpoints, and object-existence checks remain backend-only
+
 `meta.customerContext`, `meta.reservation`, `meta.selectedTour`,
 `meta.selectedTourId`, `meta.selectedTransportation`, and `meta.participants`
 are chat-level fields.
@@ -280,6 +326,38 @@ Success data when no owned conversation exists:
 ```
 
 The lookup orders conversations by `last_message_at DESC NULLS LAST, created_at DESC`.
+
+## `GET /files/:folderName/:filename`
+Returns a short-lived presigned media URL for a validated S3-compatible object
+key. This endpoint is used by the UI when RAG bird metadata contains relative
+media references.
+
+Example:
+```http
+GET /files/photos/123_medium.jpg
+```
+
+Success response:
+```json
+{
+  "success": true,
+  "data": {
+    "url": "https://bucket.example.test/photos/123_medium.jpg?signature=..."
+  },
+  "meta": {
+    "expiresInSeconds": 900
+  }
+}
+```
+
+Validation and behavior:
+- the file key is built from `folderName/filename`
+- leading and trailing slashes are stripped before validation
+- `.` and `..` segments are rejected
+- path segments may contain only letters, numbers, dots, underscores, and hyphens
+- missing or invalid file names return `400`
+- unknown objects return `404`
+- successful responses do not expose bucket credentials
 
 ## Current Protection
 `GET /chat/latest` requires JWT bearer authentication. `POST /chat` accepts authenticated customer/admin users or unauthenticated visitors; visitors can only ask bird-related questions, cannot execute tool-backed tour or reservation actions, and have a stricter 10-request-per-hour IP limit. Conversation and reservation `user_id` ownership is enforced server-side. `POST /auth/signup`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, and `GET /health` remain public.

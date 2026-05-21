@@ -19,6 +19,8 @@ const numericEnvKeys = [
   'RATE_LIMIT_MAX_REQUESTS',
   'AI_RATE_LIMIT_WINDOW_MS',
   'AI_RATE_LIMIT_MAX_REQUESTS',
+  'EXTERNAL_API_RATE_LIMIT_WINDOW_MS',
+  'EXTERNAL_API_RATE_LIMIT_MAX_REQUESTS',
 ];
 
 for (const key of numericEnvKeys) {
@@ -42,6 +44,13 @@ if (nodeEnv !== 'test') {
   }
 }
 
+if (
+  process.env.EXTERNAL_API_RATE_LIMIT_MAX_REQUESTS
+  && Number(process.env.EXTERNAL_API_RATE_LIMIT_MAX_REQUESTS) > 40
+) {
+  throw new Error('EXTERNAL_API_RATE_LIMIT_MAX_REQUESTS cannot exceed 40');
+}
+
 const corsOrigins = (process.env.CORS_ORIGINS || '')
   .split(',')
   .map((origin) => origin.trim())
@@ -63,6 +72,23 @@ const env = {
   rateLimitMaxRequests: Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 60,
   aiRateLimitWindowMs: Number(process.env.AI_RATE_LIMIT_WINDOW_MS) || 60 * 1000,
   aiRateLimitMaxRequests: Number(process.env.AI_RATE_LIMIT_MAX_REQUESTS) || 12,
+  externalApiRateLimitWindowMs: Number(process.env.EXTERNAL_API_RATE_LIMIT_WINDOW_MS) || 60 * 1000,
+  externalApiRateLimitMaxRequests: Number(process.env.EXTERNAL_API_RATE_LIMIT_MAX_REQUESTS) || 40,
+  eBirdApiBaseUrl: process.env.E_BIRD_API_BASE_URL,
+  eBirdApiKey: process.env.E_BIRD_API_KEY,
+  iNaturalistApiBaseUrl: process.env.INATURALIST_API_BASE_URL,
+  xenoCantoApiBaseUrl: process.env.XENO_CANTO_API_BASE_URL,
+  xenoCantoApiKey: process.env.XENO_CANTO_API_KEY,
+  wikiApiBaseUrl: process.env.WIKI_API_BASE_URL,
+  s3: {
+    endpointUrl: process.env.S3_ENDPOINT_URL,
+    region: process.env.S3_REGION,
+    bucketName: process.env.S3_BUCKET_NAME,
+    accessKeyId: process.env.S3_ACCESS_KEY_ID,
+    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
+    presignedUrlExpiresInSeconds: Number(process.env.S3_PRESIGNED_URL_EXPIRES_IN_SECONDS) || undefined,
+  },
+  adminEmail: process.env.ADMIN_EMAIL,
 };
 
 export default env;

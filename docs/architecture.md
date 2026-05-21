@@ -13,6 +13,7 @@ src/
   config/                environment parsing and validation
   controllers/           thin HTTP handlers
   db/                    pg pool, migrations, query modules
+  external/              external provider HTTP clients and rate limiting
   middleware/            validation, rate limit, error handling, future auth
   routes/                route modules
   services/              business orchestration
@@ -50,9 +51,57 @@ Chat context is assembled from:
 4. optional retrieved context injected after the base system message
 
 RAG uses:
-1. `npm run ingest` to parse supported files from `src/db/data`, chunk them, generate embeddings, and persist documents plus vectors in PostgreSQL
+1. `npm run ingest` to parse normalized JSON datasets from `src/db/ingestion/data`, chunk them, generate embeddings, and persist documents plus vectors in PostgreSQL
 2. `src/db/retrieval/retrieval.service.js` to embed the user question and retrieve ranked chunks through `src/db/vector/vector.repository.js`
 3. `rag.service.js` to inject a compact system context message and return frontend-safe `sources`
+4. `rag.service.js` to derive compact `birdMatches` metadata from top `bird_profile` documents, including optional media references stored in document metadata
+
+External bird data ingestion uses:
+1. provider-specific clients in `src/external/clients/` for eBird, iNaturalist, and Xeno-canto
+2. `src/external/httpClient.js` for shared GET request construction, JSON parsing, non-2xx errors, and response-shape validation
+3. `src/external/rateLimiter.js` for a shared async limiter capped at 40 requests per minute
+4. focused export services in `src/external/services/` to orchestrate provider calls without coupling the clients to routes or controllers
+5. `src/external/export.service.js` plus `scripts/export-external-data.js` to export provider JSON under `src/external/data` from `npm run external`
+
+The current external provider methods are `getSpeciesList`, `getRecentObservations`,
+`searchTaxaByName`, and `getCostaRicaBirdSongs`. They read base URLs and API
+keys from environment variables, fail fast when required configuration is
+missing, and are intended to feed future ingestion workflows before documents
+are normalized and persisted through the existing vector ingestion path.
+`getRecentObservations` fetches recent Costa Rica observations for one eBird
+species code at a time.
+`getCostaRicaBirdSongs` follows Xeno-canto pagination by default and combines
+recordings into one provider-shaped response; pass `{ paginate: false }` when a
+caller needs only one page.
+
+`npm run external -- taxo` exports the eBird species list first, uses that list
+to append missing taxonomy records into `ebird-species-taxo-cr.json` in chunks
+of 50 species codes, then reads the same species list to refresh recent Costa
+Rica observations one species at a time. Species lists are skipped when the file
+is less than one year old. Taxonomy is incremental by species code, and recent
+observations are written incrementally after each species. The observations file
+is keyed by species code; each entry contains `locations` observation objects
+sorted newest first plus `lstDt` for the most recent observation.
+`npm run external -- sounds` fetches all Xeno-canto pages, maps recordings to
+the simplified ingestion fields, writes one
+`xenocanto-costa-rica-bird-songs.json` object keyed by English name, and skips
+it for one year when fresh. `npm run external -- photos` reads
+`ebird-species-taxo-cr.json`, de-duplicates species, searches
+iNaturalist by common name, and writes
+`inaturalist-costa-rica-bird-images.json` as a species-code keyed object with
+image URLs and per-entry update dates. Each species lookup is skipped for one
+year when its entry update date is fresh.
+With no arguments, `npm run external` runs `taxo`, `sounds`, and `photos` in
+that order.
+
+Media routing uses:
+1. `src/routes/media.routes.js` to validate `GET /files/:folderName/:filename`
+2. `src/storage/s3Bucket.service.js` to check object existence and create a presigned GET URL
+3. the normalized response envelope so UI clients receive `data.url` plus `meta.expiresInSeconds`
+
+Relative bird media keys in RAG metadata are references into this media route.
+They are not static files served by the frontend. Absolute provider URLs may
+still pass through RAG metadata unchanged.
 
 Chat streaming uses:
 1. `agent.orchestrator.js` to classify the turn, plan booking/tool steps, and request the final assistant response
@@ -166,4 +215,4 @@ The `tours` and `reservations` tables store durable booking state:
 - Response shape is centralized in `apiResponse.js`.
 - Logging uses Winston and includes OpenAI request IDs and token usage when available.
 - Database SSL is enabled only when `NODE_ENV=production`.
-- Authentication is not enforced yet; `optionalAuth` is a placeholder for future protected routes.
+- `POST /chat` uses optional auth for customer/admin chat and visitor bird-only access; authenticated conversation ownership is enforced before history is loaded.

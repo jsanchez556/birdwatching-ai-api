@@ -49,9 +49,9 @@ This backend provides secure API delivery, OpenAI orchestration, PostgreSQL conv
 - Preserve conversation isolation by always filtering chat history by `conversation_id`.
 
 ## RAG Data
-- Runtime bird knowledge source files live under `src/db/data`.
-- The current `birds.json` shape is a family-keyed object of bird arrays, and ingestion flattens those groups into durable knowledge documents and chunks.
-- Keep document fields explicit enough for embedding text: `name`, `location`, and `description`; legacy `locations` arrays remain supported by the adapter.
+- Runtime knowledge source files live under `src/db/ingestion/data`.
+- Ingestion datasets are normalized JSON arrays; `birds.json` is the reference shape.
+- Keep normalized document fields explicit enough for embedding text: required `externalId` and `name`, plus optional `description`, `locations`, `documentType`, `category`, `tags`, and `metadata`.
 - Store embedded vectors in PostgreSQL through pgvector; do not write generated embeddings into source files.
 - Run ingestion with `npm run ingest`; chat requests should only retrieve already-ingested knowledge.
 
