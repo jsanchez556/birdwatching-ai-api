@@ -36,6 +36,18 @@ Success data:
 }
 ```
 
+## `GET /homepage/hero`
+Returns public homepage hero media content for the frontend.
+
+Success data:
+```json
+{
+  "hero": {
+    "heroVideo": "https://www.youtube-nocookie.com/embed/example"
+  }
+}
+```
+
 ## `POST /auth/signup`
 Creates a user account with a bcrypt-hashed password and returns an access token, refresh token, expiry timestamps, and safe profile data.
 

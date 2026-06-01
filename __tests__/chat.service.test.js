@@ -253,6 +253,103 @@ describe('ChatService streaming orchestration', () => {
     expect(result.meta.agentDebugTrace).toBeUndefined();
   });
 
+  it('returns bird match metadata for explicit bird discovery turns', async () => {
+    const conversationMessages = [
+      { role: 'system', content: 'System prompt' },
+      { role: 'user', content: 'Tell me about ducks in Costa Rica.' },
+    ];
+    const birdMatches = [
+      {
+        speciesCode: 'musduc',
+        commonName: 'Muscovy Duck',
+      },
+    ];
+
+    mockBuildConversationContext.mockResolvedValue(conversationMessages);
+    mockBuildContext.mockResolvedValue({
+      messages: conversationMessages,
+      sources: [],
+      birdMatches,
+    });
+    mockStreamResponseWithTools.mockResolvedValue('Muscovy Ducks are found in Costa Rica wetlands.');
+
+    const result = await chatService.processMessageStream(
+      'Tell me about ducks in Costa Rica.',
+      'conversation-123',
+      '127.0.0.1',
+      {},
+      {
+        authUser: {
+          id: '7',
+          email: 'logged@example.com',
+          role: 'customer',
+        },
+      }
+    );
+
+    expect(result.meta.birdMatches).toEqual(birdMatches);
+  });
+
+  it('suppresses bird match metadata during guided booking turns', async () => {
+    const conversationMessages = [
+      { role: 'system', content: 'System prompt' },
+      { role: 'user', content: 'I choose tour 1: Monteverde Quetzal Tour' },
+    ];
+
+    mockBuildConversationContext.mockResolvedValue(conversationMessages);
+    mockBuildContext.mockResolvedValue({
+      messages: conversationMessages,
+      sources: [],
+      birdMatches: [
+        {
+          speciesCode: 'sporai',
+          commonName: 'Spotted Rail',
+        },
+      ],
+    });
+    mockStreamResponseWithTools.mockImplementation(async (messages, metadata) => {
+      metadata.toolsCalled = ['checkAvailability'];
+      metadata.uiAction = {
+        type: 'participant_count',
+        prompt: 'How many participants should I reserve?',
+      };
+      metadata.selectedTourId = 1;
+      return 'You selected the Monteverde Quetzal Tour.';
+    });
+
+    const result = await chatService.processMessageStream(
+      'I choose tour 1: Monteverde Quetzal Tour',
+      'conversation-123',
+      '127.0.0.1',
+      {},
+      {
+        authUser: {
+          id: '7',
+          email: 'logged@example.com',
+          role: 'customer',
+        },
+        conversationContext: {
+          recentAssistantMetadata: {
+            toolsCalled: ['searchTours'],
+            uiAction: {
+              type: 'tour_selection',
+              prompt: 'Which tour are you interested in?',
+            },
+          },
+        },
+      }
+    );
+
+    expect(result.meta).toMatchObject({
+      toolsCalled: ['checkAvailability'],
+      selectedTourId: 1,
+      uiAction: {
+        type: 'participant_count',
+      },
+    });
+    expect(result.meta.birdMatches).toBeUndefined();
+  });
+
   it('uses authenticated customer context for tool metadata', async () => {
     const conversationMessages = [
       { role: 'system', content: 'System prompt' },

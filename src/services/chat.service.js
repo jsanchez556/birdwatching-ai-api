@@ -21,6 +21,23 @@ const VISITOR_BLOCKED_PATTERNS = [
 const VISITOR_BIRD_PATTERNS = [
   /\b(bird|birds|birding|birdwatching|bird watching|species|habitats?|migration|nests?|nesting|feathers?|plumage|songs?|calls?|beaks?|raptors?|hummingbirds?|toucans?|quetzals?|macaws?|parrots?|motmots?|tanagers?|warblers?|flycatchers?|woodpeckers?|owls?|hawks?|falcons?|herons?|egrets?|kingfishers?|orioles?|guans?|curassows?|jacamars?|manakins?|antbirds?|wrens?|thrushes|finches|seedeaters?|euphonias?)\b/i,
 ];
+const BIRD_DISCOVERY_PATTERNS = [
+  /\b(bird|birds|birding|birdwatching|bird watching|species|habitats?|migration|nests?|nesting|feathers?|plumage|songs?|calls?|beaks?|raptors?|hummingbirds?|toucans?|quetzals?|macaws?|parrots?|motmots?|tanagers?|warblers?|flycatchers?|woodpeckers?|owls?|hawks?|falcons?|herons?|egrets?|kingfishers?|orioles?|guans?|curassows?|jacamars?|manakins?|antbirds?|wrens?|thrushes|finches|seedeaters?|euphonias?|ducks?|rails?|solitaires?|brushfinches?|tanagers?)\b/i,
+];
+const BOOKING_UI_ACTION_TYPES = new Set([
+  'tour_selection',
+  'participant_count',
+  'choice',
+  'transportation_selection',
+  'reservation_confirmation',
+]);
+const BOOKING_TOOL_NAMES = new Set([
+  'searchTours',
+  'checkAvailability',
+  'calculatePricing',
+  'calculateTransportation',
+  'createReservation',
+]);
 
 class StreamingGuardrailBlockedError extends Error {
   constructor(guardrail) {
@@ -79,6 +96,54 @@ function assertVisitorCanChat(message) {
   if (!VISITOR_BIRD_PATTERNS.some((pattern) => pattern.test(message))) {
     throw new HttpError(403, VISITOR_NON_BIRD_RESPONSE, { code: 'VISITOR_TOPIC_RESTRICTED' });
   }
+}
+
+function isExplicitBirdDiscoveryRequest(message = '') {
+  return BIRD_DISCOVERY_PATTERNS.some((pattern) => pattern.test(message));
+}
+
+function isExplicitBirdDiscoveryQuestion(message = '') {
+  return (
+    /\b(where|what|which|tell me|show me|find|see|common|about)\b/i.test(message)
+    && isExplicitBirdDiscoveryRequest(message)
+  );
+}
+
+function isBookingMetadata(metadata = {}) {
+  if (!metadata || typeof metadata !== 'object') {
+    return false;
+  }
+
+  if (BOOKING_UI_ACTION_TYPES.has(metadata.uiAction?.type)) {
+    return true;
+  }
+
+  if (
+    metadata.selectedTour
+    || metadata.selectedTourId
+    || metadata.selectedTransportation
+    || metadata.transportationDeclined
+    || metadata.participants
+  ) {
+    return true;
+  }
+
+  return Array.isArray(metadata.toolsCalled)
+    && metadata.toolsCalled.some((toolName) => BOOKING_TOOL_NAMES.has(toolName));
+}
+
+function isBookingConversationContext(conversationContext = {}) {
+  return isBookingMetadata(conversationContext?.recentAssistantMetadata);
+}
+
+function shouldIncludeBirdMatches(message, metadata = {}) {
+  const isBookingTurn = isBookingConversationContext(metadata.conversationContext) || isBookingMetadata(metadata);
+
+  if (isBookingTurn) {
+    return isExplicitBirdDiscoveryQuestion(message);
+  }
+
+  return isExplicitBirdDiscoveryRequest(message);
 }
 
 function buildToolMeta(metadata = {}) {
@@ -257,7 +322,9 @@ class ChatService {
       sources: ragContext.sources,
       meta: mergeChatMeta({
         ...messageMeta,
-        ...(ragContext.birdMatches?.length ? { birdMatches: ragContext.birdMatches } : {}),
+        ...(shouldIncludeBirdMatches(message, openAiMetadata) && ragContext.birdMatches?.length
+          ? { birdMatches: ragContext.birdMatches }
+          : {}),
       }, conversationMeta),
     };
   }

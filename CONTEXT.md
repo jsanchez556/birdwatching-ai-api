@@ -8,6 +8,7 @@ This repository is a single Express API for Costa Rica birdwatching assistance. 
 - PostgreSQL-backed RAG over ingested `src/db/ingestion/data` documents using pgvector
 - reusable external bird data clients for eBird, iNaturalist, and Xeno-canto ingestion jobs
 - media file lookup for relative bird media keys through `GET /files/:folderName/:filename`
+- public homepage content for hero media, featured tours, bird highlights, and transportation add-ons
 - OpenAI/agent tool calling for tour search, availability, transportation, pricing, discounts, and durable reservations
 - normalized JSON responses and centralized error handling
 - email/password authentication with bcrypt password hashes and JWT-protected AI routes
