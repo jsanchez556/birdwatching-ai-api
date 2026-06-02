@@ -89,7 +89,9 @@ class ChatController {
   }
 
   async handleGetLatestConversation(req, res) {
-    logger.info('Latest conversation load requested', { userId: req.user?.id });
+    logger.info('Latest conversation load requested', {
+      authenticated: Boolean(req.user),
+    });
 
     const result = await chatService.getLatestConversation(req.user);
     const { meta = {}, ...data } = result;

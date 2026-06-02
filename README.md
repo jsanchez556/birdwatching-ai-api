@@ -27,6 +27,7 @@ npm run dev
 Required runtime variables are validated in `src/config/env.js`:
 - `OPENAI_API_KEY`
 - `DATABASE_URL`
+- `JWT_SECRET`
 
 Common optional variables:
 - `PORT` defaults to `3000`
@@ -51,6 +52,9 @@ psql "$DATABASE_URL" -f src/db/migrations/005_create_users.sql
 psql "$DATABASE_URL" -f src/db/migrations/006_add_user_ownership.sql
 psql "$DATABASE_URL" -f src/db/migrations/007_save_conversation_metadata.sql
 psql "$DATABASE_URL" -f src/db/migrations/008_create_usage_logs.sql
+psql "$DATABASE_URL" -f src/db/migrations/009_add_user_roles.sql
+psql "$DATABASE_URL" -f src/db/migrations/010_create_refresh_tokens.sql
+psql "$DATABASE_URL" -f src/db/migrations/011_tours_refactor.sql
 ```
 
 ## Bird Knowledge Base
@@ -167,6 +171,11 @@ npm test       # Jest ESM test runner
 
 ## Runtime Endpoints
 - `GET /health`
+- `GET /homepage/hero`
+- `POST /auth/signup`
+- `POST /auth/login`
+- `POST /auth/refresh`
+- `POST /auth/logout`
 - `POST /chat`
 - `GET /chat/latest`
 - `GET /files/:folderName/:filename`
@@ -177,9 +186,21 @@ Responses use the normalized envelope from `src/utils/apiResponse.js`.
 PostgreSQL stores one `conversations` row per conversation ID and one
 `messages` row per user/assistant exchange. Query modules call PostgreSQL
 functions from migrations instead of embedding persistence SQL in JavaScript.
+Authenticated conversations and reservations link to `users.id`, while
+`refresh_tokens` stores hashed rotating refresh-token sessions and `usage_logs`
+stores best-effort token/cost records for authenticated chat turns.
+
 Tour reservations use PostgreSQL `tours` and `reservations` tables from
 `003_create_tour_reservations.sql`, including database functions for tour lookup
-and transactional reservation creation.
+and transactional reservation creation. `011_tours_refactor.sql` adds optional
+tour `node_id`, coordinates, and itinerary date columns, plus a Costa Rica
+birding reference graph:
+- `country` stores country records such as Costa Rica.
+- `zone` stores ranked birding regions within a country.
+- `node` stores ranked hierarchical birding areas and sub-sites within zones.
+- `birds` stores target bird names, optional eBird/Clements `species_code`,
+  tags, and active status.
+- `birds_by_node` stores ranked bird associations for each node.
 
 RAG persistence uses `knowledge_documents` and `knowledge_chunks` from
 `004_create_vector_knowledge.sql`. The migration enables the `vector` extension

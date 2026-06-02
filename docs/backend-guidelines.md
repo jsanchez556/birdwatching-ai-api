@@ -4,7 +4,7 @@ Back to [Project Context](../CONTEXT.md). Pair this with [API Contracts](./api.m
 
 ## Implementation Style
 - Use explicit ESM imports and exports.
-- Keep controllers thin: read request data, log request metadata, call a service, return `sendSuccess`.
+- Controllers must only parse HTTP requests, validate and authorize input, log safe request metadata, call services, and return normalized responses. Do not perform business logic, database access, or OpenAI prompt composition inside controllers.
 - Keep business orchestration in `src/services/`.
 - Keep SQL in `src/db/queries/`; never build SQL with untrusted string interpolation.
 - Keep prompt text, prompt versions, and OpenAI schemas in `src/ai/`.
@@ -39,6 +39,9 @@ Back to [Project Context](../CONTEXT.md). Pair this with [API Contracts](./api.m
 - Keep database helper functions in migrations and call them from query modules instead of hardcoding persistence SQL in JavaScript.
 - Treat chat persistence as best-effort unless the API contract changes.
 - Add migrations under `src/db/migrations/` for schema changes.
+- Keep auth state in `users` and `refresh_tokens`; keep usage accounting in `usage_logs`.
+- Keep durable booking state in `tours` and `reservations`; use `country`, `zone`, `node`, `birds`, and `birds_by_node` for structured Costa Rica birding geography and ranked target-species references.
+- Keep pgvector RAG documents in `knowledge_documents` and `knowledge_chunks`; do not mix RAG embeddings into the tour/location reference tables.
 
 ## RAG Data
 - Keep runtime knowledge source files under `src/db/ingestion/data`.
@@ -59,6 +62,7 @@ Back to [Project Context](../CONTEXT.md). Pair this with [API Contracts](./api.m
 
 ## Tour Tools
 - Keep tour data and reservation state in PostgreSQL; do not reintroduce JSON-backed tour state.
+- When using tour location metadata, prefer `tours.node_id` and the active `zone`/`node` hierarchy over ad hoc location strings when the schema provides a matching node.
 - Keep schemas in `src/ai/schemas/tour.schema.js`, adapters in `src/ai/tools/*.tool.js`, and dispatch in `src/ai/tools/index.js`.
 - Keep tour listing, recommendation, and selection orchestration in `src/services/tour.service.js`.
 - Keep reservation orchestration in `src/services/reservation.service.js`; `src/db/queries/reservation.queries.js` should call PostgreSQL functions.

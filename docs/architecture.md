@@ -14,7 +14,7 @@ src/
   controllers/           thin HTTP handlers
   db/                    pg pool, migrations, query modules
   external/              external provider HTTP clients and rate limiting
-  middleware/            validation, rate limit, error handling, future auth
+  middleware/            validation, rate limit, error handling, auth
   routes/                route modules
   services/              business orchestration
   validators/            request payload validators
@@ -184,9 +184,15 @@ The `src/ai/` layer is split by responsibility:
 ## Persistence
 The `conversations` table stores one row per conversation:
 - `conversation_id`
-- optional `user_id`, `title`, and `metadata`
+- optional `user_id`, `title`, and JSONB `metadata`
 - `last_message_at`
 - `created_at`
+
+`conversations.user_id` is converted to `BIGINT` by the ownership migration and
+references `users(id)` with `ON DELETE SET NULL`. `conversations.metadata`
+defaults to `{}` and stores frontend-safe chat-level booking state such as
+customer context, participant count, selected tour, transportation choice, and
+reservation metadata.
 
 The `messages` table stores one row per exchange:
 - `conversation_id`
@@ -202,13 +208,50 @@ Query modules use SQL helper functions from `002_create_functions.sql`:
 - `get_all_messages`
 - `delete_message_by_id`
 
-Recent context is returned in chronological order by `get_last_messages` after limiting the newest exchanges.
+Later migrations replace several helper signatures: `ensure_conversation` and
+`save_message` accept a `BIGINT` user ID, `save_message` accepts JSONB metadata,
+and history readers can filter by owner. Recent context is returned in
+chronological order by `get_last_messages` after limiting the newest exchanges.
+
+The `users` table stores authentication state:
+- `email` is unique and indexed
+- `role` defaults to `customer` and is constrained to `admin`, `customer`, or `tour guide`
+- `password_hash` stores bcrypt hashes
+- `created_at` and `updated_at` use `TIMESTAMPTZ`; a trigger refreshes `updated_at`
+
+The `refresh_tokens` table stores hashed rotating refresh-token sessions with
+`expires_at`, optional `revoked_at`, and indexes for user lookup and active
+token lookup. The `usage_logs` table stores authenticated OpenAI usage records:
+`user_id`, non-negative prompt/completion token counts, optional estimated cost,
+and `created_at`.
 
 The `tours` and `reservations` tables store durable booking state:
 - `tours.available_slots` is decremented transactionally
+- `tours.node_id` can reference `node(id)` and tours may include latitude, longitude, `start_date`, and `end_date`
 - `reservations.confirmation_code` is unique
-- each reservation records `conversation_id`, `customer_name`, optional `customer_email`, `tour_id`, `participants`, `confirmation_code`, `created_at`, and `total_price`
+- each reservation records optional `user_id`, `conversation_id`, `customer_name`, optional `customer_email`, `tour_id`, `participants`, `confirmation_code`, `created_at`, and `total_price`
 - query modules call `get_tour_by_id(...)`, `get_available_tours(...)`, `select_tour(...)`, and `create_tour_reservation(...)` from `003_create_tour_reservations.sql`
+
+The birding reference graph from `011_tours_refactor.sql` stores geographic and
+species seed data:
+- `country` has unique `acr` values such as `CR`.
+- `zone` belongs to `country`, has `name`, required `des`, ranked ordering, and `is_active DEFAULT true`.
+- `node` belongs to `zone`, can point to a parent `node`, has ranked ordering, optional coordinates and `des`, and `is_active DEFAULT true`; `(parent_id, zone_id, name)` and `(parent_id, zone_id, rank)` are unique.
+- `birds` has unique `name`, optional unique `species_code`, optional text-array `tags`, and `is_active DEFAULT true`.
+- `birds_by_node` joins nodes to birds with a per-node rank, `is_active DEFAULT true`, primary key `(node_id, bird_id)`, and unique `(node_id, rank)`.
+
+The same migration seeds Costa Rica, six birding zones, hierarchical birding
+nodes, target birds with tags/species codes when known, and ranked node-bird
+associations. It drops and recreates the birding reference tables before
+seeding, while preserving existing tour/reservation tables and adding tour
+location metadata.
+
+The RAG store is separate from the birding reference graph. `knowledge_documents`
+stores one normalized source document per `external_id` with `tags`, JSONB
+`metadata`, `content_hash`, and `active DEFAULT true`; `knowledge_chunks` stores
+ordered content chunks, token counts, JSONB chunk metadata, and 1536-dimension
+pgvector embeddings. Indexes cover document filters, GIN tags/metadata/text
+search, chunk metadata/text search, and IVFFlat cosine embedding search.
 
 ## Cross-Cutting Concerns
 - Errors are represented with `HttpError` and rendered by `error.middleware.js`.

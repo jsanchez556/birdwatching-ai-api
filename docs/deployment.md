@@ -55,9 +55,12 @@ src/db/migrations/005_create_users.sql
 src/db/migrations/006_add_user_ownership.sql
 src/db/migrations/007_save_conversation_metadata.sql
 src/db/migrations/008_create_usage_logs.sql
+src/db/migrations/009_add_user_roles.sql
+src/db/migrations/010_create_refresh_tokens.sql
+src/db/migrations/011_tours_refactor.sql
 ```
 
-Run migrations in order with `psql`, Railway shell, or your deployment platform's database tooling before using chat memory, reservations, users, or pgvector-backed RAG.
+Run migrations in order with `psql`, Railway shell, or your deployment platform's database tooling before using chat memory, reservations, users, refresh-token sessions, usage logging, tour-location metadata, or pgvector-backed RAG.
 
 Production database connections use SSL with `rejectUnauthorized: false`.
 
@@ -66,7 +69,7 @@ Production database connections use SSL with `rejectUnauthorized: false`.
 - External bird data clients for eBird, iNaturalist, and Xeno-canto live under `src/external/`. They are reusable building blocks for ingestion jobs and are rate-limited to no more than 40 requests per minute before data is normalized for the vector store.
 - External provider JSON exports are written to `src/external/data` by `npm run external -- taxo sounds photos`. With no provider arguments, `npm run external` runs that same order. The eBird taxonomy export is incremental from the refreshed species list, eBird recent observations are fetched per species code from that list and written incrementally as a keyed `{ locations, lstDt }` summary, and the eBird species list, simplified Xeno-canto songs export, and iNaturalist per-species image lookups are valid for one year.
 - RAG retrieval reads PostgreSQL `knowledge_documents` and `knowledge_chunks`; chat requests do not ingest files or write vectors.
-- Tour seed data is stored in `003_create_tour_reservations.sql` and runtime tour data is PostgreSQL-backed.
+- Tour seed data begins in `003_create_tour_reservations.sql`; `011_tours_refactor.sql` adds tour `node_id`, coordinates, start/end dates, and the `country`/`zone`/`node`/`birds`/`birds_by_node` reference tables for Costa Rica birding geography and target species.
 - Tour reservation availability is durable PostgreSQL state and is updated transactionally by PostgreSQL functions.
 
 ## CORS

@@ -84,14 +84,15 @@ GET /chat/latest
 - `GET /files/:folderName/:filename` normalizes and validates path segments, checks object existence in the configured S3-compatible bucket, and returns short-lived presigned GET URLs without exposing bucket credentials.
 - External bird data clients live under `src/external/clients/` and export orchestration lives under `src/external/services/` behind `src/external/export.service.js`. They are intended for ingestion jobs, not request handlers, and share a configurable rate limiter capped at 40 requests per minute.
 - `npm run external` exports provider JSON into `src/external/data` in `taxo`, `sounds`, `photos` order with file-age and per-species cache checks before future normalization or ingestion steps. eBird recent observations are fetched per species code from the Costa Rica species list and written incrementally as keyed `{ locations, lstDt }` summaries.
-- Tour data, availability, selection, and reservations are stored in PostgreSQL through functions in `003_create_tour_reservations.sql`.
+- Tour data, availability, selection, and reservations are stored in PostgreSQL through functions in `003_create_tour_reservations.sql`; `011_tours_refactor.sql` adds tour location/date metadata and the Costa Rica `country`/`zone`/`node`/`birds`/`birds_by_node` reference graph.
 - Tour listing, recommendation, guided action, pricing, transportation, and reservation details are returned in the `/chat` stream `done.meta` object for frontend rendering; assistant text stays short when structured metadata is present.
 - Tour selection accepts a tour ID or a clear/partial tour name such as `Monteverde tour` before pricing or reservation.
 - `GET /chat/latest` loads the most recent conversation for `req.user.id` before the frontend creates a new conversation ID. If that conversation has a reservation, the response includes frontend-safe `meta.reservation` details plus chat-level booking state such as `meta.participants` and `meta.selectedTransportation`. Chat requests can include `customerContext` with name, email, and itinerary dates plus `conversationContext.recentAssistantMetadata` for continuing guided booking flows. For authenticated requests, the JWT user email is authoritative and the JWT user name is preferred when available.
 - Reservation creation can include optional `customerEmail`, `discountCode`, itinerary dates, and selected transportation metadata; discounts are calculated in `reservation.service.js` and the tour total is computed inside the PostgreSQL function.
 - Database writes for chat memory are best-effort; save failures are logged but do not fail the chat response.
 - Authenticated chat requests persist OpenAI prompt tokens, completion tokens, and estimated cost to `usage_logs` on a best-effort basis after the streamed response completes.
-- Chat persistence uses the `conversations` and `messages` tables plus SQL helper functions from `src/db/migrations/002_create_functions.sql`. User authentication uses the `users` table from `src/db/migrations/005_create_users.sql`; ownership links for conversations and reservations are added in `src/db/migrations/006_add_user_ownership.sql`.
+- Chat persistence uses the `conversations` and `messages` tables plus SQL helper functions from `src/db/migrations/002_create_functions.sql`; later migrations make those helpers owner-aware and merge safe JSONB booking metadata into `conversations.metadata`.
+- User authentication uses `users`, DB-backed refresh sessions use `refresh_tokens`, and authenticated token/cost accounting uses `usage_logs`.
 - Reservation persistence uses `tours` and `reservations` plus PostgreSQL functions from `003_create_tour_reservations.sql`; transaction, row locking, and authenticated `user_id` persistence live in the database function after ownership migration. Chat-level booking metadata such as transportation selections is stored in `conversations.metadata`.
 
 ## Testing
@@ -104,7 +105,7 @@ npm test
 
 ## When Extending
 1. Add or update validators in `src/validators/`.
-2. Keep controllers thin and request-focused.
+2. Controllers must only parse HTTP requests, validate and authorize input, and call services. Do not perform business logic, database access, or OpenAI prompt composition inside controllers.
 3. Put orchestration in `src/services/`.
 4. Put SQL in `src/db/queries/` and use parameterized queries.
 5. Put prompt text and schemas in `src/ai/`.

@@ -1,14 +1,75 @@
-CREATE TABLE IF NOT EXISTS tours (
-  id INTEGER PRIMARY KEY,
+CREATE TABLE country (
+  id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
+  acr VARCHAR(8) NOT NULL UNIQUE
+);
+
+CREATE TABLE zone (
+  id SERIAL PRIMARY KEY,
+  country_id INT NOT NULL REFERENCES country(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  des TEXT NOT NULL,
+  rank INTEGER NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  UNIQUE(country_id, name)
+);
+
+CREATE TABLE node (
+  id SERIAL PRIMARY KEY,
+  parent_id INT NULL REFERENCES node(id),
+  zone_id INT NOT NULL REFERENCES zone(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  rank INTEGER NOT NULL,
+  lat NUMERIC(9,6),
+  lon NUMERIC(9,6),
+  des TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  UNIQUE(parent_id, zone_id, name),
+  UNIQUE(parent_id, zone_id, rank)
+);
+
+CREATE TABLE birds (
+  id SERIAL PRIMARY KEY,
+  species_code TEXT UNIQUE,
+  name TEXT NOT NULL UNIQUE,
+  tags TEXT[],
+  is_active BOOLEAN NOT NULL DEFAULT true
+);
+
+CREATE TABLE birds_by_node (
+  node_id INT NOT NULL REFERENCES node(id) ON DELETE CASCADE,
+  bird_id INT NOT NULL REFERENCES birds(id) ON DELETE CASCADE,
+  rank INTEGER NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  PRIMARY KEY (node_id, bird_id),
+  UNIQUE(node_id, rank)
+);
+
+CREATE TABLE IF NOT EXISTS tours (
+  id SERIAL PRIMARY KEY,
+  node_id INTEGER REFERENCES node(id) NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT NULL,
   price NUMERIC(10, 2) NOT NULL CHECK (price >= 0),
   available_slots INTEGER NOT NULL CHECK (available_slots >= 0),
-  location TEXT NOT NULL,
   duration_hours INTEGER NOT NULL CHECK (duration_hours > 0),
   difficulty TEXT NOT NULL,
+  lat NUMERIC(9,6),
+  lon NUMERIC(9,6),
+  start_date DATE,
+  end_date DATE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX IF NOT EXISTS idx_tours_node_id ON tours(node_id);
+CREATE INDEX IF NOT EXISTS idx_tours_start_date ON tours(start_date);
+CREATE INDEX IF NOT EXISTS idx_tours_end_date ON tours(end_date);
+
+ALTER TABLE tours
+  ADD CONSTRAINT chk_tours_lat_range CHECK (lat IS NULL OR lat BETWEEN -90 AND 90),
+  ADD CONSTRAINT chk_tours_lon_range CHECK (lon IS NULL OR lon BETWEEN -180 AND 180);
+
 
 CREATE TABLE IF NOT EXISTS reservations (
   id SERIAL PRIMARY KEY,
@@ -22,47 +83,11 @@ CREATE TABLE IF NOT EXISTS reservations (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-ALTER TABLE reservations
-ADD COLUMN IF NOT EXISTS customer_email TEXT;
-
-ALTER TABLE reservations
-ADD COLUMN IF NOT EXISTS conversation_id TEXT;
-
-ALTER TABLE reservations
-ADD COLUMN IF NOT EXISTS confirmation_code TEXT;
-
-ALTER TABLE reservations
-ADD COLUMN IF NOT EXISTS total_price NUMERIC(10, 2);
-
-ALTER TABLE reservations
-ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
-
 CREATE INDEX IF NOT EXISTS idx_reservations_confirmation_code
 ON reservations(confirmation_code);
 
 CREATE INDEX IF NOT EXISTS idx_reservations_tour_created_at
 ON reservations(tour_id, created_at DESC);
-
-INSERT INTO tours (id, name, price, available_slots, location, duration_hours, difficulty)
-VALUES
-  (1, 'Monteverde Quetzal Tour', 120.00, 5, 'Monteverde', 4, 'moderate'),
-  (2, 'Sarapiqui Rainforest Tour', 95.00, 3, 'Sarapiqui', 5, 'easy'),
-  (3, 'Carara Scarlet Macaw Walk', 110.00, 6, 'Carara National Park', 4, 'easy'),
-  (4, 'Savegre Highland Birding Tour', 145.00, 4, 'San Gerardo de Dota', 6, 'moderate'),
-  (5, 'La Selva Nightjar Experience', 135.00, 2, 'La Selva Biological Station', 3, 'easy'),
-  (6, 'Tortuguero Canal Bird Safari', 155.00, 8, 'Tortuguero', 5, 'easy'),
-  (7, 'Arenal Foothills Birding Tour', 125.00, 7, 'Arenal', 4, 'moderate'),
-  (8, 'Osa Peninsula Endemics Expedition', 210.00, 3, 'Osa Peninsula', 8, 'challenging'),
-  (9, 'Palo Verde Wetlands Birding', 105.00, 9, 'Palo Verde National Park', 4, 'easy'),
-  (10, 'Cerro de la Muerte Timberline Tour', 165.00, 4, 'Cerro de la Muerte', 6, 'challenging')
-ON CONFLICT (id) DO UPDATE
-SET
-  name = EXCLUDED.name,
-  price = EXCLUDED.price,
-  location = EXCLUDED.location,
-  duration_hours = EXCLUDED.duration_hours,
-  difficulty = EXCLUDED.difficulty,
-  updated_at = CURRENT_TIMESTAMP;
 
 CREATE OR REPLACE FUNCTION get_tour_by_id(p_tour_id INTEGER)
 RETURNS TABLE (

@@ -256,6 +256,10 @@ assistant turn that produced them.
 
 Tour tool notes:
 - Tour and reservation state comes from PostgreSQL.
+- `tours` store price, availability, location, duration, difficulty, optional `node_id`, coordinates, and optional start/end dates; `node_id` references the Costa Rica birding `node` table when present.
+- `reservations` store customer details, optional authenticated `user_id`, `conversation_id`, `tour_id`, participant count, unique confirmation code, persisted tour total, and creation time.
+- Birding location/reference data is modeled separately from RAG in `country`, `zone`, `node`, `birds`, and `birds_by_node`. Zones and nodes are ranked, nodes can be hierarchical, birds may have optional `species_code` and `tags`, and each of those tables has `is_active DEFAULT true`.
+- The pgvector RAG tables are `knowledge_documents` and `knowledge_chunks`; they are the source for retrieved text and `birdMatches`, while the birding reference graph supports structured tour/location relationships and seed data.
 - Available tour tools are `searchTours`, `calculateTransportation`, `checkAvailability`, `calculatePricing`, and `createReservation`.
 - Users should receive available or recommended tours through response metadata and explicitly select one before pricing or reservation creation.
 - `searchTours` supports broad listing and recommendation mode. `checkAvailability`, `calculatePricing`, and `createReservation` can accept a selected `tourId` or clear/partial `tourName`; the service resolves matching tour names before validating availability.
