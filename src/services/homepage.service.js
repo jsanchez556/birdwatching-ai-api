@@ -1,69 +1,11 @@
 import env from '../config/env.js';
+import mediaAssetService from './mediaAsset.service.js';
+import ragService from './rag.service.js';
 import tourService from './tour.service.js';
-import logger from '../utils/logger.js';
-
-const PLACEHOLDER_IMAGES = {
-  cloudForest: 'https://images.unsplash.com/photo-1518182170546-07661fd94144?auto=format&fit=crop&w=900&q=80',
-  rainforest: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80',
-  wetlands: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21?auto=format&fit=crop&w=900&q=80',
-  toucan: 'https://images.unsplash.com/photo-1566487097168-e91a4f38bee2?auto=format&fit=crop&w=900&q=80',
-};
 
 const heroContent = {
   heroVideo: 'https://www.youtube-nocookie.com/embed/o02Dq_DaY-U?autoplay=1&mute=1&controls=0&loop=1&playlist=o02Dq_DaY-U&start=54&end=84&playsinline=1&modestbranding=1&rel=0',
 };
-
-const defaultTours = [
-  {
-    tourId: 1,
-    name: 'Monteverde Quetzal Tour',
-    location: 'Monteverde',
-    pricePerPerson: 120,
-    durationHours: 4,
-    difficulty: 'moderate',
-  },
-  {
-    tourId: 2,
-    name: 'Sarapiqui Rainforest Tour',
-    location: 'Sarapiqui',
-    pricePerPerson: 95,
-    durationHours: 5,
-    difficulty: 'easy',
-  },
-  {
-    tourId: 6,
-    name: 'Tortuguero Canal Bird Safari',
-    location: 'Tortuguero',
-    pricePerPerson: 155,
-    durationHours: 5,
-    difficulty: 'easy',
-  },
-];
-
-const tourDescriptions = {
-  'Monteverde Quetzal Tour': 'A misty cloud forest walk focused on resplendent quetzals, mixed flocks, and patient scope work.',
-  'Sarapiqui Rainforest Tour': 'Lowland rainforest birding with tanagers, toucans, honeycreepers, and relaxed riverside pacing.',
-  'Tortuguero Canal Bird Safari': 'A quiet water-level safari for herons, kingfishers, toucans, and rainforest edge species.',
-  'Carara Scarlet Macaw Walk': 'A transitional forest route for scarlet macaws, trogons, manakins, and accessible trail birding.',
-  'Savegre Highland Birding Tour': 'Highland birding for quetzals, silky-flycatchers, hummingbirds, and oak forest specialties.',
-  'Arenal Foothills Birding Tour': 'Foothill birding near Arenal with toucans, antbirds, tanagers, and volcano views.',
-};
-
-const birdDescriptions = {
-  'Resplendent Quetzal': 'A cloud forest icon with emerald plumage and a seasonal preference for wild avocado trees.',
-  'Keel-billed Toucan': 'A colorful canopy species often seen moving through fruiting trees in pairs or small groups.',
-  'Scarlet Macaw': 'A brilliant Pacific-slope macaw that favors mature trees, almond groves, and open coastal forest.',
-  'Snowcap': 'A tiny hummingbird prized by birders, usually found around foothill forest edges and flowering shrubs.',
-  'Sunbittern': 'A streamside specialist with dramatic wing patterning, best searched for along quiet forest waterways.',
-  'Three-wattled Bellbird': 'A loud seasonal migrant of highland forests, known for one of Central America’s most memorable calls.',
-};
-
-const defaultBirdNames = [
-  'Resplendent Quetzal',
-  'Keel-billed Toucan',
-  'Scarlet Macaw',
-  'Snowcap',
-];
 
 const transportation = [
   {
@@ -89,18 +31,12 @@ const transportation = [
   },
 ];
 
-function getTourImage(tour) {
-  const text = `${tour.name || ''} ${tour.location || ''}`.toLowerCase();
-
-  if (text.includes('tortuguero') || text.includes('wetland')) {
-    return PLACEHOLDER_IMAGES.wetlands;
-  }
-
-  if (text.includes('monteverde') || text.includes('savegre') || text.includes('cerro')) {
-    return PLACEHOLDER_IMAGES.cloudForest;
-  }
-
-  return PLACEHOLDER_IMAGES.rainforest;
+function getTourPortraitUrl(tour) {
+  return mediaAssetService.getFirstMediaAssetPath(
+    'tours',
+    tour.tourId || tour.id,
+    'portraits'
+  );
 }
 
 function normalizeTour(tour) {
@@ -109,34 +45,41 @@ function normalizeTour(tour) {
 
   return {
     id: tour.tourId || tour.id,
+    country: tour.country ?? null,
+    zone: tour.zone ?? null,
+    rank: tour.rank ?? null,
     title,
-    description: tourDescriptions[title] || 'A guided Costa Rica birdwatching experience tailored to local conditions and seasonal sightings.',
+    description: tour.description ?? null,
     location: tour.location,
+    node: tour.node ?? null,
+    subnode: tour.subnode ?? null,
     duration: durationHours ? `${durationHours} hours` : null,
     pricePerPerson: tour.pricePerPerson ?? tour.price ?? null,
     difficulty: tour.difficulty || null,
-    imageUrl: getTourImage(tour),
+    lon: tour.lon ?? null,
+    lat: tour.lat ?? null,
+    start_date: tour.start_date ?? tour.startDate ?? null,
+    end_date: tour.end_date ?? tour.endDate ?? null,
+    portraitUrl: getTourPortraitUrl(tour),
+    birds: Array.isArray(tour.birds) ? tour.birds : [],
   };
 }
 
-function parseConfiguredBirdNames() {
-  return (env.homepageBirdHighlights || [])
+function parseConfiguredHeadlineBirds() {
+  return (env.headLineBirds || env.homepageBirdHighlights || [])
     .map((name) => name.trim())
     .filter(Boolean);
 }
 
-function birdImageForName(name) {
-  const normalized = name.toLowerCase();
+function looksLikeSpeciesCode(value) {
+  return /^[a-z]{2,}\d+[a-z0-9]*$/i.test(value) && !/\s/.test(value);
+}
 
-  if (normalized.includes('toucan')) {
-    return PLACEHOLDER_IMAGES.toucan;
-  }
-
-  if (normalized.includes('macaw')) {
-    return PLACEHOLDER_IMAGES.rainforest;
-  }
-
-  return PLACEHOLDER_IMAGES.cloudForest;
+function shuffleValues(values) {
+  return values
+    .map((value) => ({ value, sort: Math.random() }))
+    .sort((left, right) => left.sort - right.sort)
+    .map(({ value }) => value);
 }
 
 class HomepageService {
@@ -145,29 +88,47 @@ class HomepageService {
   }
 
   async getFeaturedTours() {
-    try {
-      const result = await tourService.getAvailableTours({ participants: 1 });
+    const result = await tourService.getAvailableTours({ participants: 1 });
 
-      if (result.success && result.tours.length > 0) {
-        return result.tours.slice(0, 6).map(normalizeTour);
-      }
-    } catch (error) {
-      logger.warn('Falling back to static featured tours', { error: error.message });
+    if (!result.success || !Array.isArray(result.tours)) {
+      return [];
     }
 
-    return defaultTours.map(normalizeTour);
+    return result.tours.map(normalizeTour);
   }
 
-  getBirdHighlights() {
-    const configuredNames = parseConfiguredBirdNames();
-    const names = configuredNames.length > 0 ? configuredNames : defaultBirdNames;
+  async getBirdHighlights() {
+    const birds = [];
+    const seen = new Set();
 
-    return names.slice(0, 8).map((name) => ({
-      name,
-      description: birdDescriptions[name] || 'A Costa Rica birding highlight selected for visiting birdwatchers.',
-      region: name.includes('Quetzal') || name.includes('Bellbird') ? 'Cloud forest' : 'Rainforest and lowlands',
-      imageUrl: birdImageForName(name),
-    }));
+    for (const candidate of shuffleValues(parseConfiguredHeadlineBirds())) {
+      if (birds.length >= 5) {
+        break;
+      }
+
+      const bird = await ragService.getBirdProfile(
+        looksLikeSpeciesCode(candidate)
+          ? { speciesCode: candidate }
+          : { name: candidate }
+      );
+      const key = bird?.speciesCode || bird?.commonName || bird?.name;
+
+      if (!bird || (key && seen.has(key))) {
+        continue;
+      }
+
+      if (key) {
+        seen.add(key);
+      }
+
+      birds.push(bird);
+    }
+
+    return birds;
+  }
+
+  async getBirdProfile({ speciesCode, name } = {}) {
+    return ragService.getBirdProfile({ speciesCode, name });
   }
 
   getTransportationAddOns() {

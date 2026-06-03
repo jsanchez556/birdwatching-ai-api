@@ -10,6 +10,11 @@ const TOUR_KEYWORDS = [
   'sarapiqui',
   'cerro de la muerte',
   'savegre',
+  'bijagua',
+  'upala',
+  'tenorio',
+  'rio celeste',
+  'río celeste',
 ];
 
 const BOOKING_KEYWORDS = ['book', 'reserve', 'reservation'];
@@ -115,6 +120,7 @@ function extractLocation(text) {
   if (/tortuguero/i.test(text)) return 'Tortuguero';
   if (/sarapiqui/i.test(text)) return 'Sarapiqui';
   if (/cerro de la muerte|savegre/i.test(text)) return 'Cerro de la Muerte';
+  if (/bijagua|upala|tenorio|r[ií]o celeste/i.test(text)) return 'Tenorio-Bijagua and Rio Celeste';
   return undefined;
 }
 
@@ -179,6 +185,19 @@ function hasTransportationPreference(context = {}) {
       || context.recentMetadata?.selectedTransportation
       || context.recentMetadata?.transportationDeclined
       || extractFromRecentUserMessages(context.messages, extractTransportationDecline)
+  );
+}
+
+function hasTransportationRequest(context = {}) {
+  const recentTransportationRequest = getRecentUserMessages(context.messages).some((message) => (
+    /\b(transport|transportation|transfer|shuttle|pickup)\b/i.test(message)
+      && !extractTransportationDecline(message)
+  ));
+
+  return Boolean(
+    context.requestedTransportation
+      || context.recentMetadata?.requestedTransportation
+      || recentTransportationRequest
   );
 }
 
@@ -420,6 +439,7 @@ export class ToolPlanner {
       selectedTransportation,
       transportationDeclined,
     });
+    const transportationRequested = hasTransportationRequest(context) || asksForTransportation;
 
     if (selectedParticipantCount && hasSelectedTour(context)) {
       if (!hasRequiredReservationDetails(selectedArgs)) {
@@ -574,6 +594,18 @@ export class ToolPlanner {
 
     if (guidedIntent?.intent === 'select_tour' || guidedIntent?.intent === 'proceed_booking') {
       const actionArgs = selectedArgs;
+
+      if (actionArgs.participants && transportationRequested && !transportationPreferenceKnown) {
+        return {
+          status: 'transportation_requested',
+          requestedTransportation: true,
+          message: 'The user selected a tour after requesting transportation. Check availability and show transportation options before pricing or final reservation confirmation.',
+          steps: [
+            { tool: 'checkAvailability', args: actionArgs, stopOnFailure: false },
+            { tool: 'calculateTransportation', args: actionArgs, stopOnFailure: false },
+          ],
+        };
+      }
 
       return {
         status: guidedIntent.intent,

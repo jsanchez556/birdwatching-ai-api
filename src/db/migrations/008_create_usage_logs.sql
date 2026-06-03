@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS usage_logs (
-  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   prompt_tokens INTEGER NOT NULL DEFAULT 0 CHECK (prompt_tokens >= 0),
   completion_tokens INTEGER NOT NULL DEFAULT 0 CHECK (completion_tokens >= 0),
   estimated_cost NUMERIC(12, 6),

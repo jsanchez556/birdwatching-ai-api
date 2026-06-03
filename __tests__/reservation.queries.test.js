@@ -70,7 +70,6 @@ describe('ReservationQueries', () => {
         confirmationCode: 'BW-ABC123',
         createdAt,
         totalPrice: 240,
-        metadata: {},
       },
       tour: expect.objectContaining({
         id: 1,
@@ -83,6 +82,8 @@ describe('ReservationQueries', () => {
       expect.stringContaining('create_tour_reservation'),
       [1, 2, 'Ana Gomez', null, 'conversation-123', 'BW-ABC123', 0, null]
     );
+    expect(mockQuery.mock.calls[0][0]).toContain('ensure_conversation($5, $8)');
+    expect(mockQuery.mock.calls[0][0]).toContain('(SELECT id FROM conversation_row)');
   });
 
   it('passes user ID to the PostgreSQL reservation function', async () => {
@@ -105,12 +106,6 @@ describe('ReservationQueries', () => {
         tour_location: 'Monteverde',
         tour_duration_hours: 4,
         tour_difficulty: 'moderate',
-        metadata: {
-          transportation: {
-            transportationOption: 'shared_shuttle',
-            totalPrice: 130,
-          },
-        },
       }],
     });
 
@@ -123,12 +118,6 @@ describe('ReservationQueries', () => {
       confirmationCode: 'BW-USER',
       discountRate: 0,
       userId: 7,
-      metadata: {
-        transportation: {
-          transportationOption: 'shared_shuttle',
-          totalPrice: 130,
-        },
-      },
     });
 
     expect(mockQuery).toHaveBeenCalledWith(
@@ -136,6 +125,7 @@ describe('ReservationQueries', () => {
       [1, 2, 'Ana Gomez', 'ana@example.com', 'conversation-123', 'BW-USER', 0, 7]
     );
     expect(mockQuery).toHaveBeenCalledTimes(1);
+    expect(mockQuery.mock.calls[0][0]).not.toContain('metadata');
   });
 
   it('loads the latest reservation for an owned conversation', async () => {
@@ -152,7 +142,6 @@ describe('ReservationQueries', () => {
         confirmation_code: 'BW-ABC123',
         created_at: createdAt,
         total_price: '240.00',
-        metadata: {},
         tour_name: 'Monteverde Quetzal Tour',
         tour_price: '120.00',
         tour_available_slots: 3,
@@ -167,7 +156,6 @@ describe('ReservationQueries', () => {
         id: 42,
         userId: 7,
         conversationId: 'conversation-123',
-        metadata: {},
       }),
       tour: expect.objectContaining({
         id: 1,
@@ -179,6 +167,12 @@ describe('ReservationQueries', () => {
       expect.stringContaining('INNER JOIN conversations'),
       ['conversation-123', 7]
     );
+    expect(mockQuery.mock.calls[0][0]).toContain('c.conversation_code AS conversation_id');
+    expect(mockQuery.mock.calls[0][0]).toContain('c.id = r.conversation_id');
+    expect(mockQuery.mock.calls[0][0]).toContain('c.conversation_code = $1');
+    expect(mockQuery.mock.calls[0][0]).toContain('COALESCE(parent_node.name');
+    expect(mockQuery.mock.calls[0][0]).toContain('tour_node.id = t.node_id');
+    expect(mockQuery.mock.calls[0][0]).not.toContain('t.location');
     expect(mockQuery.mock.calls[0][0]).not.toContain('r.metadata');
   });
 

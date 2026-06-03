@@ -64,7 +64,7 @@ from ID, clear tour name, or location. Customer name, email, and itinerary dates
 should come from frontend `customerContext` when present.
 
 Reservation tool results include durable confirmation fields and optional
-frontend-safe transportation/itinerary metadata. The final assistant response
+frontend-safe transportation and itinerary metadata. The final assistant response
 should stay short when `meta.reservation` is present because the frontend renders
 the detailed confirmation card.
 

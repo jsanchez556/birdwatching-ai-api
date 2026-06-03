@@ -1,5 +1,6 @@
 import logger from '../utils/logger.js';
 import retrievalService from '../db/retrieval/retrieval.service.js';
+import vectorRepository from '../db/vector/vector.repository.js';
 import { injectRagContextMessage } from '../ai/prompts/prompt.builder.js';
 import { toKnowledgeSource } from '../ai/prompts/rag.context.js';
 
@@ -338,6 +339,12 @@ function buildBirdMatches(documents = [], question = '', limit = DEFAULT_BIRD_MA
 }
 
 class RagService {
+  async getBirdProfile({ speciesCode, name } = {}) {
+    const document = await vectorRepository.findBirdProfile({ speciesCode, name });
+
+    return normalizeBirdMatch(document);
+  }
+
   async retrieveContext(question, options = {}) {
     const topK = options.topK || DEFAULT_TOP_K;
 

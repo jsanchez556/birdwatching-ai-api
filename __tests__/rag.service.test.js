@@ -1,10 +1,17 @@
 import { jest } from '@jest/globals';
 
 const mockRetrieve = jest.fn();
+const mockFindBirdProfile = jest.fn();
 
 await jest.unstable_mockModule('../src/db/retrieval/retrieval.service.js', () => ({
   default: {
     retrieve: mockRetrieve,
+  },
+}));
+
+await jest.unstable_mockModule('../src/db/vector/vector.repository.js', () => ({
+  default: {
+    findBirdProfile: mockFindBirdProfile,
   },
 }));
 
@@ -23,6 +30,65 @@ const { default: logger } = await import('../src/utils/logger.js');
 describe('RagService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('returns a frontend-safe bird profile for exact key bird lookups', async () => {
+    mockFindBirdProfile.mockResolvedValue({
+      id: 'bird-quetz1',
+      documentType: 'bird_profile',
+      name: 'Resplendent Quetzal',
+      category: 'Trogons',
+      locations: 'Monteverde',
+      description: 'Cloud forest icon.',
+      metadata: {
+        speciesCode: 'quetz1',
+        commonName: 'Resplendent Quetzal',
+        scientificName: 'Pharomachrus mocinno',
+        familyCommonName: 'Trogons',
+        lastObservation: {
+          locations: ['Monteverde'],
+          obsDt: '2026-05-21 05:30',
+          howMany: 1,
+        },
+        media: {
+          photoUrl: '/photos/quetzal.jpg',
+          squarePhotoUrl: '/photos/quetzal-square.jpg',
+          songUrl: '/songs/quetzal.mp3',
+          sonogramUrl: '/sonograms/quetzal.png',
+          songLength: '0:38',
+          songAttributionHtml: '<p>Recorded by Example.</p>',
+        },
+      },
+    });
+
+    await expect(ragService.getBirdProfile({
+      speciesCode: 'quetz1',
+      name: 'Resplendent Quetzal',
+    })).resolves.toEqual({
+      speciesCode: 'quetz1',
+      commonName: 'Resplendent Quetzal',
+      scientificName: 'Pharomachrus mocinno',
+      family: 'Trogons',
+      description: 'Cloud forest icon.',
+      locations: 'Monteverde',
+      lastObservation: {
+        locations: ['Monteverde'],
+        obsDt: '2026-05-21 05:30',
+        howMany: 1,
+      },
+      media: {
+        photoUrl: '/photos/quetzal.jpg',
+        squarePhotoUrl: '/photos/quetzal-square.jpg',
+        songUrl: '/songs/quetzal.mp3',
+        sonogramUrl: '/sonograms/quetzal.png',
+        songLength: '0:38',
+        songAttributionHtml: '<p>Recorded by Example.</p>',
+      },
+    });
+    expect(mockFindBirdProfile).toHaveBeenCalledWith({
+      speciesCode: 'quetz1',
+      name: 'Resplendent Quetzal',
+    });
   });
 
   it('formats retrieved bird context for prompt injection', () => {

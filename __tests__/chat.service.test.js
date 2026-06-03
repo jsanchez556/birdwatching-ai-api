@@ -412,6 +412,77 @@ describe('ChatService streaming orchestration', () => {
     );
   });
 
+  it('passes and persists reservation-entry metadata for selected tour chat starts', async () => {
+    const conversationMessages = [
+      { role: 'system', content: 'System prompt' },
+      { role: 'user', content: 'I would like to reserve Direct Reserve Tour.' },
+    ];
+    const reservationEntry = {
+      source: 'featured_tour',
+      tours: [
+        {
+          tourId: 16,
+          name: 'Direct Reserve Tour',
+          location: 'Monteverde',
+        },
+      ],
+    };
+
+    mockBuildConversationContext.mockResolvedValue(conversationMessages);
+    mockStreamResponseWithTools.mockImplementation(async (messages, metadata) => {
+      expect(metadata.conversationContext.recentAssistantMetadata).toMatchObject({
+        conversationType: 'reservation_entry',
+        conversationSource: 'featured_tour',
+        reservationEntry,
+        selectedTourId: 16,
+      });
+      return 'I can help reserve Direct Reserve Tour.';
+    });
+
+    const result = await chatService.processMessageStream(
+      'I would like to reserve Direct Reserve Tour.',
+      'conversation-123',
+      '127.0.0.1',
+      {},
+      {
+        authUser: {
+          id: '7',
+          email: 'logged@example.com',
+          role: 'customer',
+        },
+        conversationContext: {
+          recentAssistantMetadata: {
+            conversationType: 'reservation_entry',
+            conversationSource: 'featured_tour',
+            entrySource: 'featured_tour',
+            reservationEntry,
+            selectedTourId: 16,
+            selectedTour: reservationEntry.tours[0],
+          },
+        },
+      }
+    );
+
+    expect(result.meta).toMatchObject({
+      conversationType: 'reservation_entry',
+      conversationSource: 'featured_tour',
+      reservationEntry,
+    });
+    expect(mockSaveExchange).toHaveBeenCalledWith(
+      'conversation-123',
+      'I would like to reserve Direct Reserve Tour.',
+      'I can help reserve Direct Reserve Tour.',
+      {
+        userId: '7',
+        metadata: expect.objectContaining({
+          conversationType: 'reservation_entry',
+          conversationSource: 'featured_tour',
+          reservationEntry,
+        }),
+      }
+    );
+  });
+
   it('records OpenAI token usage for authenticated chat requests', async () => {
     const conversationMessages = [
       { role: 'system', content: 'System prompt' },

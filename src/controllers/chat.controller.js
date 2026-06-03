@@ -97,6 +97,19 @@ class ChatController {
     const { meta = {}, ...data } = result;
     return sendSuccess(res, data, meta);
   }
+
+  async handleGetConversation(req, res) {
+    const { conversationId } = req.params;
+
+    logger.info('Conversation load requested', {
+      conversationId,
+      authenticated: Boolean(req.user),
+    });
+
+    const result = await chatService.getConversation(conversationId, req.user);
+    const { meta = {}, ...data } = result;
+    return sendSuccess(res, data, meta);
+  }
 }
 
 export default new ChatController();

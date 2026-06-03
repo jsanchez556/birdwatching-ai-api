@@ -113,10 +113,13 @@ function buildReservationFailureMessage(toolResults = {}) {
 }
 
 function buildKnownBookingContextMessage(metadata = {}) {
+  const recentMetadata = metadata.conversationContext?.recentAssistantMetadata || {};
   const knownContext = {
     ...(metadata.customerContext ? { customerContext: metadata.customerContext } : {}),
+    ...(recentMetadata.reservationEntry ? { reservationEntry: recentMetadata.reservationEntry } : {}),
     ...(metadata.selectedTransportation ? { selectedTransportation: metadata.selectedTransportation } : {}),
     ...(metadata.transportationDeclined ? { transportationDeclined: metadata.transportationDeclined } : {}),
+    ...(metadata.requestedTransportation ? { requestedTransportation: metadata.requestedTransportation } : {}),
     ...(metadata.selectedTour ? { selectedTour: metadata.selectedTour } : {}),
     ...(metadata.selectedTourId ? { selectedTourId: metadata.selectedTourId } : {}),
     ...(metadata.participants ? { participants: metadata.participants } : {}),
@@ -143,15 +146,21 @@ function getLatestUserMessage(messages = []) {
 
 function buildConversationContext(messages = [], metadata = {}) {
   const recentMetadata = metadata.conversationContext?.recentAssistantMetadata || {};
+  const entryTours = Array.isArray(recentMetadata.reservationEntry?.tours)
+    ? recentMetadata.reservationEntry.tours
+    : [];
+  const recentTours = recentMetadata.tours || entryTours;
+  const singleEntryTour = entryTours.length === 1 ? entryTours[0] : null;
 
   return {
-    selectedTour: metadata.selectedTour || recentMetadata.selectedTour,
-    selectedTourId: metadata.selectedTourId || recentMetadata.selectedTourId,
-    participants: metadata.participants || recentMetadata.participants,
+    selectedTour: metadata.selectedTour || recentMetadata.selectedTour || singleEntryTour,
+    selectedTourId: metadata.selectedTourId || recentMetadata.selectedTourId || singleEntryTour?.tourId,
+    participants: metadata.participants || recentMetadata.participants || singleEntryTour?.participants,
     selectedTransportation: metadata.selectedTransportation || recentMetadata.selectedTransportation,
     transportationDeclined: metadata.transportationDeclined || recentMetadata.transportationDeclined,
+    requestedTransportation: metadata.requestedTransportation || recentMetadata.requestedTransportation,
     recentMetadata,
-    recentTours: recentMetadata.tours || [],
+    recentTours,
     recentToolsCalled: recentMetadata.toolsCalled || [],
     reservation: metadata.reservation,
     customerContext: metadata.customerContext,
@@ -216,6 +225,10 @@ export class AgentOrchestrator {
 
     if (plan.transportationDeclined || conversationContext.transportationDeclined) {
       metadata.transportationDeclined = true;
+    }
+
+    if (plan.requestedTransportation || conversationContext.requestedTransportation) {
+      metadata.requestedTransportation = true;
     }
 
     this.logger.info('Birdwatching agent tool execution starting', {

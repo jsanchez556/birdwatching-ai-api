@@ -82,6 +82,32 @@ describe('TourService', () => {
     });
   });
 
+  it('scores location matches without requiring accent marks', async () => {
+    mockGetAvailableTours.mockResolvedValue([
+      {
+        id: 1,
+        name: 'Tapir Valley Birding Tour',
+        price: 200,
+        availableSlots: 8,
+        location: 'Tenorio-Bijagua and Río Celeste / Tapir Valley Nature Reserve',
+        durationHours: 4,
+        difficulty: 'Easy',
+      },
+    ]);
+
+    const result = await tourService.recommendTours({
+      location: 'Tenorio-Bijagua and Rio Celeste',
+      participants: 2,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.tours[0]).toMatchObject({
+      tourId: 1,
+      name: 'Tapir Valley Birding Tour',
+    });
+    expect(result.tours[0].reasons).toContain('Matches Tenorio-Bijagua and Rio Celeste');
+  });
+
   it('prioritizes direct query matches such as quetzal tour names', async () => {
     mockGetAvailableTours.mockResolvedValue([
       {
@@ -124,6 +150,47 @@ describe('TourService', () => {
       name: 'Monteverde Quetzal Tour',
     });
     expect(result.tours[0].reasons).toContain('Matches quetzal');
+  });
+
+  it('does not treat San Jose pickup wording as a tour recommendation match', async () => {
+    mockGetAvailableTours.mockResolvedValue([
+      {
+        id: 1,
+        name: 'Tapir Valley Birding Tour',
+        price: 200,
+        availableSlots: 8,
+        location: 'Tenorio-Bijagua and Río Celeste / Tapir Valley Nature Reserve',
+        durationHours: 4,
+        difficulty: 'Easy',
+      },
+      {
+        id: 9,
+        name: 'Santa Rosa Dry Forest Birding Tour',
+        price: 60,
+        availableSlots: 10,
+        location: 'Santa Rosa and Santa Elena Peninsula / Santa Rosa National Park',
+        durationHours: 4,
+        difficulty: 'Easy',
+      },
+    ]);
+
+    const result = await tourService.recommendTours({
+      location: 'Tenorio-Bijagua and Rio Celeste',
+      query: 'I want a birdwatching tour in bijagua of upala for 3 people with transportation from San Jose.',
+      participants: 3,
+      limit: 3,
+    });
+
+    expect(mockGetAvailableTours).toHaveBeenCalledWith(expect.objectContaining({
+      location: 'Tenorio-Bijagua and Rio Celeste',
+      minSlots: 3,
+    }));
+    expect(result.success).toBe(true);
+    expect(result.tours[0]).toMatchObject({
+      tourId: 1,
+      name: 'Tapir Valley Birding Tour',
+    });
+    expect(result.tours.find((tour) => tour.tourId === 9)?.reasons || []).not.toContain('Matches san');
   });
 
   it('validates explicit tour selection', async () => {

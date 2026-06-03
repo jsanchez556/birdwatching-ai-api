@@ -5,6 +5,7 @@ const mockGetFeaturedTours = jest.fn();
 const mockGetBirdHighlights = jest.fn();
 const mockGetTransportationAddOns = jest.fn();
 const mockGetHeroContent = jest.fn();
+const mockGetBirdProfile = jest.fn();
 
 await jest.unstable_mockModule('../src/utils/logger.js', () => ({
   default: {
@@ -19,6 +20,7 @@ await jest.unstable_mockModule('../src/services/homepage.service.js', () => ({
     getHeroContent: mockGetHeroContent,
     getFeaturedTours: mockGetFeaturedTours,
     getBirdHighlights: mockGetBirdHighlights,
+    getBirdProfile: mockGetBirdProfile,
     getTransportationAddOns: mockGetTransportationAddOns,
   },
 }));
@@ -85,12 +87,14 @@ describe('homepage endpoints', () => {
   });
 
   it('returns bird species highlights', async () => {
-    mockGetBirdHighlights.mockReturnValue([
+    mockGetBirdHighlights.mockResolvedValue([
       {
-        name: 'Resplendent Quetzal',
+        commonName: 'Resplendent Quetzal',
         description: 'Cloud forest icon.',
-        region: 'Cloud forest',
-        imageUrl: 'https://example.test/bird.jpg',
+        locations: 'Cloud forest',
+        media: {
+          photoUrl: 'https://example.test/bird.jpg',
+        },
       },
     ]);
 
@@ -98,8 +102,70 @@ describe('homepage endpoints', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.body.data.birds[0]).toMatchObject({
+      commonName: 'Resplendent Quetzal',
+      locations: 'Cloud forest',
+    });
+  });
+
+  it('returns a bird profile by species code', async () => {
+    mockGetBirdProfile.mockResolvedValue({
+      speciesCode: 'quetz1',
+      commonName: 'Resplendent Quetzal',
+      scientificName: 'Pharomachrus mocinno',
+      description: 'Cloud forest bird.',
+      media: {
+        photoUrl: '/photos/quetzal.jpg',
+      },
+    });
+
+    const res = await request(app).get('/birds/profile?speciesCode=quetz1&name=Resplendent%20Quetzal');
+
+    expect(res.statusCode).toBe(200);
+    expect(mockGetBirdProfile).toHaveBeenCalledWith({
+      speciesCode: 'quetz1',
       name: 'Resplendent Quetzal',
-      region: 'Cloud forest',
+    });
+    expect(res.body).toEqual({
+      success: true,
+      data: {
+        bird: {
+          speciesCode: 'quetz1',
+          commonName: 'Resplendent Quetzal',
+          scientificName: 'Pharomachrus mocinno',
+          description: 'Cloud forest bird.',
+          media: {
+            photoUrl: '/photos/quetzal.jpg',
+          },
+        },
+      },
+      meta: {},
+    });
+  });
+
+  it('rejects bird profile requests without an identifier', async () => {
+    const res = await request(app).get('/birds/profile');
+
+    expect(res.statusCode).toBe(422);
+    expect(mockGetBirdProfile).not.toHaveBeenCalled();
+    expect(res.body).toMatchObject({
+      success: false,
+      error: {
+        code: 'validation_error',
+      },
+    });
+  });
+
+  it('returns not found when a bird profile is unavailable', async () => {
+    mockGetBirdProfile.mockResolvedValue(null);
+
+    const res = await request(app).get('/birds/profile?name=Unknown%20Bird');
+
+    expect(res.statusCode).toBe(404);
+    expect(res.body).toMatchObject({
+      success: false,
+      error: {
+        code: 'bird_not_found',
+      },
     });
   });
 

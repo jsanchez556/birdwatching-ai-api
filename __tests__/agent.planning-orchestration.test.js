@@ -12,6 +12,7 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
 
 const { ToolPlanner } = await import('../src/ai/planners/tool.planner.js');
 const { ToolExecutor } = await import('../src/ai/tools/tool.executor.js');
+const { calculateTransportation } = await import('../src/ai/tools/transportation.tool.js');
 const { AgentOrchestrator } = await import('../src/ai/orchestrators/agent.orchestrator.js');
 const { validateChatBody } = await import('../src/validators/chat.validator.js');
 
@@ -74,6 +75,111 @@ describe('multi-tool agent planning and orchestration', () => {
     });
     expect(plan.steps[1].args).toMatchObject({
       location: 'Monteverde',
+      participants: 3,
+    });
+  });
+
+  it('uses Bijagua as the tour location instead of the San Jose pickup origin', () => {
+    const planner = new ToolPlanner();
+
+    const plan = planner.plan({
+      message: 'I want a birdwatching tour in bijagua of upala for 3 people with transportation from San Jose.',
+    });
+
+    expect(plan.status).toBe('ready');
+    expect(plan.steps.map((step) => step.tool)).toEqual([
+      'searchTours',
+      'calculateTransportation',
+    ]);
+    expect(plan.steps[0].args).toMatchObject({
+      location: 'Tenorio-Bijagua and Rio Celeste',
+      participants: 3,
+      recommend: true,
+    });
+    expect(plan.steps[1].args).toMatchObject({
+      location: 'Tenorio-Bijagua and Rio Celeste',
+      participants: 3,
+    });
+  });
+
+  it('calculates transportation options for Tenorio-Bijagua tours', async () => {
+    await expect(calculateTransportation({
+      location: 'Tenorio-Bijagua and Río Celeste / Tapir Valley Nature Reserve',
+      participants: 3,
+      origin: 'San Jose',
+    })).resolves.toMatchObject({
+      success: true,
+      origin: 'San Jose',
+      destination: 'Tenorio-Bijagua and Rio Celeste',
+      options: [
+        expect.objectContaining({
+          type: 'shared_shuttle',
+          pricePerPerson: 75,
+          totalPrice: 225,
+        }),
+        expect.objectContaining({
+          type: 'private_transfer',
+          totalPrice: 260,
+        }),
+      ],
+    });
+  });
+
+  it('shows transportation options after a tour is selected when transportation was requested earlier', () => {
+    const planner = new ToolPlanner();
+
+    const plan = planner.plan({
+      message: 'I choose tour 1: Tapir Valley Birding Tour',
+      context: {
+        recentTours: [
+          {
+            tourId: 1,
+            name: 'Tapir Valley Birding Tour',
+            location: 'Tenorio-Bijagua and Río Celeste / Tapir Valley Nature Reserve',
+            availableSlots: 8,
+          },
+          {
+            tourId: 2,
+            name: 'Heliconias Hanging Bridges Birding Tour',
+            location: 'Tenorio-Bijagua and Río Celeste / Heliconias Rainforest Lodge and Hanging Bridges',
+            availableSlots: 10,
+          },
+        ],
+        customerContext: {
+          customerName: 'Jose Sanchez',
+          customerEmail: 'jose@example.com',
+          itineraryStartDate: '2026-06-03',
+          itineraryEndDate: '2026-06-03',
+        },
+        messages: [
+          {
+            role: 'user',
+            content: 'I want a birdwatching tour in bijagua of upala for 3 people with transportation from San Jose.',
+          },
+          {
+            role: 'assistant',
+            content: 'I found 2 tours that match your preferences.',
+          },
+          {
+            role: 'user',
+            content: 'I choose tour 1: Tapir Valley Birding Tour',
+          },
+        ],
+      },
+    });
+
+    expect(plan.status).toBe('transportation_requested');
+    expect(plan.requestedTransportation).toBe(true);
+    expect(plan.steps.map((step) => step.tool)).toEqual([
+      'checkAvailability',
+      'calculateTransportation',
+    ]);
+    expect(plan.steps.map((step) => step.tool)).not.toContain('calculatePricing');
+    expect(plan.steps.map((step) => step.tool)).not.toContain('createReservation');
+    expect(plan.steps[0].args).toMatchObject({
+      tourId: 1,
+      tourName: 'Tapir Valley Birding Tour',
+      location: 'Tenorio-Bijagua and Río Celeste / Tapir Valley Nature Reserve',
       participants: 3,
     });
   });
@@ -198,10 +304,10 @@ describe('multi-tool agent planning and orchestration', () => {
       },
     });
 
-    expect(plan.status).toBe('proceed_booking');
+    expect(plan.status).toBe('transportation_requested');
     expect(plan.steps.map((step) => step.tool)).toEqual([
       'checkAvailability',
-      'calculatePricing',
+      'calculateTransportation',
     ]);
     expect(plan.steps[0].args).toMatchObject({
       tourId: 1,
@@ -209,6 +315,7 @@ describe('multi-tool agent planning and orchestration', () => {
       customerName: 'Jose Sanchez',
       customerEmail: 'jose@example.com',
     });
+    expect(plan.steps.map((step) => step.tool)).not.toContain('createReservation');
   });
 
   it('persists transportation selection without recalculating transportation', () => {
@@ -372,6 +479,7 @@ describe('multi-tool agent planning and orchestration', () => {
               totalPrice: 220,
               currency: 'USD',
             },
+            requestedTransportation: true,
             transportationDeclined: true,
             uiAction: {
               type: 'transportation_selection',
@@ -394,7 +502,77 @@ describe('multi-tool agent planning and orchestration', () => {
         transportationOption: 'private_transfer',
         totalPrice: 220,
       },
+      requestedTransportation: true,
       transportationDeclined: true,
+    });
+  });
+
+  it('preserves reservation-entry metadata from homepage and cart chat entry points', () => {
+    const result = validateChatBody({
+      body: {
+        message: 'I would like to reserve my cart tours.',
+        conversationContext: {
+          recentAssistantMetadata: {
+            conversationType: 'reservation_entry',
+            conversationSource: 'tour_cart',
+            reservationEntry: {
+              source: 'tour_cart',
+              cart: {
+                itineraryStartDate: '2026-07-10',
+                itineraryEndDate: '2026-07-12',
+                count: 2,
+              },
+              tours: [
+                {
+                  tourId: 1,
+                  name: 'Monteverde Quetzal Tour',
+                  location: 'Monteverde',
+                  pricePerPerson: 120,
+                  scheduledDate: '2026-07-10',
+                  participants: 2,
+                  needsTransportation: true,
+                },
+                {
+                  tourId: 2,
+                  name: 'Sarapiqui Rainforest Tour',
+                  location: 'Sarapiqui',
+                  pricePerPerson: 140,
+                  scheduledDate: '2026-07-11',
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.value.conversationContext.recentAssistantMetadata).toMatchObject({
+      conversationType: 'reservation_entry',
+      conversationSource: 'tour_cart',
+      entrySource: 'tour_cart',
+      reservationEntry: {
+        source: 'tour_cart',
+        cart: {
+          itineraryStartDate: '2026-07-10',
+          itineraryEndDate: '2026-07-12',
+          count: 2,
+        },
+        tours: [
+          {
+            tourId: 1,
+            name: 'Monteverde Quetzal Tour',
+            scheduledDate: '2026-07-10',
+            participants: 2,
+            needsTransportation: true,
+          },
+          {
+            tourId: 2,
+            name: 'Sarapiqui Rainforest Tour',
+            scheduledDate: '2026-07-11',
+          },
+        ],
+      },
     });
   });
 
@@ -1390,6 +1568,85 @@ describe('multi-tool agent planning and orchestration', () => {
         }),
       ],
     });
+  });
+
+  it('keeps selected-tour metadata and returns transportation selection before confirmation', async () => {
+    const executor = new ToolExecutor({
+      checkAvailability: jest.fn().mockResolvedValue({
+        success: true,
+        tourId: 1,
+        name: 'Tapir Valley Birding Tour',
+        location: 'Tenorio-Bijagua and Río Celeste / Tapir Valley Nature Reserve',
+        pricePerPerson: 200,
+        availableSlots: 8,
+        durationHours: 4,
+        difficulty: 'Easy',
+      }),
+      calculateTransportation: jest.fn().mockResolvedValue({
+        success: true,
+        origin: 'San Jose',
+        destination: 'Tenorio-Bijagua and Rio Celeste',
+        estimatedTravelTime: '3.5-4.5 hours from San Jose',
+        options: [
+          {
+            type: 'shared_shuttle',
+            pricePerPerson: 75,
+            totalPrice: 225,
+            currency: 'USD',
+          },
+          {
+            type: 'private_transfer',
+            totalPrice: 260,
+            currency: 'USD',
+          },
+        ],
+        recommendedOption: 'shared_shuttle',
+      }),
+    });
+    const metadata = {
+      conversationId: 'conversation-123',
+      agentPlan: { status: 'transportation_requested' },
+      requestedTransportation: true,
+      customerContext: {
+        customerName: 'Jose Sanchez',
+        customerEmail: 'jose@example.com',
+        itineraryStartDate: '2026-06-03',
+        itineraryEndDate: '2026-06-03',
+      },
+    };
+
+    await executor.executePlan({
+      steps: [
+        { tool: 'checkAvailability', args: { tourId: 1, participants: 3 } },
+        {
+          tool: 'calculateTransportation',
+          args: {
+            tourId: 1,
+            tourName: 'Tapir Valley Birding Tour',
+            location: 'Tenorio-Bijagua and Río Celeste / Tapir Valley Nature Reserve',
+            participants: 3,
+          },
+        },
+      ],
+    }, metadata);
+
+    expect(metadata.selectedTour).toMatchObject({
+      tourId: 1,
+      name: 'Tapir Valley Birding Tour',
+    });
+    expect(metadata.requestedTransportation).toBe(true);
+    expect(metadata.uiAction).toEqual(expect.objectContaining({
+      type: 'transportation_selection',
+      options: expect.arrayContaining([
+        expect.objectContaining({
+          value: expect.objectContaining({
+            transportationOption: 'shared_shuttle',
+            totalPrice: 225,
+          }),
+        }),
+      ]),
+    }));
+    expect(metadata.uiAction.type).not.toBe('reservation_confirmation');
   });
 
   it('keeps transportation selection when availability follows transportation with complete booking context', async () => {

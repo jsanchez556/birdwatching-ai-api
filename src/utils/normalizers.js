@@ -13,7 +13,10 @@ function normalizeTextOrEmpty(value) {
 }
 
 function normalizeComparableText(value) {
-  return normalizeText(value)?.toLowerCase() || '';
+  return normalizeText(value)
+    ?.normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase() || '';
 }
 
 function normalizeSelectedTransportation(value) {

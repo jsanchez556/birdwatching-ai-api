@@ -6,7 +6,6 @@ import logger from '../utils/logger.js';
 import {
   normalizeComparableText,
   normalizeOptionalText,
-  normalizeSelectedTransportation,
   normalizeText,
 } from '../utils/normalizers.js';
 import { invalidArguments, toPositiveInteger } from '../utils/toolResponses.js';
@@ -23,21 +22,10 @@ function normalizeCustomerName(customerName) {
   return reservationName;
 }
 
-function buildReservationMetadata(args = {}, metadata = {}) {
-  const selectedTransportation = normalizeSelectedTransportation(metadata.selectedTransportation);
-  const itineraryStartDate = normalizeOptionalText(args.itineraryStartDate || metadata.customerContext?.itineraryStartDate);
-  const itineraryEndDate = normalizeOptionalText(args.itineraryEndDate || metadata.customerContext?.itineraryEndDate);
-
-  return {
-    ...(selectedTransportation ? { transportation: selectedTransportation } : {}),
-    ...(itineraryStartDate ? { itineraryStartDate } : {}),
-    ...(itineraryEndDate ? { itineraryEndDate } : {}),
-  };
-}
-
-function buildReservationResult({ reservation, tour, discount }) {
-  const reservationMetadata = reservation.metadata || {};
+function buildReservationResult({ reservation, tour, discount, itineraryStartDate, itineraryEndDate }) {
   const totalPrice = reservation.totalPrice;
+  const normalizedItineraryStartDate = normalizeOptionalText(itineraryStartDate);
+  const normalizedItineraryEndDate = normalizeOptionalText(itineraryEndDate);
 
   return {
     success: true,
@@ -54,8 +42,8 @@ function buildReservationResult({ reservation, tour, discount }) {
     createdAt: reservation.createdAt,
     totalPrice,
     tourTotalPrice: totalPrice,
-    ...(reservationMetadata.itineraryStartDate ? { itineraryStartDate: reservationMetadata.itineraryStartDate } : {}),
-    ...(reservationMetadata.itineraryEndDate ? { itineraryEndDate: reservationMetadata.itineraryEndDate } : {}),
+    ...(normalizedItineraryStartDate ? { itineraryStartDate: normalizedItineraryStartDate } : {}),
+    ...(normalizedItineraryEndDate ? { itineraryEndDate: normalizedItineraryEndDate } : {}),
     currency: DEFAULT_CURRENCY,
     remainingSlots: tour.availableSlots,
     discountRate: discount.discountRate,
@@ -334,10 +322,6 @@ class ReservationService {
           confirmationCode,
           discountRate: discount.discountRate,
           userId: metadata.userId,
-          metadata: buildReservationMetadata({
-            itineraryStartDate,
-            itineraryEndDate,
-          }, metadata),
         });
 
         if (!result.success) {
@@ -346,7 +330,13 @@ class ReservationService {
 
         const { reservation, tour } = result;
 
-        return buildReservationResult({ reservation, tour, discount });
+        return buildReservationResult({
+          reservation,
+          tour,
+          discount,
+          itineraryStartDate: itineraryStartDate || metadata.customerContext?.itineraryStartDate,
+          itineraryEndDate: itineraryEndDate || metadata.customerContext?.itineraryEndDate,
+        });
       } catch (error) {
         if (error.code === '23505' && attempt < MAX_CONFIRMATION_ATTEMPTS) {
           logger.warn('Reservation confirmation code collision; retrying', {
@@ -393,7 +383,6 @@ export {
   calculatePriceForTour,
   generateConfirmationCode,
   invalidArguments,
-  normalizeSelectedTransportation,
   toPositiveInteger,
 };
 

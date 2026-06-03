@@ -163,7 +163,7 @@ describe('ConversationQueries', () => {
 
       await expect(conversationQueries.getLatestByUserId(7)).resolves.toBe('conversation-latest');
       expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('ORDER BY last_message_at DESC NULLS LAST, created_at DESC'),
+        expect.stringContaining("COALESCE(metadata->>'conversationType', 'regular') <> 'reservation_entry'"),
         [7]
       );
     });

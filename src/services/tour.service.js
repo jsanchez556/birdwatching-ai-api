@@ -30,6 +30,15 @@ function queryTokens(value) {
       'the',
       'and',
       'with',
+      'from',
+      'transport',
+      'transportation',
+      'transfer',
+      'shuttle',
+      'pickup',
+      'san',
+      'jose',
+      'josé',
       'birdwatching',
       'bird',
       'watching',
@@ -69,7 +78,7 @@ function normalizeDifficulty(value) {
 }
 
 function formatTour(tour) {
-  return {
+  const formattedTour = {
     tourId: tour.id,
     name: tour.name,
     location: tour.location,
@@ -78,6 +87,26 @@ function formatTour(tour) {
     durationHours: tour.durationHours,
     difficulty: tour.difficulty,
   };
+
+  [
+    ['country', tour.country],
+    ['description', tour.description],
+    ['node', tour.node],
+    ['subnode', tour.subnode],
+    ['zone', tour.zone],
+    ['rank', tour.rank],
+    ['lat', tour.lat],
+    ['lon', tour.lon],
+    ['start_date', tour.startDate],
+    ['end_date', tour.endDate],
+    ['birds', tour.birds],
+  ].forEach(([key, value]) => {
+    if (value !== undefined) {
+      formattedTour[key] = value;
+    }
+  });
+
+  return formattedTour;
 }
 
 function scoreTour(tour, {
@@ -89,10 +118,12 @@ function scoreTour(tour, {
 } = {}) {
   let score = 0;
   const reasons = [];
-  const requestedLocation = normalizeText(location)?.toLowerCase();
+  const requestedLocation = normalizeComparableText(location);
   const requestedDifficulty = normalizeDifficulty(difficulty);
   const requestedBudget = normalizeBudget(budget);
   const requestedQueryTokens = queryTokens(query);
+  const tourLocation = normalizeComparableText(tour.location);
+  const tourName = normalizeComparableText(tour.name);
   const tourText = normalizeComparableText([
     tour.name,
     tour.location,
@@ -100,8 +131,8 @@ function scoreTour(tour, {
   ].filter(Boolean).join(' '));
 
   if (requestedLocation) {
-    const locationMatches = tour.location.toLowerCase().includes(requestedLocation)
-      || tour.name.toLowerCase().includes(requestedLocation);
+    const locationMatches = tourLocation.includes(requestedLocation)
+      || tourName.includes(requestedLocation);
     if (locationMatches) {
       score += 5;
       reasons.push(`Matches ${location}`);

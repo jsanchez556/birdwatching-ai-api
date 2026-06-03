@@ -21,11 +21,11 @@ const {
 } = await import('../src/storage/s3Bucket.service.js');
 const {
   buildExternalAssetKey,
-  default: MediaAssetUploadService,
+  MediaAssetUploadService,
   isRestrictedMediaAssetLicense,
   isUploadableMediaAssetLicense,
   normalizeMediaAssetLicense,
-} = await import('../src/external/services/mediaAsset.service.js');
+} = await import('../src/services/mediaAsset.service.js');
 const {
   createFileHandler,
   normalizeFileName,
@@ -475,6 +475,29 @@ describe('media routes', () => {
     expect(bucketService.objectExists).toHaveBeenCalledWith('sonograms/106498_grey-small.png');
     expect(bucketService.createPresignedGetUrl)
       .toHaveBeenCalledWith('sonograms/106498_grey-small.png');
+  });
+
+  it('supports tour media object keys through the files route', async () => {
+    const signedUrl = 'https://example-bucket.railway.app/bucket/tours/1.png?X-Amz-Signature=test';
+    const bucketService = {
+      config: {},
+      objectExists: jest.fn().mockResolvedValue(true),
+      createPresignedGetUrl: jest.fn().mockResolvedValue(signedUrl),
+    };
+    const app = express();
+
+    app.get('/files/:folderName/:filename', createFileHandler({
+      bucketService,
+      buildKey: (req) => `${req.params.folderName}/${req.params.filename}`,
+    }));
+    app.use(errorMiddleware);
+
+    const res = await request(app).get('/files/tours/1.png');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.url).toBe(signedUrl);
+    expect(bucketService.objectExists).toHaveBeenCalledWith('tours/1.png');
+    expect(bucketService.createPresignedGetUrl).toHaveBeenCalledWith('tours/1.png');
   });
 
   it('returns a safe 404 when the private file is missing', async () => {

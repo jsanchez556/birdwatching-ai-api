@@ -6,12 +6,28 @@ function mapTour(row) {
     return null;
   }
 
+  const birds = Array.isArray(row.birds) ? row.birds : [];
+
   return {
     id: Number(row.id),
+    country: row.country ?? null,
     name: row.name,
+    description: row.description ?? null,
     price: Number(row.price),
     availableSlots: Number(row.available_slots),
     location: row.location,
+    node: row.node ?? null,
+    subnode: row.subnode ?? null,
+    zone: row.zone ?? null,
+    rank: row.rank === null || row.rank === undefined ? null : Number(row.rank),
+    lat: row.lat === null || row.lat === undefined ? null : Number(row.lat),
+    lon: row.lon === null || row.lon === undefined ? null : Number(row.lon),
+    startDate: row.start_date ?? null,
+    endDate: row.end_date ?? null,
+    birds: birds.map((bird) => ({
+      species_code: bird.species_code ?? null,
+      name: bird.name,
+    })).filter((bird) => bird.name),
     durationHours: Number(row.duration_hours),
     difficulty: row.difficulty,
   };

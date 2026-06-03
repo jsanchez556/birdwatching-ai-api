@@ -114,6 +114,25 @@ class ConversationMemoryService {
     };
   }
 
+  async getConversationForUser(conversationId, userId) {
+    const normalizedUserId = normalizeUserId(userId);
+    const messages = await this.getConversationMessages(conversationId, { userId: normalizedUserId });
+    const conversationMetadata = await conversationQueries.getMetadata(conversationId, normalizedUserId);
+    const reservation = await reservationService.getLatestReservationForConversation(conversationId, {
+      userId: normalizedUserId,
+    });
+    const meta = {
+      ...(conversationMetadata || {}),
+      ...(reservation ? { reservation } : {}),
+    };
+
+    return {
+      conversationId,
+      messages,
+      ...(Object.keys(meta).length ? { meta } : {}),
+    };
+  }
+
   async getConversationMessages(conversationId, { userId } = {}) {
     if (!conversationId) {
       throw new HttpError(400, 'Conversation ID is required', { code: 'VALIDATION_ERROR' });

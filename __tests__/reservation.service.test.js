@@ -101,7 +101,6 @@ describe('ReservationService', () => {
         confirmationCode: 'BW-ABC123',
         createdAt,
         totalPrice: 240,
-        metadata: {},
       },
       tour: {
         id: 1,
@@ -147,7 +146,7 @@ describe('ReservationService', () => {
     }));
   });
 
-  it('passes transportation metadata for reservation context without duplicating it in the reservation result', async () => {
+  it('uses request context for itinerary dates without storing reservation metadata', async () => {
     const createdAt = new Date('2026-05-09T10:00:00.000Z');
     const transportation = {
       transportationOption: 'shared_shuttle',
@@ -181,11 +180,6 @@ describe('ReservationService', () => {
         confirmationCode: 'BW-ABC123',
         createdAt,
         totalPrice: 240,
-        metadata: {
-          transportation,
-          itineraryStartDate: '2026-06-01',
-          itineraryEndDate: '2026-06-03',
-        },
       },
       tour: {
         id: 1,
@@ -209,12 +203,8 @@ describe('ReservationService', () => {
       },
     });
 
-    expect(mockCreateReservation).toHaveBeenCalledWith(expect.objectContaining({
-      metadata: {
-        transportation,
-        itineraryStartDate: '2026-06-01',
-        itineraryEndDate: '2026-06-03',
-      },
+    expect(mockCreateReservation).toHaveBeenCalledWith(expect.not.objectContaining({
+      metadata: expect.anything(),
     }));
     expect(result).toMatchObject({
       itineraryStartDate: '2026-06-01',
@@ -417,7 +407,6 @@ describe('ReservationService', () => {
         confirmationCode: 'BW-ABC123',
         createdAt,
         totalPrice: 240,
-        metadata: {},
       },
       tour: {
         id: 1,

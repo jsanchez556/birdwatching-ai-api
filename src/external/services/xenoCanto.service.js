@@ -2,7 +2,7 @@ import { mkdir } from 'fs/promises';
 import path from 'path';
 import env from '../../config/env.js';
 import logger from '../../utils/logger.js';
-import MediaAssetUploadService from './mediaAsset.service.js';
+import { MediaAssetUploadService } from '../../services/mediaAsset.service.js';
 import {
   DAY_MS,
   EXTERNAL_PROVIDERS,

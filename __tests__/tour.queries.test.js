@@ -1,6 +1,10 @@
 import { jest } from '@jest/globals';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const mockQuery = jest.fn();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 await jest.unstable_mockModule('../src/db/pool.js', () => ({
   default: {
@@ -68,6 +72,24 @@ describe('TourQueries', () => {
       expect.stringContaining('get_available_tours'),
       ['Monteverde', null, null, 2]
     );
+  });
+
+  it('keeps available tour location matching accent-insensitive in SQL', () => {
+    const migration = fs.readFileSync(
+      path.resolve(__dirname, '../src/db/migrations/012_accent_insensitive_tour_search.sql'),
+      'utf8'
+    );
+
+    expect(migration).toContain('normalize_search_text');
+    expect(migration).toContain('translate(');
+    expect(migration).toContain('ÍÌÎÏíìîï');
+    expect(migration).toContain('IIIIiiii');
+    expect(migration).toContain('normalized_location TEXT := normalize_search_text(p_location)');
+    expect(migration).toContain('normalize_search_text(tour_node.name)');
+    expect(migration).toContain('normalize_search_text(parent_node.name)');
+    expect(migration).toContain('normalize_search_text(z.name)');
+    expect(migration).toContain('normalize_search_text(t.name)');
+    expect(migration).toContain('LIKE \'%\' || normalized_location || \'%\'');
   });
 
   it('validates tour selection through a PostgreSQL function', async () => {

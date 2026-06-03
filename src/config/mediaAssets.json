@@ -1,0 +1,34 @@
+{
+  "tours": {
+    "1": {
+      "portraits": ["tours/1.png"]
+    },
+    "2": {
+      "portraits": ["tours/2.png"]
+    },
+    "3": {
+      "portraits": ["tours/3.png"]
+    },
+    "4": {
+      "portraits": ["tours/4.png"]
+    },
+    "5": {
+      "portraits": ["tours/5.png"]
+    },
+    "6": {
+      "portraits": ["tours/6.png"]
+    },
+    "7": {
+      "portraits": ["tours/7.png"]
+    },
+    "8": {
+      "portraits": ["tours/8.png"]
+    },
+    "9": {
+      "portraits": ["tours/9.png"]
+    },
+    "10": {
+      "portraits": ["tours/10.png"]
+    }
+  }
+}

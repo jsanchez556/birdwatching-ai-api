@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import request from 'supertest';
 
 const mockGetLatestConversation = jest.fn();
+const mockGetConversation = jest.fn();
 const mockProcessMessageStream = jest.fn();
 
 process.env.AI_RATE_LIMIT_MAX_REQUESTS = '2';
@@ -29,6 +30,7 @@ await jest.unstable_mockModule('../src/services/chat.service.js', () => ({
   default: {
     processMessageStream: mockProcessMessageStream,
     getLatestConversation: mockGetLatestConversation,
+    getConversation: mockGetConversation,
   },
 }));
 
@@ -157,6 +159,53 @@ describe('POST /chat', () => {
     expect(res.headers['x-ratelimit-limit']).toBe('2');
     expect(res.headers['x-ratelimit-remaining']).toBe('0');
     expect(mockProcessMessageStream).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('GET /chat/:conversationId', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('returns a specific conversation for the authenticated user', async () => {
+    mockGetConversation.mockResolvedValue({
+      conversationId: 'conversation-123',
+      messages: [
+        { role: 'user', content: 'Hello' },
+        { role: 'assistant', content: 'Hi!' },
+      ],
+    });
+
+    const res = await request(app)
+      .get('/chat/conversation-123')
+      .set('Authorization', authHeader('user-1'));
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({
+      success: true,
+      data: {
+        conversationId: 'conversation-123',
+        messages: [
+          { role: 'user', content: 'Hello' },
+          { role: 'assistant', content: 'Hi!' },
+        ],
+      },
+      meta: {},
+    });
+    expect(mockGetConversation).toHaveBeenCalledWith(
+      'conversation-123',
+      expect.objectContaining({
+        id: 'user-1',
+        email: 'ana@example.com',
+      })
+    );
+  });
+
+  it('requires authentication', async () => {
+    const res = await request(app).get('/chat/conversation-123');
+
+    expect(res.statusCode).toBe(401);
+    expect(mockGetConversation).not.toHaveBeenCalled();
   });
 });
 

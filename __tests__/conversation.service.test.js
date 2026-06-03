@@ -274,4 +274,43 @@ describe('ConversationService', () => {
 
     expect(mockGetByConversationId).toHaveBeenCalledWith('conversation-123', 100, 7);
   });
+
+  it('loads a specific owned conversation with metadata for API clients', async () => {
+    const customerContext = {
+      customerName: 'Ana Gomez',
+      customerEmail: 'ana@example.com',
+    };
+    const reservation = {
+      reservationId: 42,
+      tourName: 'Monteverde Quetzal Tour',
+    };
+
+    mockGetOwner.mockResolvedValue(7);
+    mockGetByConversationId.mockResolvedValue([
+      {
+        user_input: 'Book this tour',
+        ai_output: 'Your reservation is confirmed.',
+        created_at: new Date('2026-05-18T10:00:00.000Z'),
+      },
+    ]);
+    mockGetMetadata.mockResolvedValue({ customerContext });
+    mockGetLatestReservationForConversation.mockResolvedValue(reservation);
+
+    const result = await conversationService.getConversationForUser('conversation-123', '7');
+
+    expect(mockGetByConversationId).toHaveBeenCalledWith('conversation-123', 100, 7);
+    expect(mockGetMetadata).toHaveBeenCalledWith('conversation-123', 7);
+    expect(mockGetLatestReservationForConversation).toHaveBeenCalledWith('conversation-123', { userId: 7 });
+    expect(result).toMatchObject({
+      conversationId: 'conversation-123',
+      messages: [
+        { role: 'user', content: 'Book this tour' },
+        { role: 'assistant', content: 'Your reservation is confirmed.' },
+      ],
+      meta: {
+        customerContext,
+        reservation,
+      },
+    });
+  });
 });

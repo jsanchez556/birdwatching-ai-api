@@ -90,9 +90,11 @@ Fetched provider data should be normalized before passing documents into the
 existing vector ingestion service.
 
 Media assets can be copied from provider URLs into an S3-compatible Railway
-bucket through `src/external/services/mediaAsset.service.js`. The uploader
-builds deterministic object keys from the provider, media type, and URL path, so
-re-running ingestion skips objects that are already present before downloading.
+bucket through `src/services/mediaAsset.service.js`. The centralized media
+service also reads editable entity-to-media mappings from
+`src/config/mediaAssets.json`. The uploader builds deterministic object keys
+from the provider, media type, and URL path, so re-running ingestion skips
+objects that are already present before downloading.
 Configure the Railway bucket by copying its S3-compatible endpoint, region,
 bucket name, access key, and secret key into local `.env` or Railway variables:
 `S3_ENDPOINT_URL`, `S3_REGION`, `S3_BUCKET_NAME`, `S3_ACCESS_KEY_ID`, and

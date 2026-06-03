@@ -31,6 +31,13 @@ const transportationProfiles = [
     sharedShuttleUsd: 60,
     privateTransferUsd: 200,
   },
+  {
+    matcher: /bijagua|upala|tenorio|r[ií]o celeste/i,
+    destination: 'Tenorio-Bijagua and Rio Celeste',
+    estimatedTravelTime: '3.5-4.5 hours from San Jose',
+    sharedShuttleUsd: 75,
+    privateTransferUsd: 260,
+  },
 ];
 
 function resolveProfile({ destination, location, tourName } = {}) {

@@ -111,6 +111,37 @@ Expired, revoked, or unknown refresh tokens return `401` with code `SESSION_EXPI
 ## `POST /auth/logout`
 Revokes the current refresh token when one is provided.
 
+## Cart And My Tours
+All cart endpoints require JWT authentication through `requireAuth`, reject unauthenticated requests, and return the normalized `{ success, data, meta }` envelope.
+
+### `GET /cart`
+Returns the authenticated user cart:
+```json
+{
+  "cart": {
+    "itineraryStartDate": "2026-06-10",
+    "itineraryEndDate": "2026-06-12",
+    "items": [],
+    "count": 0
+  }
+}
+```
+
+### `POST /cart/items`
+Adds or updates one cart tour. Body fields are `tourId`, optional `scheduledDate`, optional `participants`, optional `needsTransportation`, and optional safe `metadata`. Cart items may be added without itinerary dates; reservation creation still requires each selected item to have a scheduled date.
+
+### `PATCH /cart/items/:itemId`
+Updates `scheduledDate`, `participants`, or `needsTransportation` for one owned cart item.
+
+### `DELETE /cart/items/:itemId`
+Removes one owned cart item.
+
+### `POST /cart/reservations`
+Creates reservations from the authenticated user cart. With no `itemIds`, all cart items are reserved. With `itemIds`, only those cart items are reserved. Each selected item must have a scheduled date, and only one selected tour may be assigned to each day.
+
+### `GET /cart/reservations`
+Returns the authenticated user latest five reservations ordered by reservation creation date. Reservation rows do not persist extra metadata; itinerary dates are supplied during active cart/chat reservation flows when needed.
+
 ## `POST /chat`
 Streams an assistant response with Server-Sent Events. Authenticated customer/admin requests include `Authorization: Bearer <token>` and existing authenticated conversations can only be continued by their owner. Unauthenticated visitor requests are accepted for bird-only questions and are blocked from tour planning, pricing, transportation, and reservations.
 
@@ -144,6 +175,7 @@ Validation:
 - `customerContext.customerEmail` must be a valid email address when present.
 - `customerContext.itineraryStartDate` and `customerContext.itineraryEndDate` must use `YYYY-MM-DD` when present, and the end date must not be earlier than the start date.
 - `conversationContext` is optional and must be an object when provided. The validator only preserves safe recent assistant metadata used by guided booking flows.
+- Homepage/cart reservation entry points may send `conversationType: "reservation_entry"`, `conversationSource`/`entrySource` of `featured_tour` or `tour_cart`, and a safe `reservationEntry` object containing selected tour/cart summaries. These values are treated as already provided context, not authoritative reservation records.
 
 SSE events:
 ```text
@@ -274,10 +306,11 @@ Tour tool notes:
 - Final confirmation accepts the structured `confirm_reservation` action and affirmative text such as `Yes` when the previous assistant metadata contained the final confirmation action.
 - Successful reservation tool results include `id`, `reservationId`, `userId`, `customerName`, `customerEmail`, `conversationId`, `tourId`, `tourName`, `participants`, `confirmationCode`, `createdAt`, `totalPrice`, `tourTotalPrice`, itinerary dates, `currency`, `remainingSlots`, `discountRate`, and `discountReason`. Transportation selection and transportation-derived totals are calculated from chat-level `meta.selectedTransportation`, not embedded as `meta.reservation.transportation`.
 - Reservations are associated with the active chat `conversationId` internally.
+- Reservation-entry chat exchanges are saved with `conversation_type = "reservation_entry"` and optional `conversation_source` so they can support server-side reservation flow without becoming the user's regular latest chat.
 - The public stream does not expose raw tool messages, but safe structured tool data is returned in the `done` event `meta` object for frontend rendering.
 
 ## `GET /chat/latest`
-Returns the most recent conversation owned by the authenticated user. Requires `Authorization: Bearer <token>` and uses `req.user.id`; no user ID is accepted from the client.
+Returns the most recent regular conversation owned by the authenticated user. Requires `Authorization: Bearer <token>` and uses `req.user.id`; no user ID is accepted from the client. Conversations marked `reservation_entry` are excluded from this lookup.
 
 Success data when a conversation exists:
 ```json

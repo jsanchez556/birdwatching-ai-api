@@ -90,9 +90,10 @@ export class ConversationQueries {
   async getLatestByUserId(userId) {
     try {
       const query = `
-        SELECT conversation_id
+        SELECT conversation_code AS conversation_id
         FROM conversations
         WHERE user_id = $1
+          AND COALESCE(metadata->>'conversationType', 'regular') <> 'reservation_entry'
         ORDER BY last_message_at DESC NULLS LAST, created_at DESC
         LIMIT 1
       `;
@@ -112,7 +113,7 @@ export class ConversationQueries {
       const query = `
         SELECT user_id
         FROM conversations
-        WHERE conversation_id = $1
+        WHERE conversation_code = $1
         LIMIT 1
       `;
       const result = await pool.query(query, [conversationId]);
@@ -132,8 +133,8 @@ export class ConversationQueries {
       const query = `
         SELECT COALESCE(metadata, '{}'::jsonb) AS metadata
         FROM conversations
-        WHERE conversation_id = $1
-          AND ($2::BIGINT IS NULL OR user_id = $2::BIGINT)
+        WHERE conversation_code = $1
+          AND ($2::INTEGER IS NULL OR user_id = $2::INTEGER)
         LIMIT 1
       `;
       const result = await pool.query(query, [conversationId, hasUserId ? userId : null]);
@@ -174,9 +175,10 @@ export class ConversationQueries {
   async getById(id) {
     try {
       const query = `
-        SELECT id, conversation_id, user_input, ai_output, created_at
-        FROM messages
-        WHERE id = $1
+        SELECT m.id, c.conversation_code AS conversation_id, m.user_input, m.ai_output, m.created_at
+        FROM messages AS m
+        INNER JOIN conversations AS c ON c.id = m.conversation_id
+        WHERE m.id = $1
       `;
       const result = await pool.query(query, [id]);
       return result.rows[0] || null;

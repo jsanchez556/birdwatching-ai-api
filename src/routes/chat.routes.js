@@ -19,5 +19,6 @@ router.post(
   chatController.handleStreamChat.bind(chatController)
 );
 router.get('/latest', requireAuth, asyncHandler(chatController.handleGetLatestConversation.bind(chatController)));
+router.get('/:conversationId', requireAuth, asyncHandler(chatController.handleGetConversation.bind(chatController)));
 
 export default router;

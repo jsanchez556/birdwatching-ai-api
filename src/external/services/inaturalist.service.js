@@ -14,7 +14,7 @@ import {
 import {
   normalizeLicense,
 } from '../utils/license.utils.js';
-import MediaAssetUploadService from './mediaAsset.service.js';
+import { MediaAssetUploadService } from '../../services/mediaAsset.service.js';
 import WikiExportService from './wiki.service.js';
 import logger from '../../utils/logger.js';
 

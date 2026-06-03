@@ -2,9 +2,8 @@
 -- Run this script in your Railway PostgreSQL database
 
 CREATE TABLE IF NOT EXISTS conversations (
-  id SERIAL PRIMARY KEY,
-  conversation_id TEXT NOT NULL UNIQUE,
-  user_id TEXT,
+  id BIGSERIAL PRIMARY KEY,
+  conversation_code TEXT NOT NULL UNIQUE,
   title TEXT,
   last_message_at TIMESTAMP,
   metadata JSONB DEFAULT '{}'::jsonb,
@@ -12,8 +11,8 @@ CREATE TABLE IF NOT EXISTS conversations (
 );
 
 CREATE TABLE IF NOT EXISTS messages (
-  id SERIAL PRIMARY KEY,
-  conversation_id TEXT NOT NULL REFERENCES conversations(conversation_id) ON DELETE CASCADE,
+  id BIGSERIAL PRIMARY KEY,
+  conversation_id BIGINT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
   user_input TEXT NOT NULL,
   ai_output TEXT NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

@@ -163,8 +163,8 @@ discount codes or group size, generates a confirmation code, and calls
 `create_tour_reservation(...)`. The database function locks the tour row,
 verifies available slots, updates availability, calculates the tour total, and
 inserts the reservation in one database transaction. Transportation totals and
-itinerary dates are added to frontend-safe metadata but do not replace the
-database reservation record.
+itinerary dates are returned in frontend-safe chat/tool metadata for the active
+flow, but are not stored in a reservation metadata column.
 
 Future tools should be added as a group with schemas and handlers keyed by the
 OpenAI `function.name`. The registry rejects duplicate names and schemas without

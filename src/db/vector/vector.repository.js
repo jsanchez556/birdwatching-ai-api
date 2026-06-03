@@ -256,6 +256,70 @@ class VectorRepository {
     return result.rows[0] || null;
   }
 
+  async findBirdProfile({ speciesCode, name } = {}) {
+    const normalizedSpeciesCode = typeof speciesCode === 'string' ? speciesCode.trim() : '';
+    const normalizedName = typeof name === 'string' ? name.trim() : '';
+
+    if (!normalizedSpeciesCode && !normalizedName) {
+      return null;
+    }
+
+    const result = await pool.query(`
+      SELECT
+        d.id AS document_id,
+        d.external_id,
+        d.title,
+        d.source,
+        d.document_type,
+        d.category,
+        d.locale,
+        d.tags,
+        d.metadata AS document_metadata
+      FROM knowledge_documents AS d
+      WHERE d.active = true
+        AND d.document_type = 'bird_profile'
+        AND (
+          ($1::text IS NOT NULL AND LOWER(d.metadata->>'speciesCode') = LOWER($1::text))
+          OR ($2::text IS NOT NULL AND LOWER(d.title) = LOWER($2::text))
+          OR ($2::text IS NOT NULL AND LOWER(d.metadata->>'commonName') = LOWER($2::text))
+        )
+      ORDER BY
+        CASE
+          WHEN $1::text IS NOT NULL AND LOWER(d.metadata->>'speciesCode') = LOWER($1::text) THEN 0
+          WHEN $2::text IS NOT NULL AND LOWER(d.title) = LOWER($2::text) THEN 1
+          ELSE 2
+        END,
+        d.id ASC
+      LIMIT 1;
+    `, [
+      normalizedSpeciesCode || null,
+      normalizedName || null,
+    ]);
+
+    const row = result.rows[0];
+
+    if (!row) {
+      return null;
+    }
+
+    const metadata = row.document_metadata || {};
+
+    return {
+      id: row.external_id || row.document_id,
+      documentId: row.document_id,
+      name: row.title,
+      title: row.title,
+      source: row.source,
+      category: row.category,
+      documentType: row.document_type,
+      locale: row.locale,
+      tags: row.tags || [],
+      locations: metadata.locations || 'Unknown',
+      description: metadata.description,
+      metadata,
+    };
+  }
+
   async replaceDocumentChunks(documentId, chunks) {
     const client = await pool.connect();
 

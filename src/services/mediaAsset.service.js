@@ -1,7 +1,8 @@
 import crypto from 'crypto';
-import ExternalApiRateLimiter from '../rateLimiter.js';
-import S3BucketService from '../../storage/s3Bucket.service.js';
-import logger from '../../utils/logger.js';
+import mediaAssetsConfig from '../config/mediaAssets.json' with { type: 'json' };
+import ExternalApiRateLimiter from '../external/rateLimiter.js';
+import S3BucketService from '../storage/s3Bucket.service.js';
+import logger from '../utils/logger.js';
 
 const ASSET_TYPE_PREFIXES = {
   audio: 'audio',
@@ -20,6 +21,10 @@ const mediaAssetDownloadRateLimiter = new ExternalApiRateLimiter({
   maxRequests: 1,
   windowMs: 500,
 });
+
+function normalizeLookupValue(value) {
+  return String(value || '').trim();
+}
 
 function normalizeKeySegment(value) {
   return String(value || '')
@@ -124,6 +129,89 @@ async function downloadAsset(assetUrl, { signal } = {}) {
     body: Buffer.from(await response.arrayBuffer()),
     contentType: response.headers.get('content-type'),
   };
+}
+
+function normalizeAssetList(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((asset) => String(asset || '').trim())
+    .filter(Boolean);
+}
+
+function normalizeEntityMedia(media) {
+  if (!media || typeof media !== 'object' || Array.isArray(media)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(media)
+      .map(([mediaType, assets]) => [
+        normalizeLookupValue(mediaType),
+        normalizeAssetList(assets),
+      ])
+      .filter(([mediaType, assets]) => mediaType && assets.length > 0)
+  );
+}
+
+function mediaRoutePathFromKey(value) {
+  const key = String(value || '')
+    .trim()
+    .replaceAll('\\', '/')
+    .replace(/^\/+|\/+$/g, '');
+
+  if (!key || /^[a-z][a-z0-9+.-]*:/i.test(key)) {
+    return null;
+  }
+
+  const routePath = key.startsWith('files/') ? key : `files/${key}`;
+
+  return `/${routePath}`;
+}
+
+class MediaAssetService {
+  constructor(options = {}) {
+    this.mediaAssets = options.mediaAssets || mediaAssetsConfig;
+  }
+
+  getEntityMedia(entityType, entityId) {
+    const normalizedEntityType = normalizeLookupValue(entityType);
+    const normalizedEntityId = normalizeLookupValue(entityId);
+
+    if (!normalizedEntityType || !normalizedEntityId) {
+      return {};
+    }
+
+    return normalizeEntityMedia(
+      this.mediaAssets?.[normalizedEntityType]?.[normalizedEntityId]
+    );
+  }
+
+  getMediaAssets(entityType, entityId, mediaType) {
+    const normalizedMediaType = normalizeLookupValue(mediaType);
+
+    if (!normalizedMediaType) {
+      return [];
+    }
+
+    return this.getEntityMedia(entityType, entityId)[normalizedMediaType] || [];
+  }
+
+  getFirstMediaAsset(entityType, entityId, mediaType) {
+    return this.getMediaAssets(entityType, entityId, mediaType)[0] || null;
+  }
+
+  getMediaAssetPaths(entityType, entityId, mediaType) {
+    return this.getMediaAssets(entityType, entityId, mediaType)
+      .map(mediaRoutePathFromKey)
+      .filter(Boolean);
+  }
+
+  getFirstMediaAssetPath(entityType, entityId, mediaType) {
+    return this.getMediaAssetPaths(entityType, entityId, mediaType)[0] || null;
+  }
 }
 
 class MediaAssetUploadService {
@@ -237,6 +325,11 @@ export {
   contentTypeFromUrl,
   isRestrictedMediaAssetLicense,
   isUploadableMediaAssetLicense,
+  MediaAssetUploadService,
+  MediaAssetService,
+  mediaRoutePathFromKey,
+  normalizeAssetList,
+  normalizeEntityMedia,
   normalizeMediaAssetLicense,
 };
-export default MediaAssetUploadService;
+export default new MediaAssetService();

@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS tours (
   lon NUMERIC(9,6),
   start_date DATE,
   end_date DATE,
+  source_url TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -70,12 +71,25 @@ ALTER TABLE tours
   ADD CONSTRAINT chk_tours_lat_range CHECK (lat IS NULL OR lat BETWEEN -90 AND 90),
   ADD CONSTRAINT chk_tours_lon_range CHECK (lon IS NULL OR lon BETWEEN -180 AND 180);
 
+CREATE OR REPLACE FUNCTION normalize_tour_search_text(p_value TEXT)
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT lower(translate(
+    COALESCE(p_value, ''),
+    'ÁÀÂÃÄÅáàâãäåÉÈÊËéèêëÍÌÎÏíìîïÓÒÔÕÖóòôõöÚÙÛÜúùûüÑñÇç',
+    'AAAAAAaaaaaaEEEEeeeeIIIIiiiiOOOOOoooooUUUUuuuuNnCc'
+  ));
+$$;
+
 
 CREATE TABLE IF NOT EXISTS reservations (
   id SERIAL PRIMARY KEY,
+  user_id INTEGER,
   customer_name TEXT NOT NULL,
   customer_email TEXT,
-  conversation_id TEXT,
+  conversation_id BIGINT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
   tour_id INTEGER NOT NULL REFERENCES tours(id),
   participants INTEGER NOT NULL CHECK (participants > 0),
   confirmation_code TEXT NOT NULL UNIQUE,
@@ -86,16 +100,23 @@ CREATE TABLE IF NOT EXISTS reservations (
 CREATE INDEX IF NOT EXISTS idx_reservations_confirmation_code
 ON reservations(confirmation_code);
 
+CREATE INDEX IF NOT EXISTS idx_reservations_conversation_created_at
+ON reservations(conversation_id, created_at DESC);
+
 CREATE INDEX IF NOT EXISTS idx_reservations_tour_created_at
 ON reservations(tour_id, created_at DESC);
 
-CREATE OR REPLACE FUNCTION get_tour_by_id(p_tour_id INTEGER)
+DROP FUNCTION IF EXISTS get_tour_by_id(INTEGER);
+CREATE FUNCTION get_tour_by_id(p_tour_id INTEGER)
 RETURNS TABLE (
   id INTEGER,
   name TEXT,
   price NUMERIC,
   available_slots INTEGER,
   location TEXT,
+  node TEXT,
+  subnode TEXT,
+  zone TEXT,
   duration_hours INTEGER,
   difficulty TEXT
 )
@@ -106,14 +127,21 @@ AS $$
     t.name,
     t.price,
     t.available_slots,
-    t.location,
+    COALESCE(parent_node.name || ' / ' || tour_node.name, tour_node.name, z.name) AS location,
+    COALESCE(parent_node.name, tour_node.name) AS node,
+    CASE WHEN parent_node.id IS NULL THEN NULL ELSE tour_node.name END AS subnode,
+    z.name AS zone,
     t.duration_hours,
     t.difficulty
   FROM tours AS t
+  JOIN node AS tour_node ON tour_node.id = t.node_id
+  JOIN zone AS z ON z.id = tour_node.zone_id
+  LEFT JOIN node AS parent_node ON parent_node.id = tour_node.parent_id
   WHERE t.id = p_tour_id;
 $$;
 
-CREATE OR REPLACE FUNCTION get_available_tours(
+DROP FUNCTION IF EXISTS get_available_tours(TEXT, TEXT, NUMERIC, INTEGER);
+CREATE FUNCTION get_available_tours(
   p_location TEXT DEFAULT NULL,
   p_difficulty TEXT DEFAULT NULL,
   p_max_price NUMERIC DEFAULT NULL,
@@ -125,6 +153,9 @@ RETURNS TABLE (
   price NUMERIC,
   available_slots INTEGER,
   location TEXT,
+  node TEXT,
+  subnode TEXT,
+  zone TEXT,
   duration_hours INTEGER,
   difficulty TEXT
 )
@@ -135,15 +166,23 @@ AS $$
     t.name,
     t.price,
     t.available_slots,
-    t.location,
+    COALESCE(parent_node.name || ' / ' || tour_node.name, tour_node.name, z.name) AS location,
+    COALESCE(parent_node.name, tour_node.name) AS node,
+    CASE WHEN parent_node.id IS NULL THEN NULL ELSE tour_node.name END AS subnode,
+    z.name AS zone,
     t.duration_hours,
     t.difficulty
   FROM tours AS t
+  JOIN node AS tour_node ON tour_node.id = t.node_id
+  JOIN zone AS z ON z.id = tour_node.zone_id
+  LEFT JOIN node AS parent_node ON parent_node.id = tour_node.parent_id
   WHERE t.available_slots >= COALESCE(p_min_slots, 1)
     AND (
       p_location IS NULL
-      OR t.location ILIKE '%' || p_location || '%'
-      OR t.name ILIKE '%' || p_location || '%'
+      OR normalize_tour_search_text(tour_node.name) LIKE '%' || normalize_tour_search_text(p_location) || '%'
+      OR normalize_tour_search_text(parent_node.name) LIKE '%' || normalize_tour_search_text(p_location) || '%'
+      OR normalize_tour_search_text(z.name) LIKE '%' || normalize_tour_search_text(p_location) || '%'
+      OR normalize_tour_search_text(t.name) LIKE '%' || normalize_tour_search_text(p_location) || '%'
     )
     AND (
       p_difficulty IS NULL
@@ -153,10 +192,11 @@ AS $$
       p_max_price IS NULL
       OR t.price <= p_max_price
     )
-  ORDER BY t.location ASC, t.price ASC, t.id ASC;
+  ORDER BY z.rank ASC, COALESCE(parent_node.rank, tour_node.rank) ASC, tour_node.rank ASC, t.price ASC, t.id ASC;
 $$;
 
-CREATE OR REPLACE FUNCTION select_tour(
+DROP FUNCTION IF EXISTS select_tour(INTEGER, INTEGER);
+CREATE FUNCTION select_tour(
   p_tour_id INTEGER,
   p_participants INTEGER DEFAULT 1
 )
@@ -169,6 +209,9 @@ RETURNS TABLE (
   price NUMERIC,
   available_slots INTEGER,
   location TEXT,
+  node TEXT,
+  subnode TEXT,
+  zone TEXT,
   duration_hours INTEGER,
   difficulty TEXT
 )
@@ -195,27 +238,36 @@ AS $$
     t.name,
     t.price,
     t.available_slots,
-    t.location,
+    COALESCE(parent_node.name || ' / ' || tour_node.name, tour_node.name, z.name) AS location,
+    COALESCE(parent_node.name, tour_node.name) AS node,
+    CASE WHEN parent_node.id IS NULL THEN NULL ELSE tour_node.name END AS subnode,
+    z.name AS zone,
     t.duration_hours,
     t.difficulty
   FROM (SELECT 1) AS seed
-  LEFT JOIN tours AS t ON t.id = p_tour_id;
+  LEFT JOIN tours AS t ON t.id = p_tour_id
+  LEFT JOIN node AS tour_node ON tour_node.id = t.node_id
+  LEFT JOIN zone AS z ON z.id = tour_node.zone_id
+  LEFT JOIN node AS parent_node ON parent_node.id = tour_node.parent_id;
 $$;
 
-CREATE OR REPLACE FUNCTION create_tour_reservation(
+DROP FUNCTION IF EXISTS create_tour_reservation(INTEGER, INTEGER, TEXT, TEXT, BIGINT, TEXT, NUMERIC, INTEGER);
+CREATE FUNCTION create_tour_reservation(
   p_tour_id INTEGER,
   p_participants INTEGER,
   p_customer_name TEXT,
   p_customer_email TEXT,
-  p_conversation_id TEXT,
+  p_conversation_id BIGINT,
   p_confirmation_code TEXT,
-  p_discount_rate NUMERIC DEFAULT 0
+  p_discount_rate NUMERIC DEFAULT 0,
+  p_user_id INTEGER DEFAULT NULL
 )
 RETURNS TABLE (
   success BOOLEAN,
   code TEXT,
   message TEXT,
   id INTEGER,
+  user_id INTEGER,
   customer_name TEXT,
   customer_email TEXT,
   conversation_id TEXT,
@@ -228,6 +280,9 @@ RETURNS TABLE (
   tour_price NUMERIC,
   tour_available_slots INTEGER,
   tour_location TEXT,
+  tour_node TEXT,
+  tour_subnode TEXT,
+  tour_zone TEXT,
   tour_duration_hours INTEGER,
   tour_difficulty TEXT
 )
@@ -237,13 +292,33 @@ AS $$
 DECLARE
   selected_tour tours%ROWTYPE;
   inserted_reservation reservations%ROWTYPE;
+  selected_conversation conversations%ROWTYPE;
   remaining_slots INTEGER;
   subtotal NUMERIC;
   discount_amount NUMERIC;
   calculated_total_price NUMERIC;
+  tour_location TEXT;
+  tour_node TEXT;
+  tour_subnode TEXT;
+  tour_zone TEXT;
 BEGIN
   BEGIN
-    SELECT *
+    SELECT c.*
+    INTO selected_conversation
+    FROM conversations AS c
+    WHERE c.id = p_conversation_id;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'conversation id % was not found', p_conversation_id
+        USING ERRCODE = '23503';
+    END IF;
+
+    IF selected_conversation.user_id IS NOT NULL AND p_user_id IS NOT NULL AND selected_conversation.user_id <> p_user_id THEN
+      RAISE EXCEPTION 'conversation % is not owned by user %', p_conversation_id, p_user_id
+        USING ERRCODE = '42501';
+    END IF;
+
+    SELECT t.*
     INTO selected_tour
     FROM tours AS t
     WHERE t.id = p_tour_id
@@ -255,6 +330,7 @@ BEGIN
         false,
         'TOUR_NOT_FOUND'::TEXT,
         format('Tour %s was not found.', p_tour_id)::TEXT,
+        NULL::INTEGER,
         NULL::INTEGER,
         NULL::TEXT,
         NULL::TEXT,
@@ -268,10 +344,24 @@ BEGIN
         NULL::NUMERIC,
         NULL::INTEGER,
         NULL::TEXT,
+        NULL::TEXT,
+        NULL::TEXT,
+        NULL::TEXT,
         NULL::INTEGER,
         NULL::TEXT;
       RETURN;
     END IF;
+
+    SELECT
+      COALESCE(parent_node.name || ' / ' || location_node.name, location_node.name, z.name),
+      COALESCE(parent_node.name, location_node.name),
+      CASE WHEN parent_node.id IS NULL THEN NULL ELSE location_node.name END,
+      z.name
+    INTO tour_location, tour_node, tour_subnode, tour_zone
+    FROM node AS location_node
+    JOIN zone AS z ON z.id = location_node.zone_id
+    LEFT JOIN node AS parent_node ON parent_node.id = location_node.parent_id
+    WHERE location_node.id = selected_tour.node_id;
 
     IF selected_tour.available_slots < p_participants THEN
       RETURN QUERY
@@ -285,6 +375,7 @@ BEGIN
           p_participants
         )::TEXT,
         NULL::INTEGER,
+        NULL::INTEGER,
         NULL::TEXT,
         NULL::TEXT,
         NULL::TEXT,
@@ -296,7 +387,10 @@ BEGIN
         selected_tour.name,
         selected_tour.price,
         selected_tour.available_slots,
-        selected_tour.location,
+        tour_location,
+        tour_node,
+        tour_subnode,
+        tour_zone,
         selected_tour.duration_hours,
         selected_tour.difficulty;
       RETURN;
@@ -314,6 +408,7 @@ BEGIN
     RETURNING t.available_slots INTO remaining_slots;
 
     INSERT INTO reservations (
+      user_id,
       customer_name,
       customer_email,
       conversation_id,
@@ -323,9 +418,10 @@ BEGIN
       total_price
     )
     VALUES (
+      p_user_id,
       p_customer_name,
       p_customer_email,
-      p_conversation_id,
+      selected_conversation.id,
       p_tour_id,
       p_participants,
       p_confirmation_code,
@@ -339,9 +435,10 @@ BEGIN
       NULL::TEXT,
       NULL::TEXT,
       inserted_reservation.id,
+      inserted_reservation.user_id,
       inserted_reservation.customer_name,
       inserted_reservation.customer_email,
-      inserted_reservation.conversation_id,
+      selected_conversation.conversation_code,
       inserted_reservation.tour_id,
       inserted_reservation.participants,
       inserted_reservation.confirmation_code,
@@ -350,7 +447,10 @@ BEGIN
       selected_tour.name,
       selected_tour.price,
       remaining_slots,
-      selected_tour.location,
+      tour_location,
+      tour_node,
+      tour_subnode,
+      tour_zone,
       selected_tour.duration_hours,
       selected_tour.difficulty;
   EXCEPTION

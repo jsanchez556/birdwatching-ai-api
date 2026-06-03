@@ -123,6 +123,7 @@ function isBookingMetadata(metadata = {}) {
     || metadata.selectedTourId
     || metadata.selectedTransportation
     || metadata.transportationDeclined
+    || metadata.requestedTransportation
     || metadata.participants
   ) {
     return true;
@@ -147,10 +148,17 @@ function shouldIncludeBirdMatches(message, metadata = {}) {
 }
 
 function buildToolMeta(metadata = {}) {
+  const recentMetadata = metadata.conversationContext?.recentAssistantMetadata || {};
+
   return {
     ...buildPromptMeta(),
+    ...(recentMetadata.conversationType ? { conversationType: recentMetadata.conversationType } : {}),
+    ...(recentMetadata.conversationSource ? { conversationSource: recentMetadata.conversationSource } : {}),
+    ...(recentMetadata.entrySource ? { entrySource: recentMetadata.entrySource } : {}),
+    ...(recentMetadata.reservationEntry ? { reservationEntry: recentMetadata.reservationEntry } : {}),
     ...(metadata.toolsCalled?.length ? { toolsCalled: metadata.toolsCalled } : {}),
     ...(metadata.tours ? { tours: metadata.tours } : {}),
+    ...(metadata.requestedTransportation ? { requestedTransportation: metadata.requestedTransportation } : {}),
     ...(metadata.transportationDeclined ? { transportationDeclined: metadata.transportationDeclined } : {}),
     ...(metadata.pricing ? { pricing: metadata.pricing } : {}),
     ...(metadata.uiAction ? { uiAction: metadata.uiAction } : {}),
@@ -158,11 +166,18 @@ function buildToolMeta(metadata = {}) {
 }
 
 function buildConversationMeta(metadata = {}) {
+  const recentMetadata = metadata.conversationContext?.recentAssistantMetadata || {};
+
   return {
+    ...(recentMetadata.conversationType ? { conversationType: recentMetadata.conversationType } : {}),
+    ...(recentMetadata.conversationSource ? { conversationSource: recentMetadata.conversationSource } : {}),
+    ...(recentMetadata.entrySource ? { entrySource: recentMetadata.entrySource } : {}),
+    ...(recentMetadata.reservationEntry ? { reservationEntry: recentMetadata.reservationEntry } : {}),
     ...(metadata.customerContext ? { customerContext: metadata.customerContext } : {}),
     ...(metadata.reservation ? { reservation: metadata.reservation } : {}),
     ...(metadata.selectedTour ? { selectedTour: metadata.selectedTour } : {}),
     ...(metadata.selectedTourId ? { selectedTourId: metadata.selectedTourId } : {}),
+    ...(metadata.requestedTransportation ? { requestedTransportation: metadata.requestedTransportation } : {}),
     ...(metadata.selectedTransportation ? { selectedTransportation: metadata.selectedTransportation } : {}),
     ...(metadata.participants ? { participants: metadata.participants } : {}),
   };
@@ -374,6 +389,10 @@ class ChatService {
 
   async getLatestConversation(authUser) {
     return conversationService.getLatestConversationForUser(authUser?.id);
+  }
+
+  async getConversation(conversationId, authUser) {
+    return conversationService.getConversationForUser(conversationId, authUser?.id);
   }
 }
 
