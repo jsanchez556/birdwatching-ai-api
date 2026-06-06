@@ -1,7 +1,5 @@
 import express from 'express';
-import S3BucketService, {
-  DEFAULT_PRESIGNED_URL_EXPIRES_IN_SECONDS,
-} from '../storage/s3Bucket.service.js';
+import env from '../config/env.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import HttpError from '../utils/httpError.js';
 import { sendSuccess } from '../utils/apiResponse.js';
@@ -27,24 +25,36 @@ function normalizeFileName(value) {
   return segments.join('/').toLowerCase();
 }
 
+function createCloudFrontUrl(baseUrl, key) {
+  const normalizedBaseUrl = String(baseUrl || '').trim().replace(/\/+$/, '');
+
+  if (!normalizedBaseUrl) {
+    return null;
+  }
+
+  return `${normalizedBaseUrl}/${key.split('/').map(encodeURIComponent).join('/')}`;
+}
+
 function createFileHandler(options = {}) {
   return asyncHandler(async (req, res) => {
     const key = normalizeFileName(options.buildKey
       ? options.buildKey(req)
       : req.params.filename || req.params.fileName);
-    const bucketService = options.bucketService || new S3BucketService();
+    const cloudFrontUrl = createCloudFrontUrl(
+      options.cloudFrontBaseUrl ?? env.cloudFrontBaseUrl,
+      key
+    );
 
-    if (!await bucketService.objectExists(key)) {
-      throw new HttpError(404, 'File not found.', { code: 'FILE_NOT_FOUND' });
+    if (!cloudFrontUrl) {
+      throw new HttpError(500, 'CloudFront media delivery is not configured.', {
+        code: 'MEDIA_DELIVERY_NOT_CONFIGURED',
+      });
     }
 
-    const url = await bucketService.createPresignedGetUrl(key);
-
     return sendSuccess(res, {
-      url,
+      url: cloudFrontUrl,
     }, {
-      expiresInSeconds: bucketService.config.presignedUrlExpiresInSeconds
-        || DEFAULT_PRESIGNED_URL_EXPIRES_IN_SECONDS,
+      delivery: 'cloudfront',
     });
   });
 }
@@ -61,6 +71,7 @@ router.get('/files/:folderName/:filename', createFileHandler({
 
 export {
   createFileHandler,
+  createCloudFrontUrl,
   normalizeFileName,
 };
 export default router;

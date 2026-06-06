@@ -40,7 +40,8 @@ Common optional variables:
 - `INATURALIST_API_BASE_URL` enables iNaturalist taxa lookups
 - `XENO_CANTO_API_BASE_URL` and `XENO_CANTO_API_KEY` enable Xeno-canto recording lookups
 - `EXTERNAL_API_RATE_LIMIT_MAX_REQUESTS` defaults to `40` and cannot exceed `40`
-- `S3_ENDPOINT_URL`, `S3_REGION`, `S3_BUCKET_NAME`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` enable media asset uploads to the Railway bucket
+- `CLOUDFRONT_BASE_URL` enables public CDN media URLs for relative object keys
+- `S3_REGION`, `S3_BUCKET_NAME`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` enable media asset uploads to the S3 bucket
 
 Run database migrations before using chat memory:
 ```bash
@@ -95,17 +96,18 @@ service also reads editable entity-to-media mappings from
 `src/config/mediaAssets.json`. The uploader builds deterministic object keys
 from the provider, media type, and URL path, so re-running ingestion skips
 objects that are already present before downloading.
-Configure the Railway bucket by copying its S3-compatible endpoint, region,
-bucket name, access key, and secret key into local `.env` or Railway variables:
-`S3_ENDPOINT_URL`, `S3_REGION`, `S3_BUCKET_NAME`, `S3_ACCESS_KEY_ID`, and
-`S3_SECRET_ACCESS_KEY`. Keep those values out of source control and logs.
+Configure the S3 bucket by copying its region, bucket name, access key, and
+secret key into local `.env` or Railway variables: `S3_REGION`,
+`S3_BUCKET_NAME`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY`. Keep those
+values out of source control and logs.
 
 When media-rich bird RAG uses relative keys such as `/photos/123_medium.jpg`,
 `songs/123.mp3`, or `sonograms/123_grey-small.png`, those values are metadata
 references, not public static paths. Browser clients should call
 `GET /files/:folderName/:filename` to receive the normalized response envelope
-with a short-lived presigned `data.url`, then render that URL. Absolute provider
-URLs may still be returned and can be rendered directly by clients.
+with `data.url`, then render that URL. The endpoint requires
+`CLOUDFRONT_BASE_URL` and returns public CDN URLs only. Absolute provider URLs
+may still be returned and can be rendered directly by clients.
 
 External provider responses can be exported to `src/external/data` for
 inspection or later normalization:

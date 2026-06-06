@@ -96,8 +96,8 @@ that order.
 
 Media routing uses:
 1. `src/routes/media.routes.js` to validate `GET /files/:folderName/:filename`
-2. `src/storage/s3Bucket.service.js` to check object existence and create a presigned GET URL
-3. the normalized response envelope so UI clients receive `data.url` plus `meta.expiresInSeconds`
+2. `CLOUDFRONT_BASE_URL` to return public CDN URLs
+3. the normalized response envelope so UI clients receive `data.url` plus delivery metadata
 
 Relative bird media keys in RAG metadata are references into this media route.
 They are not static files served by the frontend. Absolute provider URLs may

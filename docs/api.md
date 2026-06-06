@@ -377,9 +377,9 @@ Success data when no owned conversation exists:
 The lookup orders conversations by `last_message_at DESC NULLS LAST, created_at DESC`.
 
 ## `GET /files/:folderName/:filename`
-Returns a short-lived presigned media URL for a validated S3-compatible object
-key. This endpoint is used by the UI when RAG bird metadata contains relative
-media references.
+Returns a public CloudFront media URL for a validated object key. This endpoint
+requires `CLOUDFRONT_BASE_URL` and is used by the UI when RAG bird metadata
+contains relative media references.
 
 Example:
 ```http
@@ -391,10 +391,10 @@ Success response:
 {
   "success": true,
   "data": {
-    "url": "https://bucket.example.test/photos/123_medium.jpg?signature=..."
+    "url": "https://cdn.example.test/photos/123_medium.jpg"
   },
   "meta": {
-    "expiresInSeconds": 900
+    "delivery": "cloudfront"
   }
 }
 ```
@@ -405,7 +405,8 @@ Validation and behavior:
 - `.` and `..` segments are rejected
 - path segments may contain only letters, numbers, dots, underscores, and hyphens
 - missing or invalid file names return `400`
-- unknown objects return `404`
+- when `CLOUDFRONT_BASE_URL` is configured, the endpoint returns the CDN URL without using bucket credentials
+- when `CLOUDFRONT_BASE_URL` is empty, the endpoint returns a server configuration error
 - successful responses do not expose bucket credentials
 
 ## Current Protection

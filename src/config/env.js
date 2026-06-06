@@ -87,13 +87,12 @@ const env = {
   xenoCantoApiBaseUrl: process.env.XENO_CANTO_API_BASE_URL,
   xenoCantoApiKey: process.env.XENO_CANTO_API_KEY,
   wikiApiBaseUrl: process.env.WIKI_API_BASE_URL,
+  cloudFrontBaseUrl: (process.env.CLOUDFRONT_BASE_URL || '').replace(/\/+$/, ''),
   s3: {
-    endpointUrl: process.env.S3_ENDPOINT_URL,
     region: process.env.S3_REGION,
     bucketName: process.env.S3_BUCKET_NAME,
     accessKeyId: process.env.S3_ACCESS_KEY_ID,
     secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
-    presignedUrlExpiresInSeconds: Number(process.env.S3_PRESIGNED_URL_EXPIRES_IN_SECONDS) || undefined,
   },
   adminEmail: process.env.ADMIN_EMAIL,
 };

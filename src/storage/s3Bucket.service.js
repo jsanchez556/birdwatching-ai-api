@@ -1,14 +1,10 @@
 import {
-  GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import env from '../config/env.js';
 import logger from '../utils/logger.js';
-
-const DEFAULT_PRESIGNED_URL_EXPIRES_IN_SECONDS = 60 * 60;
 
 const missingObjectNames = new Set([
   'NotFound',
@@ -25,7 +21,6 @@ function isMissingObjectError(error) {
 
 function assertBucketConfig(config) {
   const required = [
-    ['endpointUrl', 'S3_ENDPOINT_URL'],
     ['region', 'S3_REGION'],
     ['bucketName', 'S3_BUCKET_NAME'],
     ['accessKeyId', 'S3_ACCESS_KEY_ID'],
@@ -43,9 +38,7 @@ function createS3Client(config) {
   assertBucketConfig(config);
 
   return new S3Client({
-    endpoint: config.endpointUrl,
     region: config.region,
-    forcePathStyle: true,
     credentials: {
       accessKeyId: config.accessKeyId,
       secretAccessKey: config.secretAccessKey,
@@ -131,34 +124,11 @@ class S3BucketService {
       throw error;
     }
   }
-
-  async createPresignedGetUrl(key, options = {}) {
-    const {
-      expiresIn = this.config.presignedUrlExpiresInSeconds
-        || DEFAULT_PRESIGNED_URL_EXPIRES_IN_SECONDS,
-      responseContentType,
-    } = options;
-
-    if (!key) {
-      throw new Error('S3 object key is required');
-    }
-
-    const command = new GetObjectCommand({
-      Bucket: this.config.bucketName,
-      Key: key,
-      ...(responseContentType ? { ResponseContentType: responseContentType } : {}),
-    });
-
-    return getSignedUrl(this.client, command, {
-      expiresIn,
-    });
-  }
 }
 
 export {
   assertBucketConfig,
   createS3Client,
-  DEFAULT_PRESIGNED_URL_EXPIRES_IN_SECONDS,
   isMissingObjectError,
 };
 export default S3BucketService;

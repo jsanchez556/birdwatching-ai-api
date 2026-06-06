@@ -35,7 +35,6 @@ const { default: errorMiddleware } = await import('../src/middleware/error.middl
 
 function createConfig() {
   return {
-    endpointUrl: 'https://example-bucket.railway.app',
     region: 'us-west-1',
     bucketName: 'bucket',
     accessKeyId: 'test-access-key',
@@ -157,31 +156,6 @@ describe('S3BucketService', () => {
     });
   });
 
-  it('creates presigned URLs for private objects', async () => {
-    const service = new S3BucketService({
-      config: createConfig(),
-    });
-
-    const signedUrl = await service.createPresignedGetUrl(
-      'external/xenocanto/audio/774101/download',
-      { expiresIn: 120 }
-    );
-    const parsedUrl = new URL(signedUrl);
-
-    expect(parsedUrl.origin).toBe('https://example-bucket.railway.app');
-    expect(parsedUrl.pathname).toBe('/bucket/external/xenocanto/audio/774101/download');
-    expect(parsedUrl.searchParams.get('X-Amz-Expires')).toBe('120');
-    expect(parsedUrl.searchParams.has('X-Amz-Signature')).toBe(true);
-  });
-
-  it('requires an object key before creating a presigned URL', async () => {
-    const service = new S3BucketService({
-      client: { send: jest.fn() },
-      config: createConfig(),
-    });
-
-    await expect(service.createPresignedGetUrl()).rejects.toThrow('S3 object key is required');
-  });
 });
 
 describe('MediaAssetUploadService', () => {
@@ -393,14 +367,14 @@ describe('MediaAssetUploadService', () => {
   });
 });
 
-function createMediaTestApp(bucketService) {
+function createMediaTestApp(options = {}) {
   const app = express();
 
   app.get('/files', (req, res, next) => {
     next(new HttpError(400, 'File name is required.', { code: 'FILE_NAME_REQUIRED' }));
   });
   app.get('/files/:fileName', createFileHandler({
-    bucketService,
+    cloudFrontBaseUrl: options.cloudFrontBaseUrl ?? 'https://cdn.example.test/media/',
   }));
   app.use(errorMiddleware);
 
@@ -418,41 +392,55 @@ describe('media routes', () => {
     )).toBe('external/xenocanto/images/sounds/spectrograms/fscgenvpxk/774101/colour.png');
   });
 
-  it('returns a temporary signed URL for an existing private file', async () => {
+  it('returns a CloudFront URL for a valid file key', async () => {
     const key = 'external/xenocanto/images/sounds/spectrograms/fscgenvpxk/774101/colour.png';
-    const signedUrl = 'https://example-bucket.railway.app/bucket/external/xenocanto/images/sounds/spectrograms/fscgenvpxk/774101/colour.png?X-Amz-Signature=test';
-    const bucketService = {
-      config: {
-        presignedUrlExpiresInSeconds: 900,
-      },
-      objectExists: jest.fn().mockResolvedValue(true),
-      createPresignedGetUrl: jest.fn().mockResolvedValue(signedUrl),
-    };
 
-    const res = await request(createMediaTestApp(bucketService))
+    const res = await request(createMediaTestApp())
       .get(`/files/${encodeURIComponent(key)}`);
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({
       success: true,
       data: {
-        url: signedUrl,
+        url: 'https://cdn.example.test/media/external/xenocanto/images/sounds/spectrograms/fscgenvpxk/774101/colour.png',
       },
       meta: {
-        expiresInSeconds: 900,
+        delivery: 'cloudfront',
       },
     });
-    expect(bucketService.objectExists).toHaveBeenCalledWith(key);
-    expect(bucketService.createPresignedGetUrl).toHaveBeenCalledWith(key);
   });
 
-  it('returns a temporary signed URL from the general files route', async () => {
-    const signedUrl = 'https://example-bucket.railway.app/bucket/sonograms/106498_grey-small.png?X-Amz-Signature=test';
+  it('returns a CloudFront URL without checking S3', async () => {
+    const key = 'external/xenocanto/images/sounds/spectrograms/fscgenvpxk/774101/colour.png';
     const bucketService = {
       config: {},
-      objectExists: jest.fn().mockResolvedValue(true),
-      createPresignedGetUrl: jest.fn().mockResolvedValue(signedUrl),
+      objectExists: jest.fn(),
     };
+    const app = express();
+
+    app.get('/files/:fileName', createFileHandler({
+      bucketService,
+      cloudFrontBaseUrl: 'https://cdn.example.test/media/',
+    }));
+    app.use(errorMiddleware);
+
+    const res = await request(app)
+      .get(`/files/${encodeURIComponent(key)}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({
+      success: true,
+      data: {
+        url: 'https://cdn.example.test/media/external/xenocanto/images/sounds/spectrograms/fscgenvpxk/774101/colour.png',
+      },
+      meta: {
+        delivery: 'cloudfront',
+      },
+    });
+    expect(bucketService.objectExists).not.toHaveBeenCalled();
+  });
+
+  it('returns a CloudFront URL from the general files route', async () => {
     const app = express();
 
     app.get('/files', (req, res, next) => {
@@ -462,7 +450,7 @@ describe('media routes', () => {
       next(new HttpError(400, 'File name is required.', { code: 'FILE_NAME_REQUIRED' }));
     });
     app.get('/files/:folderName/:filename', createFileHandler({
-      bucketService,
+      cloudFrontBaseUrl: 'https://cdn.example.test',
       buildKey: (req) => `${req.params.folderName}/${req.params.filename}`,
     }));
     app.use(errorMiddleware);
@@ -471,23 +459,14 @@ describe('media routes', () => {
       .get('/files/sonograms/106498_grey-small.png');
 
     expect(res.statusCode).toBe(200);
-    expect(res.body.data.url).toBe(signedUrl);
-    expect(bucketService.objectExists).toHaveBeenCalledWith('sonograms/106498_grey-small.png');
-    expect(bucketService.createPresignedGetUrl)
-      .toHaveBeenCalledWith('sonograms/106498_grey-small.png');
+    expect(res.body.data.url).toBe('https://cdn.example.test/sonograms/106498_grey-small.png');
   });
 
   it('supports tour media object keys through the files route', async () => {
-    const signedUrl = 'https://example-bucket.railway.app/bucket/tours/1.png?X-Amz-Signature=test';
-    const bucketService = {
-      config: {},
-      objectExists: jest.fn().mockResolvedValue(true),
-      createPresignedGetUrl: jest.fn().mockResolvedValue(signedUrl),
-    };
     const app = express();
 
     app.get('/files/:folderName/:filename', createFileHandler({
-      bucketService,
+      cloudFrontBaseUrl: 'https://cdn.example.test/media/',
       buildKey: (req) => `${req.params.folderName}/${req.params.filename}`,
     }));
     app.use(errorMiddleware);
@@ -495,40 +474,27 @@ describe('media routes', () => {
     const res = await request(app).get('/files/tours/1.png');
 
     expect(res.statusCode).toBe(200);
-    expect(res.body.data.url).toBe(signedUrl);
-    expect(bucketService.objectExists).toHaveBeenCalledWith('tours/1.png');
-    expect(bucketService.createPresignedGetUrl).toHaveBeenCalledWith('tours/1.png');
+    expect(res.body.data.url).toBe('https://cdn.example.test/media/tours/1.png');
   });
 
-  it('returns a safe 404 when the private file is missing', async () => {
+  it('returns a safe error when CloudFront is not configured', async () => {
     const key = 'external/xenocanto/images/sounds/spectrograms/missing.png';
-    const bucketService = {
-      config: {},
-      objectExists: jest.fn().mockResolvedValue(false),
-      createPresignedGetUrl: jest.fn(),
-    };
 
-    const res = await request(createMediaTestApp(bucketService))
+    const res = await request(createMediaTestApp({ cloudFrontBaseUrl: '' }))
       .get(`/files/${encodeURIComponent(key)}`);
 
-    expect(res.statusCode).toBe(404);
+    expect(res.statusCode).toBe(500);
     expect(res.body).toEqual({
       success: false,
       error: {
-        code: 'FILE_NOT_FOUND',
-        message: 'File not found.',
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Internal server error',
       },
     });
-    expect(bucketService.createPresignedGetUrl).not.toHaveBeenCalled();
   });
 
   it('returns safe validation errors for invalid or missing file names', async () => {
-    const bucketService = {
-      config: {},
-      objectExists: jest.fn(),
-      createPresignedGetUrl: jest.fn(),
-    };
-    const app = createMediaTestApp(bucketService);
+    const app = createMediaTestApp();
 
     const invalidPathResponse = await request(app)
       .get(`/files/${encodeURIComponent('external/xenocanto/images/bad path.png')}`);
@@ -539,6 +505,5 @@ describe('media routes', () => {
     expect(invalidPathResponse.body.error.code).toBe('INVALID_FILE_NAME');
     expect(missingPathResponse.statusCode).toBe(400);
     expect(missingPathResponse.body.error.code).toBe('FILE_NAME_REQUIRED');
-    expect(bucketService.objectExists).not.toHaveBeenCalled();
   });
 });
