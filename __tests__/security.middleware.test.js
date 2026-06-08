@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 import request from 'supertest';
 
-process.env.CORS_ORIGINS = 'https://app.example.com';
+process.env.CORS_ORIGINS = ' https://app.example.com, https://admin.example.com , ';
 
 await jest.unstable_mockModule('../src/utils/logger.js', () => ({
   default: {
@@ -26,6 +26,15 @@ describe('security middleware', () => {
     expect(res.headers.vary).toContain('Origin');
   });
 
+  it('allows additional comma-separated CORS origins after trimming whitespace', async () => {
+    const res = await request(app)
+      .get('/health')
+      .set('Origin', 'https://admin.example.com');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['access-control-allow-origin']).toBe('https://admin.example.com');
+  });
+
   it('rejects disallowed CORS origins', async () => {
     const res = await request(app)
       .get('/health')
@@ -33,6 +42,14 @@ describe('security middleware', () => {
 
     expect(res.statusCode).toBe(403);
     expect(res.body.error.code).toBe('CORS_ORIGIN_DENIED');
+  });
+
+  it('preserves valid requests without an origin header', async () => {
+    const res = await request(app)
+      .get('/health');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['access-control-allow-origin']).toBeUndefined();
   });
 
   it('sanitizes prototype pollution keys and null bytes', () => {

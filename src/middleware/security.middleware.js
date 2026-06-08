@@ -17,15 +17,7 @@ function isOriginAllowed(origin) {
     return true;
   }
 
-  if (env.corsOrigins.includes('*')) {
-    return true;
-  }
-
-  if (!hasAllowedOrigins() && env.nodeEnv !== 'production') {
-    return true;
-  }
-
-  return env.corsOrigins.includes(origin);
+  return hasAllowedOrigins() && env.corsOrigins.includes(origin);
 }
 
 function getAllowedOrigin(origin) {
@@ -33,15 +25,7 @@ function getAllowedOrigin(origin) {
     return null;
   }
 
-  if (env.corsOrigins.includes('*')) {
-    return '*';
-  }
-
-  if (!hasAllowedOrigins() && env.nodeEnv !== 'production') {
-    return origin;
-  }
-
-  return env.corsOrigins.includes(origin) ? origin : null;
+  return hasAllowedOrigins() && env.corsOrigins.includes(origin) ? origin : null;
 }
 
 export function corsProtection(req, res, next) {
