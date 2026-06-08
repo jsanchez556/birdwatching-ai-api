@@ -42,6 +42,7 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
 }));
 
 const { default: chatService } = await import('../src/services/chat.service.js');
+const { default: logger } = await import('../src/utils/logger.js');
 
 describe('ChatService streaming orchestration', () => {
   beforeEach(() => {
@@ -96,11 +97,12 @@ describe('ChatService streaming orchestration', () => {
     );
     expect(mockStreamResponseWithTools).toHaveBeenCalledWith(
       conversationMessages,
-      {
+      expect.objectContaining({
         clientIP: '127.0.0.1',
         conversationId: 'conversation-123',
         role: 'visitor',
-      },
+        parentTraceId: expect.any(String),
+      }),
       {
         onChunk: expect.any(Function),
         signal: undefined,
@@ -158,11 +160,12 @@ describe('ChatService streaming orchestration', () => {
       { onStart: jest.fn(), onChunk: jest.fn() }
     );
 
-    expect(mockStreamResponseWithTools).toHaveBeenCalledWith(augmentedMessages, {
+    expect(mockStreamResponseWithTools).toHaveBeenCalledWith(augmentedMessages, expect.objectContaining({
       clientIP: '127.0.0.1',
       conversationId: 'conversation-123',
       role: 'visitor',
-    }, {
+      parentTraceId: expect.any(String),
+    }), {
       onChunk: expect.any(Function),
       signal: undefined,
     });
@@ -630,6 +633,18 @@ describe('ChatService streaming orchestration', () => {
       'I can help with Costa Rica birdwatching, tours, pricing, or reservations. Could you rephrase what you would like to do next?'
     );
     expect(events.onReplace).toHaveBeenCalledWith(result.response);
+    expect(logger.warn).toHaveBeenCalledWith('AI error monitored', expect.objectContaining({
+      event: 'hallucination_event',
+      conversationId: 'conversation-123',
+      code: 'SENSITIVE_AI_OUTPUT_BLOCKED',
+      stage: 'final_output_guardrail',
+    }));
+    expect(logger.warn).toHaveBeenCalledWith('AI error monitored', expect.objectContaining({
+      event: 'invalid_output',
+      conversationId: 'conversation-123',
+      code: 'SENSITIVE_AI_OUTPUT_BLOCKED',
+      stage: 'final_output_guardrail',
+    }));
     expect(mockSaveExchange).toHaveBeenCalledWith(
       'conversation-123',
       'What can you do?',

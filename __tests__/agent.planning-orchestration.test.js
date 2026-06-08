@@ -1326,6 +1326,26 @@ describe('multi-tool agent planning and orchestration', () => {
         }),
       ],
     }));
+    expect(result.debugTrace.events).toContainEqual(expect.objectContaining({
+      event: 'tool_retry_scheduled',
+      tool: 'searchTours',
+      attempt: 1,
+      nextAttempt: 2,
+      maxAttempts: 3,
+      failure: expect.objectContaining({ code: 'ETIMEDOUT' }),
+    }));
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      'AI error monitored',
+      expect.objectContaining({
+        event: 'tool_timeout',
+        toolName: 'searchTours',
+        conversationId: 'conversation-123',
+        attempt: 1,
+        retryable: true,
+        willRetry: true,
+        failure: expect.objectContaining({ code: 'ETIMEDOUT' }),
+      })
+    );
     expect(mockLogger.warn).toHaveBeenCalledWith(
       'Retrying agent tool call after retryable failure',
       expect.objectContaining({

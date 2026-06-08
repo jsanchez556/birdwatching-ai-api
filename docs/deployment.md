@@ -26,6 +26,9 @@ Optional:
 - `NODE_ENV`, defaults to `development`; allowed values are `development`, `test`, `production`
 - `OPENAI_MODEL`, defaults to `gpt-4o`
 - `OPENAI_EMBEDDING_MODEL`, defaults to `text-embedding-3-small`
+- `LANGCHAIN_API_KEY`, enables LangSmith trace export when set with `LANGCHAIN_TRACING=true`
+- `LANGCHAIN_TRACING`, set to `true` to enable LangSmith-compatible tracing
+- `LANGCHAIN_PROJECT`, defaults to `birdwatching-ai`
 - `CORS_ORIGINS`, comma-separated allowed origins; empty means no CORS allow-origin header is set
 - `LOG_FILES_ENABLED`, `true` or `false`; defaults to console-only logging
 - `JWT_EXPIRES_IN`, defaults to `7d`
@@ -71,6 +74,49 @@ Production database connections use SSL with `rejectUnauthorized: false`.
 - RAG retrieval reads PostgreSQL `knowledge_documents` and `knowledge_chunks`; chat requests do not ingest files or write vectors.
 - Tour seed data begins in `003_create_tour_reservations.sql`; `011_tours_refactor.sql` adds tour `node_id`, coordinates, start/end dates, and the `country`/`zone`/`node`/`birds`/`birds_by_node` reference tables for Costa Rica birding geography and target species.
 - Tour reservation availability is durable PostgreSQL state and is updated transactionally by PostgreSQL functions.
+
+## AI Observability
+Centralized AI telemetry lives under `src/observability`, `src/tracing`, and `src/monitoring`.
+Tracing is safe to leave disabled locally; the app still records internal latency,
+token, and error telemetry without requiring LangSmith credentials. When LangSmith
+credentials are present, the observability service creates and updates sanitized
+LangSmith runs through the `langsmith` SDK.
+
+Set the following variables to export traces to LangSmith:
+```bash
+LANGCHAIN_TRACING=true
+LANGCHAIN_PROJECT=birdwatching-ai
+LANGCHAIN_API_KEY=<langsmith-api-key>
+```
+
+Current AI trace boundaries:
+- Root streamed chat AI execution flow, including response length, source count, prompt versions, reservations, and tool names
+- Conversation context assembly, including prompt/memory message counts by role
+- LLM chat completions for tool resolution and final streaming responses
+- OpenAI embedding generation used by RAG retrieval
+- RAG pipeline calls, including retrieval latency, retrieved chunk summaries, similarity scores, grounding context, and prompt construction metadata
+- Agent orchestration, including user request metadata, planning, tool sequence, prompt assembly, and final response generation
+- Multi-tool execution flows, including planner output, ordered tool steps, failures, skipped steps, retry counts, and retry scheduling events
+- Tour tool execution through the registry and agent executor
+
+Verify traces by running a chat request with the variables above set, then checking
+the `birdwatching-ai` project in LangSmith. Application logs also include
+`ai_trace_started`, `ai_trace_completed`, `ai_trace_failed`, and `ai_token_usage`
+events with redacted metadata.
+
+AI error monitoring emits `AI error monitored` log entries with stable event names:
+- `retrieval_failed` for failed RAG retrievals
+- `tool_timeout` for timeout-class tool failures
+- `tool_failed` for non-timeout tool failures
+- `invalid_json_output` for malformed model tool-call arguments
+- `invalid_output` for assistant output blocked by output guardrails
+- `hallucination_event` for guardrail-detected unsupported or unsafe assistant output
+- `prompt_evaluation_tracked` for prompt version comparison telemetry
+
+LangSmith evaluation feedback keys:
+- `grounding_quality`
+- `answer_relevance`
+- `tool_correctness`
 
 ## CORS
 `CORS_ORIGINS` is parsed as a comma-separated allowlist. If it includes `*`,

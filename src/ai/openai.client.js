@@ -4,6 +4,8 @@ import asyncRetry from '../utils/asyncRetry.js';
 import logger from '../utils/logger.js';
 import { availableTools, executeToolCall } from './tools/index.js';
 import { addCompletionUsage } from './evaluations/token.usage.js';
+import { traceLlmCall } from '../tracing/aiTracing.middleware.js';
+import aiTelemetry from '../monitoring/aiTelemetry.js';
 
 const retryableStatuses = new Set([408, 409, 429, 500, 502, 503, 504]);
 
@@ -57,7 +59,14 @@ class OpenAIClient {
     const conversation = [...messages];
 
     for (let iteration = 0; iteration <= maxToolIterations; iteration += 1) {
-      const completion = await asyncRetry(() => this.client.chat.completions.create({
+      const completion = await traceLlmCall('chat_completion_tool_resolution', {
+        parentTraceId: metadata.agentTraceId || metadata.parentTraceId,
+        conversationId: metadata.conversationId,
+        model: this.model,
+        toolIteration: iteration,
+        messageCount: conversation.length,
+        toolCount: tools.length,
+      }, () => asyncRetry(() => this.client.chat.completions.create({
         model: this.model,
         messages: conversation,
         tools,
@@ -66,6 +75,12 @@ class OpenAIClient {
       }, { signal }), {
         retries: 2,
         shouldRetry: isRetryableOpenAIError,
+      }), {
+        outputMetadata: (result) => ({
+          requestId: result.id,
+          model: result.model || this.model,
+          toolCallCount: result.choices[0]?.message?.tool_calls?.length || 0,
+        }),
       });
 
       this.logCompletionUsage('chat_completion_stream_tool_resolution', completion, {
@@ -118,39 +133,56 @@ class OpenAIClient {
     let streamModel = this.model;
     let streamId;
 
-    const stream = await asyncRetry(() => this.client.chat.completions.create({
+    return traceLlmCall('chat_completion_stream', {
+      parentTraceId: options.metadata?.agentTraceId || options.metadata?.parentTraceId,
+      conversationId: options.metadata?.conversationId,
       model: this.model,
-      messages,
-      stream: true,
-      stream_options: {
-        include_usage: true,
-      },
-    }, { signal }), {
-      retries: 2,
-      shouldRetry: isRetryableOpenAIError,
+      messageCount: messages.length,
+      finalPromptMessageCount: options.metadata?.finalPromptMessageCount,
+      groundingContext: options.metadata?.groundingContext,
+    }, async (trace) => {
+      const stream = await asyncRetry(() => this.client.chat.completions.create({
+        model: this.model,
+        messages,
+        stream: true,
+        stream_options: {
+          include_usage: true,
+        },
+      }, { signal }), {
+        retries: 2,
+        shouldRetry: isRetryableOpenAIError,
+      });
+
+      for await (const chunk of stream) {
+        streamId ||= chunk.id;
+        streamModel = chunk.model || streamModel;
+
+        if (chunk.usage) {
+          trace.recordTokenUsage(chunk.usage);
+          this.logCompletionUsage('chat_completion_stream', {
+            id: streamId,
+            model: streamModel,
+            usage: chunk.usage,
+          }, {}, usage);
+        }
+
+        const content = chunk.choices?.[0]?.delta?.content;
+
+        if (content) {
+          response += content;
+          await onChunk(content);
+        }
+      }
+
+      return response;
+    }, {
+      tokenUsage: null,
+      outputMetadata: () => ({
+        requestId: streamId,
+        model: streamModel,
+        responseLength: response.length,
+      }),
     });
-
-    for await (const chunk of stream) {
-      streamId ||= chunk.id;
-      streamModel = chunk.model || streamModel;
-
-      if (chunk.usage) {
-        this.logCompletionUsage('chat_completion_stream', {
-          id: streamId,
-          model: streamModel,
-          usage: chunk.usage,
-        }, {}, usage);
-      }
-
-      const content = chunk.choices?.[0]?.delta?.content;
-
-      if (content) {
-        response += content;
-        await onChunk(content);
-      }
-    }
-
-    return response;
   }
 
   async streamChatCompletionWithTools(messages, options = {}) {
@@ -159,12 +191,22 @@ class OpenAIClient {
   }
 
   async generateEmbedding(input) {
-    const embeddingResponse = await asyncRetry(() => this.client.embeddings.create({
+    const inputCount = Array.isArray(input) ? input.length : 1;
+    const embeddingResponse = await traceLlmCall('embedding_generation', {
+      model: this.embeddingModel,
+      inputCount,
+    }, () => asyncRetry(() => this.client.embeddings.create({
       model: this.embeddingModel,
       input,
     }), {
       retries: 2,
       shouldRetry: isRetryableOpenAIError,
+    }), {
+      outputMetadata: (result) => ({
+        requestId: result.id,
+        model: result.model || this.embeddingModel,
+        inputCount,
+      }),
     });
 
     logger.info('OpenAI embeddings finished', {
@@ -173,14 +215,14 @@ class OpenAIClient {
       requestId: embeddingResponse.id,
       promptTokens: embeddingResponse.usage?.prompt_tokens,
       totalTokens: embeddingResponse.usage?.total_tokens,
-      inputCount: Array.isArray(input) ? input.length : 1,
+      inputCount,
     });
 
     const embeddings = [...embeddingResponse.data]
       .sort((left, right) => left.index - right.index)
       .map((item) => item.embedding);
 
-    if (embeddings.length !== (Array.isArray(input) ? input.length : 1)) {
+    if (embeddings.length !== inputCount) {
       throw new Error('OpenAI returned an unexpected number of embeddings');
     }
 
@@ -193,6 +235,14 @@ class OpenAIClient {
     try {
       return JSON.parse(rawArguments);
     } catch (error) {
+      aiTelemetry.recordAiError('invalid_json_output', {
+        toolName: toolCall.function?.name,
+        rawArgumentLength: rawArguments.length,
+        error: {
+          name: error.name,
+          message: error.message,
+        },
+      });
       logger.warn('Failed to parse OpenAI tool call arguments', {
         toolName: toolCall.function?.name,
         error: error.message,

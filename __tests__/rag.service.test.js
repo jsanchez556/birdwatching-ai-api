@@ -23,7 +23,10 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
   },
 }));
 
-const { default: ragService } = await import('../src/services/rag.service.js');
+const {
+  default: ragService,
+  summarizeRetrievedChunks,
+} = await import('../src/services/rag.service.js');
 const { formatRetrievedContext } = await import('../src/ai/prompts/rag.context.js');
 const { default: logger } = await import('../src/utils/logger.js');
 
@@ -156,6 +159,23 @@ describe('RagService', () => {
       },
     ]);
     expect(context.birdMatches).toEqual([]);
+    expect(context.ragTrace).toMatchObject({
+      retrievedChunkCount: 1,
+      sourceCount: 1,
+      originalMessageCount: 2,
+      groundedMessageCount: 3,
+      contextMessageLength: expect.any(Number),
+      retrievedChunks: [
+        expect.objectContaining({
+          index: 0,
+          id: 'Resplendent Quetzal',
+          name: 'Resplendent Quetzal',
+          similarityScore: 0.98,
+          textLength: expect.any(Number),
+        }),
+      ],
+    });
+    expect(context.ragTrace.contextMessageLength).toBeGreaterThan(0);
     expect(logger.info).toHaveBeenCalledWith('RAG context retrieved for chat', {
       conversationId: 'conversation-123',
       documentCount: 1,
@@ -168,6 +188,25 @@ describe('RagService', () => {
         },
       ],
     });
+    expect(logger.info).toHaveBeenCalledWith('RAG retrieved chunks for chat', {
+      event: 'rag_retrieved_chunks',
+      conversationId: 'conversation-123',
+      chunkCount: 1,
+      chunks: [
+        expect.objectContaining({
+          name: 'Resplendent Quetzal',
+          similarityScore: 0.98,
+        }),
+      ],
+    });
+    expect(logger.info).toHaveBeenCalledWith('RAG grounding context assembled for chat', {
+      event: 'rag_grounding_context_assembled',
+      conversationId: 'conversation-123',
+      retrievedChunkCount: 1,
+      sourceCount: 1,
+      contextMessageLength: expect.any(Number),
+      groundedMessageCount: 3,
+    });
   });
 
   it('returns original messages when retrieval fails', async () => {
@@ -179,11 +218,25 @@ describe('RagService', () => {
     mockRetrieve.mockRejectedValue(new Error('PostgreSQL unavailable'));
 
     await expect(ragService.buildContext(messages, 'Where can I see quetzals?'))
-      .resolves.toEqual({
+      .resolves.toMatchObject({
         messages,
         sources: [],
         birdMatches: [],
+        ragTrace: {
+          retrievedChunkCount: 0,
+          sourceCount: 0,
+          groundedMessageCount: 2,
+          error: 'rag_retrieval_failed',
+        },
       });
+    expect(logger.warn).toHaveBeenCalledWith('AI error monitored', expect.objectContaining({
+      event: 'retrieval_failed',
+      queryLength: 'Where can I see quetzals?'.length,
+      error: expect.objectContaining({
+        name: 'Error',
+        message: '[redacted]',
+      }),
+    }));
   });
 
   it('returns original messages when pgvector has no matching documents', async () => {
@@ -195,11 +248,57 @@ describe('RagService', () => {
     mockRetrieve.mockResolvedValue([]);
 
     await expect(ragService.buildContext(messages, 'Where can I see quetzals?'))
-      .resolves.toEqual({
+      .resolves.toMatchObject({
         messages,
         sources: [],
         birdMatches: [],
+        ragTrace: {
+          retrievedChunkCount: 0,
+          sourceCount: 0,
+          originalMessageCount: 2,
+          groundedMessageCount: 2,
+          contextMessageLength: 0,
+          retrievedChunks: [],
+          sources: [],
+        },
       });
+  });
+
+  it('summarizes retrieved chunks without raw prompt context text', () => {
+    expect(summarizeRetrievedChunks([
+      {
+        id: 'chunk-1',
+        documentId: 'doc-1',
+        chunkId: 'chunk-a',
+        chunkIndex: 2,
+        name: 'Resplendent Quetzal',
+        source: 'birds.json',
+        category: 'Trogons',
+        documentType: 'bird_profile',
+        locations: 'Monteverde',
+        score: 0.987654321,
+        semanticScore: 0.9123456,
+        keywordScore: 0.25,
+        text: 'Sensitive retrieved context body that should not be logged.',
+      },
+    ])).toEqual([
+      {
+        index: 0,
+        id: 'chunk-1',
+        documentId: 'doc-1',
+        chunkId: 'chunk-a',
+        chunkIndex: 2,
+        name: 'Resplendent Quetzal',
+        source: 'birds.json',
+        category: 'Trogons',
+        documentType: 'bird_profile',
+        locations: 'Monteverde',
+        similarityScore: 0.987654,
+        semanticScore: 0.912346,
+        keywordScore: 0.25,
+        textLength: 59,
+      },
+    ]);
   });
 
   it('builds compact bird match metadata from retrieved bird profiles', async () => {

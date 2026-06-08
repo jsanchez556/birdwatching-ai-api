@@ -1,6 +1,10 @@
 import openaiClient from '../openai.client.js';
 import birdwatchingAgent from '../agents/birdwatching.agent.js';
 import logger from '../../utils/logger.js';
+import {
+  traceAgentOrchestration,
+  traceAgentPlanning,
+} from '../../tracing/aiTracing.middleware.js';
 
 function safeJson(value) {
   return JSON.stringify(value, null, 2);
@@ -180,6 +184,19 @@ export class AgentOrchestrator {
   }
 
   async generateResponse(messages, metadata = {}, options = {}) {
+    return traceAgentOrchestration('birdwatching_agent_generate_response', {
+      conversationId: metadata.conversationId,
+      role: metadata.role,
+      messageCount: messages.length,
+      hasCustomerContext: Boolean(metadata.customerContext),
+      hasConversationContext: Boolean(metadata.conversationContext),
+    }, (trace) => {
+      metadata.agentTraceId = trace.id;
+      return this.generateResponseUntraced(messages, metadata, options);
+    });
+  }
+
+  async generateResponseUntraced(messages, metadata = {}, options = {}) {
     const usage = options.usage || {};
     const onChunk = options.onChunk || (() => {});
     const userMessage = getLatestUserMessage(messages);
@@ -194,7 +211,16 @@ export class AgentOrchestrator {
       recentToolCount: conversationContext.recentToolsCalled.length,
     });
 
-    const plan = metadata.role === 'visitor'
+    const plan = await traceAgentPlanning('birdwatching_agent_planner', {
+      parentTraceId: metadata.agentTraceId,
+      conversationId: metadata.conversationId,
+      role: metadata.role,
+      messageLength: userMessage.length,
+      hasSelectedTour: Boolean(conversationContext.selectedTour || conversationContext.selectedTourId),
+      hasSelectedTransportation: Boolean(conversationContext.selectedTransportation),
+      transportationDeclined: Boolean(conversationContext.transportationDeclined),
+      recentToolCount: conversationContext.recentToolsCalled.length,
+    }, async () => (metadata.role === 'visitor'
       ? {
         status: 'visitor_bird_answer',
         steps: [],
@@ -203,7 +229,7 @@ export class AgentOrchestrator {
       : this.agent.planner.plan({
         message: userMessage,
         context: conversationContext,
-      });
+      })));
 
     metadata.agentPlan = {
       status: plan.status,
@@ -289,6 +315,16 @@ export class AgentOrchestrator {
     return this.aiClient.streamChatCompletion(finalMessages, {
       usage,
       onChunk,
+      metadata: {
+        ...metadata,
+        finalPromptMessageCount: finalMessages.length,
+        groundingContext: metadata.ragTrace ? {
+          retrievedChunkCount: metadata.ragTrace.retrievedChunkCount,
+          sourceCount: metadata.ragTrace.sourceCount,
+          contextMessageLength: metadata.ragTrace.contextMessageLength,
+          retrievedChunks: metadata.ragTrace.retrievedChunks,
+        } : undefined,
+      },
       signal: options.signal,
     });
   }

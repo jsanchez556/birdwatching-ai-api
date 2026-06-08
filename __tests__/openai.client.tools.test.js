@@ -30,6 +30,7 @@ await jest.unstable_mockModule('../src/ai/tools/index.js', () => ({
 }));
 
 const { default: openaiClient } = await import('../src/ai/openai.client.js');
+const { default: logger } = await import('../src/utils/logger.js');
 
 describe('OpenAIClient tool calling', () => {
   beforeEach(() => {
@@ -317,5 +318,24 @@ describe('OpenAIClient tool calling', () => {
       totalTokens: 3490,
       hasEstimatedCost: true,
     });
+  });
+
+  it('monitors invalid JSON tool-call output', () => {
+    const args = openaiClient.parseToolArguments({
+      function: {
+        name: 'checkAvailability',
+        arguments: '{"tourId":',
+      },
+    });
+
+    expect(args).toEqual({});
+    expect(logger.warn).toHaveBeenCalledWith('AI error monitored', expect.objectContaining({
+      event: 'invalid_json_output',
+      toolName: 'checkAvailability',
+      rawArgumentLength: 10,
+      error: expect.objectContaining({
+        name: 'SyntaxError',
+      }),
+    }));
   });
 });

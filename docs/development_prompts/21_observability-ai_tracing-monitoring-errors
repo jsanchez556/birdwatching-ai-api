@@ -1,0 +1,185 @@
+Using the repository instructions in [AGENTS.md](/home/jose/Documents/projects/birdwatching-ai-api/AGENTS.md), integrate LangSmith observability into the Birdwatching AI API platform.
+
+## Goal
+
+Add centralized AI observability so the platform can trace and monitor:
+
+- All LLM calls
+- RAG retrieval flows
+- Tool execution
+- Agent orchestration steps
+- Latency
+- Token usage
+- Errors and failed runs
+
+## Desired Structure
+
+Add or update modules under:
+
+```txt
+src/
+  observability/
+  tracing/
+  monitoring/
+```
+
+Use the existing repository architecture and naming conventions where possible.
+
+## Environment Context
+
+The following environment variables will be available:
+
+```env
+LANGCHAIN_API_KEY=
+LANGCHAIN_TRACING=true
+LANGCHAIN_PROJECT=birdwatching-ai
+```
+
+Do not hardcode secrets. Read configuration from environment variables.
+
+## Requirements
+
+1. Create a centralized observability service.
+   - Encapsulate LangSmith/LangChain tracing configuration.
+   - Provide helper methods for starting, ending, annotating, and error-reporting traces if needed.
+   - Keep the implementation reusable across LLM, RAG, tools, and agents.
+
+2. Add tracing middleware or wrappers.
+   - Instrument AI-related execution without scattering tracing logic throughout unrelated business code.
+   - Prefer reusable wrappers around LLM calls, retrievers, tools, and agent execution.
+   - Preserve existing behavior and response shapes.
+
+3. Trace LLM calls.
+   - Capture model name when available.
+   - Capture latency.
+   - Capture token usage when available from the model response.
+   - Capture errors without exposing secrets.
+
+4. Trace RAG retrieval.
+   - Capture query/input.
+   - Capture retrieval latency.
+   - Capture result count and relevant metadata.
+   - Do not log sensitive user data unnecessarily.
+
+5. Trace tool execution.
+   - Capture tool name.
+   - Capture input/output summaries where safe.
+   - Capture latency and errors.
+   - Avoid logging credentials, internal secrets, or raw sensitive payloads.
+
+6. Trace agent orchestration.
+   - Capture major agent steps, decisions, tool calls, and final output metadata.
+   - Keep traces grouped under the same parent run where possible.
+
+7. Add centralized AI telemetry.
+   - Provide a small telemetry layer for latency, token usage, and error reporting.
+   - Make it easy to expand later for metrics dashboards or logging sinks.
+   - Keep telemetry separate from request/response formatting.
+
+8. Update or add tests.
+   - Cover observability service behavior.
+   - Cover tracing wrappers/middleware.
+   - Mock LangSmith/LangChain boundaries.
+   - Ensure existing AI flows still work when tracing env vars are missing or disabled.
+
+9. Update documentation.
+   - Document required environment variables.
+   - Explain how tracing is enabled.
+   - Explain where LLM, RAG, tool, and agent traces are emitted.
+   - Mention how to verify traces in LangSmith.
+
+## Constraints
+
+- Follow the repository’s `AGENTS.md` instructions.
+- Do not introduce frontend code.
+- Do not change public API response contracts unless required.
+- Do not expose API keys, database URLs, raw stack traces, or private tokens.
+- Keep changes scoped to observability/tracing/monitoring and the AI execution paths that need instrumentation.
+- Prefer minimal, maintainable abstractions over broad refactors.
+
+## Verification
+
+After implementation:
+
+- Run the relevant test suite.
+- Confirm the app still works with tracing disabled.
+- Confirm tracing initializes correctly when:
+
+```env
+LANGCHAIN_TRACING=true
+LANGCHAIN_PROJECT=birdwatching-ai
+LANGCHAIN_API_KEY=<set>
+```
+
+- Summarize changed files, test results, and any assumptions.
+
+## Iteration 2:
+
+Add tracing for the RAG pipeline.
+
+Requirements:
+- log retrieved chunks
+- log similarity scores
+- log retrieval latency
+- trace grounding context
+
+Expected:
+
+Question
+→ retrieval
+→ retrieved chunks
+→ prompt construction
+→ final answer
+
+## Iteration 3:
+Trace the multi-tool AI agent execution flow.
+
+Requirements:
+- trace planning
+- trace tool sequence
+- trace failures
+- trace retries
+
+Expected:
+ 
+User request
+→ planner
+→ tool 1
+→ tool 2
+→ tool 3
+→ final response
+
+## Iteration 4:
+Implement AI error monitoring and logging.
+
+Track:
+- failed retrievals
+- hallucination events
+- tool failures
+- invalid outputs
+
+Logs: 
+retrieval_failed
+tool_timeout
+invalid_json_output
+
+## Iteration 5:
+Implement prompt version comparison and evaluation tracking.
+
+Compare:
+
+Prompt v1
+Prompt v2
+retrieval quality
+token usage
+latency
+
+
+## Iteration 6:
+Integrate LangSmith evaluations for:
+- grounding quality
+- answer relevance
+- tool correctness
+
+## Iteration 7:
+Improve observability coverage across the entire AI execution flow

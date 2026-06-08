@@ -10,6 +10,11 @@ import ragService from './rag.service.js';
 import usageService from './usage.service.js';
 import logger from '../utils/logger.js';
 import HttpError from '../utils/httpError.js';
+import aiTelemetry from '../monitoring/aiTelemetry.js';
+import {
+  traceAiExecutionFlow,
+  traceConversationContext,
+} from '../tracing/aiTracing.middleware.js';
 
 const STREAM_GUARDRAIL_BUFFER_CHARS = 48;
 const VISITOR_ROLE = 'visitor';
@@ -193,9 +198,32 @@ function mergeChatMeta(messageMeta = {}, conversationMeta = {}) {
 class ChatService {
   async processMessageStream(message, conversationId, clientIP, events = {}, options = {}) {
     const activeConversationId = conversationId?.trim() || randomUUID();
+    const role = resolveRole(options.authUser);
+
+    return traceAiExecutionFlow('chat_stream_ai_execution_flow', {
+      conversationId: activeConversationId,
+      role,
+      messageLength: message?.length || 0,
+      hasAuthUser: Boolean(options.authUser),
+      hasCustomerContext: Boolean(options.customerContext),
+      hasConversationContext: Boolean(options.conversationContext),
+    }, (trace) => this.processMessageStreamUntraced(
+      message,
+      activeConversationId,
+      clientIP,
+      events,
+      {
+        ...options,
+        aiExecutionTraceId: trace.id,
+      }
+    ));
+  }
+
+  async processMessageStreamUntraced(message, activeConversationId, clientIP, events = {}, options = {}) {
     const { signal, authUser } = options;
     const userId = authUser?.id;
     const role = resolveRole(authUser);
+    const parentTraceId = options.aiExecutionTraceId;
 
     logger.info('Streaming chat request received', {
       ip: clientIP,
@@ -246,15 +274,22 @@ class ChatService {
     throwIfAborted(signal);
     await conversationService.assertCanAccess(activeConversationId, userId);
 
-    const conversationMessages = userId === undefined || userId === null
-      ? await conversationService.buildConversationContext(message, activeConversationId)
-      : await conversationService.buildConversationContext(message, activeConversationId, { userId });
+    const conversationMessages = await traceConversationContext('chat_conversation_context', {
+      parentTraceId,
+      conversationId: activeConversationId,
+      role,
+      hasUserId: userId !== undefined && userId !== null,
+      messageLength: message.length,
+    }, () => (userId === undefined || userId === null
+      ? conversationService.buildConversationContext(message, activeConversationId)
+      : conversationService.buildConversationContext(message, activeConversationId, { userId })));
 
     throwIfAborted(signal);
 
     const ragContext = await ragService.buildContext(conversationMessages, message, {
       clientIP,
       conversationId: activeConversationId,
+      parentTraceId,
     });
 
     throwIfAborted(signal);
@@ -268,6 +303,8 @@ class ChatService {
       ...(authUser ? { authUser } : {}),
       ...(customerContext ? { customerContext } : {}),
       ...(options.conversationContext ? { conversationContext: options.conversationContext } : {}),
+      ...(ragContext.ragTrace ? { ragTrace: ragContext.ragTrace } : {}),
+      ...(parentTraceId ? { parentTraceId } : {}),
     };
 
     events.onStart?.({
@@ -296,6 +333,17 @@ class ChatService {
       }
 
       const replacement = error.guardrail.response;
+      aiTelemetry.recordAiError('hallucination_event', {
+        conversationId: activeConversationId,
+        code: error.guardrail.code,
+        reason: error.guardrail.reason,
+        stage: 'streaming_output_guardrail',
+      });
+      aiTelemetry.recordAiError('invalid_output', {
+        conversationId: activeConversationId,
+        code: error.guardrail.code,
+        stage: 'streaming_output_guardrail',
+      });
       events.onReplace?.(replacement);
       response = replacement;
     }
@@ -303,6 +351,17 @@ class ChatService {
     const outputGuardrail = applyChatOutputGuardrails(response);
 
     if (outputGuardrail.blocked) {
+      aiTelemetry.recordAiError('hallucination_event', {
+        conversationId: activeConversationId,
+        code: outputGuardrail.code,
+        reason: outputGuardrail.reason,
+        stage: 'final_output_guardrail',
+      });
+      aiTelemetry.recordAiError('invalid_output', {
+        conversationId: activeConversationId,
+        code: outputGuardrail.code,
+        stage: 'final_output_guardrail',
+      });
       logger.warn('Streaming chat response replaced by AI guardrail', {
         ip: clientIP,
         conversationId: activeConversationId,

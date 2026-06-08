@@ -3,6 +3,8 @@ import retrievalService from '../db/retrieval/retrieval.service.js';
 import vectorRepository from '../db/vector/vector.repository.js';
 import { injectRagContextMessage } from '../ai/prompts/prompt.builder.js';
 import { toKnowledgeSource } from '../ai/prompts/rag.context.js';
+import { traceRagPipeline, traceRagRetrieval } from '../tracing/aiTracing.middleware.js';
+import aiTelemetry from '../monitoring/aiTelemetry.js';
 
 const DEFAULT_TOP_K = 3;
 const DEFAULT_BIRD_MATCH_LIMIT = 6;
@@ -43,6 +45,64 @@ const QUESTION_STOP_WORDS = new Set([
   'where',
   'with',
 ]);
+
+function normalizeScore(value) {
+  const score = Number(value);
+  return Number.isFinite(score) ? Number(score.toFixed(6)) : undefined;
+}
+
+function summarizeRetrievedChunk(document = {}, index = 0) {
+  return compactObject({
+    index,
+    id: document.id,
+    documentId: document.documentId,
+    chunkId: document.chunkId,
+    chunkIndex: document.chunkIndex,
+    name: document.name || document.title,
+    source: document.source,
+    category: document.category,
+    documentType: document.documentType,
+    locations: document.locations,
+    similarityScore: normalizeScore(document.score),
+    semanticScore: normalizeScore(document.semanticScore),
+    keywordScore: normalizeScore(document.keywordScore),
+    mediaPriority: normalizeScore(document.mediaPriority),
+    textLength: document.text?.length || document.description?.length || 0,
+  });
+}
+
+function summarizeRetrievedChunks(documents = []) {
+  return documents.map(summarizeRetrievedChunk);
+}
+
+function buildGroundingTrace({
+  documents = [],
+  sources = [],
+  promptMessages = [],
+  originalMessageCount = 0,
+} = {}) {
+  const contextMessage = promptMessages.find((message, index) => (
+    index > 0
+    && message?.role === 'system'
+    && typeof message.content === 'string'
+    && message.content.includes('retrieved Costa Rica bird knowledge')
+  ));
+
+  return {
+    retrievedChunkCount: documents.length,
+    sourceCount: sources.length,
+    originalMessageCount,
+    groundedMessageCount: promptMessages.length,
+    contextMessageLength: contextMessage?.content?.length || 0,
+    retrievedChunks: summarizeRetrievedChunks(documents),
+    sources: sources.map((source, index) => compactObject({
+      index,
+      name: source.name,
+      location: source.location,
+      similarityScore: normalizeScore(source.similarityScore),
+    })),
+  };
+}
 
 function hasValue(value) {
   return value !== undefined && value !== null && value !== '';
@@ -347,22 +407,45 @@ class RagService {
 
   async retrieveContext(question, options = {}) {
     const topK = options.topK || DEFAULT_TOP_K;
+    const filters = {
+      ...(options.filters || {}),
+      ...(options.category ? { category: options.category } : {}),
+      ...(options.location ? { location: options.location } : {}),
+      ...(options.title ? { title: options.title } : {}),
+    };
 
-    return retrievalService.retrieve(question, {
+    return traceRagRetrieval('chat_rag_retrieval', {
+      parentTraceId: options.parentTraceId,
+      conversationId: options.conversationId,
+      queryLength: question?.length || 0,
       topK,
-      filters: {
-        ...(options.filters || {}),
-        ...(options.category ? { category: options.category } : {}),
-        ...(options.location ? { location: options.location } : {}),
-        ...(options.title ? { title: options.title } : {}),
-      },
+      filters,
+    }, () => retrievalService.retrieve(question, {
+      topK,
+      filters,
       minScore: options.minScore,
       minSemanticScore: options.minSemanticScore,
       maxChunksPerDocument: options.maxChunksPerDocument,
-    });
+    }));
   }
 
   async buildContext(messages, question, metadata = {}) {
+    return traceRagPipeline('chat_rag_pipeline', {
+      parentTraceId: metadata.parentTraceId,
+      conversationId: metadata.conversationId,
+      queryLength: question?.length || 0,
+      inputMessageCount: Array.isArray(messages) ? messages.length : 0,
+      topK: metadata.topK || DEFAULT_TOP_K,
+    }, async () => this.buildContextUntraced(messages, question, metadata), {
+      outputMetadata: (result) => result.ragTrace || {
+        retrievedChunkCount: 0,
+        sourceCount: 0,
+        groundedMessageCount: result.messages?.length || 0,
+      },
+    });
+  }
+
+  async buildContextUntraced(messages, question, metadata = {}) {
     try {
       let documents = await this.retrieveContext(question, metadata);
       const supplementalFamily = getSupplementalBirdFamily(documents, question);
@@ -377,6 +460,15 @@ class RagService {
         documents = mergeDocuments(documents, supplementalDocuments);
       }
 
+      const retrievedChunks = summarizeRetrievedChunks(documents);
+
+      logger.info('RAG retrieved chunks for chat', {
+        event: 'rag_retrieved_chunks',
+        conversationId: metadata.conversationId,
+        chunkCount: documents.length,
+        chunks: retrievedChunks,
+      });
+
       if (documents.length === 0) {
         logger.info('No RAG documents retrieved for chat', {
           conversationId: metadata.conversationId,
@@ -386,11 +478,24 @@ class RagService {
           messages,
           sources: [],
           birdMatches: [],
+          ragTrace: buildGroundingTrace({
+            documents: [],
+            sources: [],
+            promptMessages: messages,
+            originalMessageCount: messages.length,
+          }),
         };
       }
 
       const sources = documents.map(toKnowledgeSource);
       const birdMatches = buildBirdMatches(documents, question);
+      const groundedMessages = injectRagContextMessage(messages, documents);
+      const ragTrace = buildGroundingTrace({
+        documents,
+        sources,
+        promptMessages: groundedMessages,
+        originalMessageCount: messages.length,
+      });
 
       logger.info('RAG context retrieved for chat', {
         conversationId: metadata.conversationId,
@@ -403,12 +508,33 @@ class RagService {
         })),
       });
 
+      logger.info('RAG grounding context assembled for chat', {
+        event: 'rag_grounding_context_assembled',
+        conversationId: metadata.conversationId,
+        retrievedChunkCount: ragTrace.retrievedChunkCount,
+        sourceCount: ragTrace.sourceCount,
+        contextMessageLength: ragTrace.contextMessageLength,
+        groundedMessageCount: ragTrace.groundedMessageCount,
+      });
+
       return {
-        messages: injectRagContextMessage(messages, documents),
+        messages: groundedMessages,
         sources,
         birdMatches,
+        ragTrace,
       };
     } catch (error) {
+      aiTelemetry.recordAiError('retrieval_failed', {
+        conversationId: metadata.conversationId,
+        queryLength: question?.length || 0,
+        topK: metadata.topK || DEFAULT_TOP_K,
+        error: {
+          name: error.name,
+          code: error.code,
+          status: error.status,
+          message: error.message,
+        },
+      });
       logger.warn('Failed to retrieve RAG context; continuing without it', {
         conversationId: metadata.conversationId,
         error: error.message,
@@ -418,9 +544,20 @@ class RagService {
         messages,
         sources: [],
         birdMatches: [],
+        ragTrace: {
+          retrievedChunkCount: 0,
+          sourceCount: 0,
+          groundedMessageCount: messages.length,
+          error: 'rag_retrieval_failed',
+        },
       };
     }
   }
 }
 
+export {
+  buildGroundingTrace,
+  summarizeRetrievedChunk,
+  summarizeRetrievedChunks,
+};
 export default new RagService();

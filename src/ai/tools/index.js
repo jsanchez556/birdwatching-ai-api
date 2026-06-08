@@ -6,6 +6,8 @@ import calculatePricing from './calculatePricing.tool.js';
 import checkAvailability from './checkAvailability.tool.js';
 import createReservation from './createReservation.tool.js';
 import { TOOL_EXECUTION_FAILED_MESSAGE } from './tool.executor.js';
+import { traceToolExecution } from '../../tracing/aiTracing.middleware.js';
+import aiTelemetry from '../../monitoring/aiTelemetry.js';
 
 const tourToolHandlers = {
   searchTours,
@@ -84,39 +86,63 @@ export function formatToolExecutionFailure() {
   };
 }
 
+function isTimeoutError(error = {}) {
+  return error.code === 'ETIMEDOUT'
+    || error.code === 'TIMEOUT'
+    || error.name === 'TimeoutError'
+    || /timeout|timed out/i.test(error.message || '');
+}
+
 export async function executeToolCall(name, args = {}, metadata = {}) {
-  const handler = registry.handlers.get(name);
+  return traceToolExecution(name || 'unknown_tool', {
+    conversationId: metadata.conversationId,
+    role: metadata.role,
+    hasArguments: Boolean(args && Object.keys(args).length),
+  }, async () => {
+    const handler = registry.handlers.get(name);
 
-  if (!handler) {
-    logger.warn('Unknown tool requested', {
-      toolName: name,
-      conversationId: metadata.conversationId,
-    });
+    if (!handler) {
+      logger.warn('Unknown tool requested', {
+        toolName: name,
+        conversationId: metadata.conversationId,
+      });
 
-    return {
-      success: false,
-      code: 'UNKNOWN_TOOL',
-      message: `Tool ${name} is not available.`,
-    };
-  }
+      return {
+        success: false,
+        code: 'UNKNOWN_TOOL',
+        message: `Tool ${name} is not available.`,
+      };
+    }
 
-  try {
-    const result = await handler(args, metadata);
-    logger.info('Tool call completed', {
-      toolName: name,
-      success: result?.success !== false,
-      conversationId: metadata.conversationId,
-    });
-    return result;
-  } catch (error) {
-    logger.warn('Tool call failed', {
-      toolName: name,
-      error: error.message,
-      conversationId: metadata.conversationId,
-    });
+    try {
+      const result = await handler(args, metadata);
+      logger.info('Tool call completed', {
+        toolName: name,
+        success: result?.success !== false,
+        conversationId: metadata.conversationId,
+      });
+      return result;
+    } catch (error) {
+      aiTelemetry.recordAiError(isTimeoutError(error) ? 'tool_timeout' : 'tool_failed', {
+        toolName: name,
+        conversationId: metadata.conversationId,
+        role: metadata.role,
+        error: {
+          name: error.name,
+          code: error.code,
+          status: error.status,
+          message: error.message,
+        },
+      });
+      logger.warn('Tool call failed', {
+        toolName: name,
+        error: error.message,
+        conversationId: metadata.conversationId,
+      });
 
-    return formatToolExecutionFailure();
-  }
+      return formatToolExecutionFailure();
+    }
+  });
 }
 
 export { createToolRegistry, tourSchema, TOOL_EXECUTION_FAILED_MESSAGE };

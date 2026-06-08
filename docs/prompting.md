@@ -88,6 +88,29 @@ event `meta` object for debugging and prompt experiments:
 }
 ```
 
+## Prompt Evaluation Tracking
+Prompt version comparisons can be recorded with
+`src/ai/evaluations/promptEvaluation.tracker.js`. The tracker compares two
+prompt runs without storing prompt text:
+- prompt version labels, for example `1.0.0` and `2.0.0`
+- retrieval quality from result coverage and similarity scores
+- prompt, completion, and total token usage
+- latency in milliseconds
+
+The comparison emits a `prompt_version_comparison` log entry and records
+`prompt_evaluation_tracked` telemetry with deltas for retrieval quality, token
+usage, latency, and the winning prompt version.
+
+LangSmith-compatible evaluators live in
+`src/ai/evaluations/langSmith.evaluators.js`:
+- `grounding_quality` scores answer grounding against retrieved context metadata
+- `answer_relevance` scores answer overlap with the user question and optional reference answer
+- `tool_correctness` scores expected tool sequence, executed tools, and failures
+
+Use `LangSmithEvaluationTracker.evaluateAndSubmit(...)` with a LangSmith run ID
+to submit these scores as feedback. Without a run ID or client, the tracker still
+returns local evaluation results and logs safe numeric telemetry.
+
 ## Change Rules
 - Do not place prompt text in controllers or route files.
 - Update prompt versions when behavior meaningfully changes.

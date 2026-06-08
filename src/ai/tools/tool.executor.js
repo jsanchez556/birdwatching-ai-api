@@ -1,5 +1,10 @@
 import logger from '../../utils/logger.js';
 import { DEFAULT_CURRENCY, TRANSPORTATION_LABELS } from '../../constants/business.js';
+import {
+  traceAgentToolSequence,
+  traceToolExecution,
+} from '../../tracing/aiTracing.middleware.js';
+import aiTelemetry from '../../monitoring/aiTelemetry.js';
 
 export const TOOL_EXECUTION_FAILED_MESSAGE = 'I could not complete that action right now. Please try again in a moment.';
 const REDACTED = '[redacted]';
@@ -334,6 +339,25 @@ function isRetryableError(error) {
   return error?.retryable === true || RETRYABLE_STATUSES.has(error?.status) || isRetryableCode(error?.code) || !error?.code;
 }
 
+function isTimeoutFailure(failure = {}) {
+  return failure.code === 'ETIMEDOUT'
+    || failure.code === 'TIMEOUT'
+    || failure.code === 'LOCK_TIMEOUT'
+    || failure.name === 'TimeoutError'
+    || /timeout|timed out/i.test(failure.message || '');
+}
+
+function monitorToolFailure(toolName, metadata = {}, failure = {}, details = {}) {
+  aiTelemetry.recordAiError(isTimeoutFailure(failure) ? 'tool_timeout' : 'tool_failed', {
+    toolName,
+    conversationId: metadata.conversationId,
+    role: metadata.role,
+    planStatus: metadata.agentPlan?.status,
+    failure: sanitizeTraceValue(failure),
+    ...details,
+  });
+}
+
 function attachAttempts(result, attempts) {
   const safeResult = result && typeof result === 'object'
     ? result
@@ -563,6 +587,17 @@ export class ToolExecutor {
           ...(result?.success === false ? { result: sanitizeTraceValue(result) } : {}),
         });
 
+        if (result?.success === false) {
+          monitorToolFailure(name, metadata, {
+            code: result.code,
+            message: result.message,
+          }, {
+            attempt: attempt + 1,
+            retryable: isRetryableFailure(result),
+            willRetry: shouldRetry,
+          });
+        }
+
         if (shouldRetry) {
           this.logRetry(name, metadata, attempt + 1, retryOptions, { code: result.code, message: result.message });
           await wait(retryOptions.baseDelayMs * 2 ** attempt);
@@ -584,6 +619,12 @@ export class ToolExecutor {
           status: 'failed',
           retryable: isRetryableError(error),
           error: errorSummary(error),
+        });
+
+        monitorToolFailure(name, metadata, errorSummary(error), {
+          attempt: attempt + 1,
+          retryable: isRetryableError(error),
+          willRetry: shouldRetry,
         });
 
         if (shouldRetry) {
@@ -615,6 +656,16 @@ export class ToolExecutor {
   }
 
   logRetry(name, metadata, attempt, retryOptions, failure) {
+    if (metadata.agentExecutionContext) {
+      recordTraceEvent(metadata.agentExecutionContext, 'tool_retry_scheduled', {
+        tool: name,
+        attempt,
+        nextAttempt: attempt + 1,
+        maxAttempts: retryOptions.retries + 1,
+        failure: sanitizeTraceValue(failure),
+      });
+    }
+
     this.logger.warn('Retrying agent tool call after retryable failure', {
       toolName: name,
       attempt,
@@ -626,6 +677,20 @@ export class ToolExecutor {
   }
 
   async executePlan(plan = {}, metadata = {}) {
+    return traceAgentToolSequence('birdwatching_agent_tool_sequence', {
+      parentTraceId: metadata.agentTraceId,
+      conversationId: metadata.conversationId,
+      role: metadata.role,
+      status: plan.status,
+      stepCount: Array.isArray(plan.steps) ? plan.steps.length : 0,
+      tools: (plan.steps || []).map((step) => step.tool).filter(Boolean),
+    }, async (trace) => {
+      metadata.agentToolSequenceTraceId = trace.id;
+      return this.executePlanUntraced(plan, metadata);
+    });
+  }
+
+  async executePlanUntraced(plan = {}, metadata = {}) {
     const context = createExecutionContext(plan, metadata);
     const steps = Array.isArray(plan.steps) ? plan.steps : [];
 
@@ -658,7 +723,15 @@ export class ToolExecutor {
         index,
       });
 
-      const result = await this.execute(step.tool, step.args || {}, metadata, { step });
+      const result = await traceToolExecution(step.tool || 'unknown_agent_tool', {
+        parentTraceId: metadata.agentToolSequenceTraceId,
+        conversationId: metadata.conversationId,
+        role: metadata.role,
+        planStatus: plan.status,
+        stepId,
+        stepIndex: index,
+        hasArguments: Boolean(step.args && Object.keys(step.args).length),
+      }, () => this.execute(step.tool, step.args || {}, metadata, { step }));
       storeIntermediateResult(context, step, result, index);
 
       recordTraceEvent(context, 'tool_step_completed', {

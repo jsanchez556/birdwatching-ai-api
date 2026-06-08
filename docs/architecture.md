@@ -19,6 +19,9 @@ src/
   services/              business orchestration
   validators/            request payload validators
   utils/                 logger, retry, async handler, responses, errors
+  observability/         LangSmith-compatible trace configuration and trace lifecycle service
+  tracing/               reusable AI tracing wrappers for LLM, RAG, tools, and agents
+  monitoring/            centralized AI telemetry for latency, token usage, and errors
 ```
 
 ## Layer Rules
@@ -180,6 +183,14 @@ The `src/ai/` layer is split by responsibility:
 - `orchestrators/` owns chat turn planning and coordinates tool execution before final response generation.
 - `evaluations/` owns AI observability and evaluation helpers such as token usage and estimated cost accounting.
 - `guardrails/` owns AI safety checks such as prompt-extraction blocking and sensitive-output fallbacks.
+
+## AI Observability
+The observability layer is split into three small modules:
+- `src/observability/observability.service.js` reads LangSmith/LangChain tracing configuration from environment variables, exposes trace lifecycle helpers, configures the standard `LANGCHAIN_*` process variables when available, and creates/updates sanitized LangSmith runs through the `langsmith` SDK.
+- `src/tracing/aiTracing.middleware.js` provides wrappers for the end-to-end AI execution flow, conversation context assembly, LLM calls, RAG retrieval, RAG grounding, tool execution, and agent orchestration so instrumentation stays out of controllers and response formatting.
+- `src/monitoring/aiTelemetry.js` records centralized latency, token usage, and error telemetry with prompt, response, customer, and secret fields redacted.
+
+Chat currently emits a root AI execution trace for each streamed request, with child spans for conversation context assembly, OpenAI tool-resolution completions, final streaming completions, embedding generation, RAG retrieval, the RAG grounding pipeline, tour tool execution, and the birdwatching agent orchestration run. The root trace records response length, source count, prompt versions, reservation presence, and tool names; the conversation context span records message counts by role. RAG pipeline telemetry includes retrieved chunk IDs, similarity scores, retrieval latency, grounding context size, and prompt-construction metadata; the final answer LLM trace also carries the compact grounding summary. Multi-tool agent telemetry follows the user request through planner output, ordered tool sequence, individual tool spans, failures, skipped steps, retry counts, retry scheduling events, prompt assembly, and the final response. AI error monitoring records stable log events for retrieval failures, tool timeouts, tool failures, malformed JSON tool-call arguments, invalid assistant outputs, and guardrail-detected hallucination events. Prompt evaluation tracking compares prompt versions by retrieval quality, token usage, and latency without storing prompt text. LangSmith evaluation tracking can submit `grounding_quality`, `answer_relevance`, and `tool_correctness` feedback for run IDs while keeping local numeric results available when export is disabled. LangSmith export is enabled when `LANGCHAIN_TRACING=true`, `LANGCHAIN_PROJECT` is set, and `LANGCHAIN_API_KEY` is present; otherwise the same code path continues to run with local telemetry only.
 
 ## Persistence
 The `conversations` table stores one row per conversation:
