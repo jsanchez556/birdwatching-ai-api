@@ -16,6 +16,7 @@ class ChatController {
       customerContext,
       conversationContext,
       role,
+      responseMode,
     } = req.body;
     const abortController = new AbortController();
     let streamCompleted = false;
@@ -55,6 +56,7 @@ class ChatController {
           conversationContext,
           authUser: req.user,
           role,
+          responseMode,
         }
       );
 

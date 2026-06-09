@@ -1,4 +1,4 @@
-import { getSystemPrompt } from './system.prompt.js';
+import { getResponseModePrompt, getSystemPrompt } from './system.prompt.js';
 import { createRagContextMessage } from './rag.context.js';
 
 const VALID_MESSAGE_ROLES = new Set(['system', 'user', 'assistant', 'tool']);
@@ -111,6 +111,23 @@ export function injectRagContextMessage(messages, documents = []) {
   return [
     messages[0],
     createRagContextMessage(documents),
+    ...messages.slice(1),
+  ];
+}
+
+export function injectResponseModeMessage(messages, responseMode) {
+  const modePrompt = getResponseModePrompt(responseMode);
+
+  if (!Array.isArray(messages) || messages.length === 0 || !modePrompt) {
+    return messages;
+  }
+
+  return [
+    messages[0],
+    {
+      role: 'system',
+      content: modePrompt,
+    },
     ...messages.slice(1),
   ];
 }

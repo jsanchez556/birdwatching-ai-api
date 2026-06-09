@@ -5,6 +5,7 @@ import chatRoutes from './chat.routes.js';
 import healthRoutes from './health.routes.js';
 import homepageRoutes from './homepage.routes.js';
 import mediaRoutes from './media.routes.js';
+import voiceChatRoutes from './voiceChat.routes.js';
 
 const router = express.Router();
 
@@ -12,6 +13,7 @@ router.use('/health', healthRoutes);
 router.use('/auth', authRoutes);
 router.use('/cart', cartRoutes);
 router.use('/chat', chatRoutes);
+router.use('/voice-chat', voiceChatRoutes);
 router.use(homepageRoutes);
 router.use(mediaRoutes);
 

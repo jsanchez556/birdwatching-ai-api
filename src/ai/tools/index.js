@@ -95,6 +95,7 @@ function isTimeoutError(error = {}) {
 
 export async function executeToolCall(name, args = {}, metadata = {}) {
   return traceToolExecution(name || 'unknown_tool', {
+    parentTraceId: metadata.agentTraceId,
     conversationId: metadata.conversationId,
     role: metadata.role,
     hasArguments: Boolean(args && Object.keys(args).length),

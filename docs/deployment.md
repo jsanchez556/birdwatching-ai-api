@@ -39,11 +39,11 @@ Optional:
 - `XENO_CANTO_API_KEY`, required when using Xeno-canto ingestion clients
 - `EXTERNAL_API_RATE_LIMIT_WINDOW_MS`, defaults to `60000`
 - `EXTERNAL_API_RATE_LIMIT_MAX_REQUESTS`, defaults to `40` and cannot exceed `40`
-- `S3_ENDPOINT_URL`, required when using media asset uploads
-- `S3_REGION`, required when using media asset uploads
-- `S3_BUCKET_NAME`, required when using media asset uploads
-- `S3_ACCESS_KEY_ID`, required when using media asset uploads
-- `S3_SECRET_ACCESS_KEY`, required when using media asset uploads
+- `CLOUDFRONT_BASE_URL`, required for `/files` media URL responses
+- `S3_REGION`, required when using media asset uploads or voice-chat speech storage
+- `S3_BUCKET_NAME`, required when using media asset uploads or voice-chat speech storage
+- `S3_ACCESS_KEY_ID`, required when using media asset uploads or voice-chat speech storage
+- `S3_SECRET_ACCESS_KEY`, required when using media asset uploads or voice-chat speech storage
 
 Do not commit `.env` files. The local `.gitignore` excludes them.
 
@@ -74,6 +74,7 @@ Production database connections use SSL with `rejectUnauthorized: false`.
 - RAG retrieval reads PostgreSQL `knowledge_documents` and `knowledge_chunks`; chat requests do not ingest files or write vectors.
 - Tour seed data begins in `003_create_tour_reservations.sql`; `011_tours_refactor.sql` adds tour `node_id`, coordinates, start/end dates, and the `country`/`zone`/`node`/`birds`/`birds_by_node` reference tables for Costa Rica birding geography and target species.
 - Tour reservation availability is durable PostgreSQL state and is updated transactionally by PostgreSQL functions.
+- Voice-chat generated speech responses are stored as MP3 objects under the S3 `voice-chat/` prefix. `POST /voice-chat` returns a relative `/files/voice-chat/...` URL, and `GET /files/:folderName/:filename` turns that relative key into a CloudFront URL using `CLOUDFRONT_BASE_URL`.
 
 ## AI Observability
 Centralized AI telemetry lives under `src/observability`, `src/tracing`, and `src/monitoring`.
@@ -98,6 +99,7 @@ Current AI trace boundaries:
 - Agent orchestration, including user request metadata, planning, tool sequence, prompt assembly, and final response generation
 - Multi-tool execution flows, including planner output, ordered tool steps, failures, skipped steps, retry counts, and retry scheduling events
 - Tour tool execution through the registry and agent executor
+- Voice chat workflow spans for OpenAI audio transcription, conversation context/RAG retrieval, agent execution/tool work, final chat response generation, and OpenAI speech generation
 
 Verify traces by running a chat request with the variables above set, then checking
 the `birdwatching-ai` project in LangSmith. Application logs also include
@@ -135,11 +137,10 @@ npm start
 The current Railway config sets `build.buildCommand` to `npm install` and
 `deploy.startCommand` to `npm start`.
 
-For Railway object storage, create or attach a bucket, then copy the
-S3-compatible endpoint URL, region, bucket name, access key ID, and secret access
-key into the variables above. The app uses path-style S3 requests for compatible
-endpoints. Store these values only in Railway variables and local `.env`; never
-commit credentials or expose them in API responses.
+For Railway object storage, create or attach a bucket, then copy the region,
+bucket name, access key ID, and secret access key into the variables above.
+Store these values only in Railway variables and local `.env`; never commit
+credentials or expose them in API responses.
 
 ## Docker And Vercel
 No `Dockerfile`, `docker-compose.yml`, or `vercel.json` exists in the current tree. Add those only when there is an actual deployment target to support.

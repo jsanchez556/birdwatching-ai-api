@@ -2,10 +2,12 @@ import {
   normalizeOptionalText,
   normalizeSelectedTransportation,
 } from '../utils/normalizers.js';
+import { FIELD_ASSISTANT_RESPONSE_MODE } from '../ai/prompts/system.prompt.js';
 
 const MAX_CHAT_MESSAGE_LENGTH = 4000;
 const MAX_CONVERSATION_ID_LENGTH = 128;
 const RESERVATION_ENTRY_SOURCES = new Set(['featured_tour', 'tour_cart']);
+const RESPONSE_MODES = new Set([FIELD_ASSISTANT_RESPONSE_MODE]);
 
 function isIsoDate(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
@@ -190,6 +192,7 @@ export function validateChatBody(req) {
     customerContext,
     conversationContext,
     role,
+    responseMode,
   } = req.body;
   const errors = [];
   const normalizedCustomerContext = normalizeCustomerContext(customerContext, errors);
@@ -209,6 +212,10 @@ export function validateChatBody(req) {
     }
   }
 
+  if (responseMode !== undefined && responseMode !== null && !RESPONSE_MODES.has(responseMode)) {
+    errors.push('Response mode must be field_assistant when provided');
+  }
+
   return {
     message: 'Invalid chat payload',
     errors,
@@ -218,6 +225,7 @@ export function validateChatBody(req) {
       customerContext: normalizedCustomerContext,
       conversationContext: normalizedConversationContext,
       role: role === 'visitor' ? 'visitor' : undefined,
+      responseMode: RESPONSE_MODES.has(responseMode) ? responseMode : undefined,
     },
   };
 }

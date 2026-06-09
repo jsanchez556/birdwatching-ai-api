@@ -38,6 +38,14 @@ include similarity scores, locations, snippets, and document metadata. If
 retrieval or embedding fails, chat continues with the base messages and an empty
 `sources` array.
 
+When a request sets `responseMode: "field_assistant"` (or voice chat sends
+`X-Response-Mode: field_assistant`), `prompt.builder.js` injects an additional
+system message immediately after the base system prompt. Field assistant mode
+keeps the final answer voice-friendly, actionable, and no more than two
+sentences, prioritizing where to look, what to listen for, and the next
+observation to check. This is an opt-in response mode, so the base
+`CHAT_SYSTEM_PROMPT_VERSION` does not change for default chat behavior.
+
 Bird profile ingestion embeds searchable text such as common name, scientific
 name, family, locations, descriptions, recent observations, and media
 availability hints. Media URLs for photos, songs, and sonograms stay in document
@@ -87,6 +95,8 @@ event `meta` object for debugging and prompt experiments:
   }
 }
 ```
+
+When a response mode is active, `done.meta.responseMode` is also returned.
 
 ## Prompt Evaluation Tracking
 Prompt version comparisons can be recorded with

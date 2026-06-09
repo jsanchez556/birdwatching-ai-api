@@ -1,6 +1,6 @@
 # Birdwatching AI API
 
-REST API for Costa Rica birdwatching chat, trip recommendations, conversation memory, RAG retrieval, and tour reservations. The service is a single Node.js/Express app rooted at `src/` and integrates OpenAI with PostgreSQL persistence.
+REST API for Costa Rica birdwatching chat, voice chat, trip recommendations, conversation memory, RAG retrieval, and tour reservations. The service is a single Node.js/Express app rooted at `src/` and integrates OpenAI with PostgreSQL persistence.
 
 ## Quick Links
 - Project context for AI agents: [CONTEXT.md](./CONTEXT.md)
@@ -164,6 +164,22 @@ code and selected transportation metadata. The backend calculates group or
 code-based discounts before calling the transactional PostgreSQL reservation
 function.
 
+## Voice Chat
+`POST /voice-chat` accepts raw MP3/WAV audio, transcribes speech with the internal speech-to-text service, sends the transcript through the same chat orchestration used by `POST /chat`, converts the assistant answer to MP3 with the internal text-to-speech service, uploads the generated MP3 to S3, and returns:
+```json
+{
+  "transcript": "Where can I see quetzals?",
+  "answer": "Scan fruiting trees along Monteverde cloud forest edges.",
+  "audioResponseUrl": "/files/voice-chat/audio-id.mp3"
+}
+```
+
+Supported request content types are `audio/mpeg`, `audio/mp3`, `audio/wav`, and `audio/x-wav`; `X-Filename`, when present, must end in `.mp3` or `.wav`. Browser clients that record `audio/webm` should convert to WAV before upload. Optional headers can carry `X-Conversation-Id`, `X-Customer-Context`, `X-Conversation-Context`, `X-Role`, and `X-Response-Mode: field_assistant`. The field-assistant response mode keeps spoken answers concise, actionable, and capped at two sentences.
+
+The returned `audioResponseUrl` is a relative `/files/voice-chat/...` media reference. Clients should resolve it through the CloudFront-backed `GET /files/:folderName/:filename` endpoint or their own configured CDN base. The internal speech-to-text and text-to-speech services are reusable from backend services, but standalone public transcribe/speak endpoints are not exposed.
+
+When LangSmith tracing is enabled, voice chat creates one `voice_chat` parent trace with child spans for transcription, conversation context/RAG retrieval, agent execution/tool work, final chat response generation, and speech generation.
+
 ## Scripts
 ```bash
 npm start      # node src/server.js
@@ -176,12 +192,24 @@ npm test       # Jest ESM test runner
 ## Runtime Endpoints
 - `GET /health`
 - `GET /homepage/hero`
+- `GET /tours`
+- `GET /birds/highlights`
+- `GET /birds/profile`
+- `GET /addons/transportation`
 - `POST /auth/signup`
 - `POST /auth/login`
 - `POST /auth/refresh`
 - `POST /auth/logout`
+- `GET /cart`
+- `POST /cart/items`
+- `PATCH /cart/items/:itemId`
+- `DELETE /cart/items/:itemId`
+- `GET /cart/reservations`
+- `POST /cart/reservations`
 - `POST /chat`
+- `POST /voice-chat`
 - `GET /chat/latest`
+- `GET /chat/:conversationId`
 - `GET /files/:folderName/:filename`
 
 Responses use the normalized envelope from `src/utils/apiResponse.js`.

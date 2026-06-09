@@ -1,0 +1,82 @@
+Context: Read and follow the repository instructions in:
+`/home/jose/Documents/projects/birdwatching-ai-api/AGENTS.md`
+
+Task:
+Create a speech-to-text feature using the OpenAI audio APIs.
+
+Requirements:
+- Accept uploaded audio files from an HTTP request.
+- Support `.mp3` and `.wav` uploads only.
+- Convert speech to text using OpenAI transcription.
+- Return a normalized JSON response containing the transcript.
+- Use `async/await`.
+- Add appropriate validation and user-safe error handling.
+- Do not expose API keys, stack traces, or internal service details in responses.
+
+Architecture:
+- Add an audio service layer under `src/audio/`.
+- Add a controller for handling request/response behavior.
+- Add a route for the speech-to-text endpoint.
+- Keep OpenAI API calls out of route/controller files.
+- Reuse existing project patterns for routes, controllers, services, middleware, and response envelopes.
+
+Expected files:
+```text
+src/
+  ai/audio/
+    speechToText.js
+    textToSpeech.js
+  services/
+  agents/
+```
+
+Implementation details:
+- Implement `src/ai/audio/speechToText.js` as the OpenAI transcription adapter/service.
+- Leave `src/ai/audio/textToSpeech.js` as a placeholder only if text-to-speech is not part of this task.
+- Add upload handling for audio files using the project’s existing middleware pattern, or introduce one if none exists.
+- Validate file type before calling OpenAI.
+- Return a response like:
+```json
+{
+  "success": true,
+  "data": {
+    "transcript": "..."
+  },
+  "meta": {}
+}
+```
+
+Observability:
+- Add AI observability around the OpenAI transcription call.
+- Integrate LangSmith tracing if the repository already has LangSmith conventions or environment variables.
+- Do not invent unrelated tracing infrastructure; follow existing patterns where available.
+
+Testing:
+- Add or update tests for:
+  - successful `.mp3` transcription
+  - successful `.wav` transcription
+  - unsupported file type rejection
+  - OpenAI/API failure handling
+- Mock OpenAI and upload boundaries.
+```
+
+I’d also consider adding the exact endpoint you want, for example `POST /audio/transcribe`, so the implementation does not have to guess the route name.
+
+--
+
+## Iteration 2
+
+Create a text-to-speech service using OpenAI.
+
+Requirements:
+
+- Receive text
+- Generate speech audio
+- Return mp3 file
+
+Architecture:
+- reusable service
+- controller endpoint
+
+Endpoint: POST /audio/speak
+Response: response.mp3

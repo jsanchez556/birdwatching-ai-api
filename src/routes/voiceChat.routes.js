@@ -1,0 +1,43 @@
+import express from 'express';
+import voiceChatController from '../controllers/voiceChat.controller.js';
+import audioUpload from '../middleware/audioUpload.middleware.js';
+import { optionalAuth } from '../middleware/auth.middleware.js';
+import { aiRateLimit, visitorAiRateLimit } from '../middleware/rateLimit.middleware.js';
+import asyncHandler from '../utils/asyncHandler.js';
+import HttpError from '../utils/httpError.js';
+import { validateAudioUpload } from '../validators/audio.validator.js';
+import { validateVoiceChatContext } from '../validators/voiceChat.validator.js';
+
+const router = express.Router();
+const roleAwareAiRateLimit = (req, res, next) => (
+  req.user ? aiRateLimit(req, res, next) : visitorAiRateLimit(req, res, next)
+);
+
+function validateVoiceChatRequest(req, res, next) {
+  const audioResult = validateAudioUpload(req);
+  const contextResult = validateVoiceChatContext(req);
+  const errors = [...audioResult.errors, ...contextResult.errors];
+
+  if (errors.length > 0) {
+    return next(new HttpError(422, 'Invalid voice chat request', {
+      code: 'validation_error',
+      details: errors,
+    }));
+  }
+
+  req.audioUpload = audioResult.value.audioUpload;
+  req.voiceChatContext = contextResult.value;
+
+  return next();
+}
+
+router.post(
+  '/',
+  optionalAuth,
+  roleAwareAiRateLimit,
+  audioUpload,
+  validateVoiceChatRequest,
+  asyncHandler(voiceChatController.handleVoiceChat.bind(voiceChatController))
+);
+
+export default router;

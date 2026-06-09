@@ -185,6 +185,7 @@ export class AgentOrchestrator {
 
   async generateResponse(messages, metadata = {}, options = {}) {
     return traceAgentOrchestration('birdwatching_agent_generate_response', {
+      parentTraceId: metadata.parentTraceId,
       conversationId: metadata.conversationId,
       role: metadata.role,
       messageCount: messages.length,

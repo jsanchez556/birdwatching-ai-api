@@ -1,0 +1,75 @@
+Context:
+Read and follow:
+- `/home/jose/Documents/projects/birdwatching-ai-api/CONTEXT.md`
+- `/home/jose/Documents/projects/birdwatching-ai-api/AGENTS.md`
+
+Task:
+Create a voice chat endpoint that accepts user audio, transcribes it, sends the transcript through the existing chat orchestration, converts the assistant response to speech, and returns a normalized response with the text and audio location.
+
+Endpoint:
+`POST /voice-chat`
+
+Workflow:
+1. Receive an uploaded audio file from the request.
+2. Validate supported audio input types using the existing audio upload rules.
+3. Convert audio to text using the existing speech-to-text service.
+4. Send the transcript to the existing chatbot service/orchestration.
+5. Get the assistant text response.
+6. Convert the assistant response to speech using the existing text-to-speech service.
+7. Store or expose the generated MP3 using the project’s existing media/storage pattern.
+8. Return transcript, assistant answer, and an audio response URL.
+
+Architecture:
+- Add a dedicated route for `POST /voice-chat`.
+- Add a controller for HTTP request/response handling.
+- Add a reusable service that orchestrates:
+  - speech-to-text
+  - chat processing
+  - text-to-speech
+  - audio response storage/URL generation
+- Do not call OpenAI directly from routes or controllers.
+- Reuse existing `src/ai/audio/speechToText.js` and `src/ai/audio/textToSpeech.js`.
+- Reuse existing chat service logic instead of creating a second chatbot flow.
+- Reuse existing response envelopes and centralized error handling.
+- Keep provider details, stack traces, prompts, secrets, and raw tool internals out of client responses and logs.
+
+Request:
+- Accept audio as the request body using the existing raw audio upload middleware, unless the repo already has another upload pattern.
+- Support `.mp3` and `.wav` input only.
+- Allow optional conversation context fields only if they match existing chat validation rules, for example:
+  - `conversationId`
+  - `customerContext`
+  - `conversationContext`
+  - `role`
+
+Response:
+```json
+{
+  "success": true,
+  "data": {
+    "transcript": "Where can I see quetzals?",
+    "answer": "You have the best chance in Monteverde cloud forest...",
+    "audioResponseUrl": "https://..."
+  },
+  "meta": {
+    "conversationId": "conversation-123"
+  }
+}
+---
+
+## Iteration 2
+
+Field assistant mode: Reply as a birdwatching guide in the field. Keep answers voice-friendly, actionable, and no more than 2 sentences. Prioritize where to look, what to listen for, and the next observation to check; avoid long explanations, lists, markdown, and background detail.
+
+## Iteration 3
+
+Store generated audio files in S3 and return relative urls (cloudfront)
+
+## Iteration 4
+
+Trace voice workflow in LangSmith:
+
+- transcription
+- retrieval
+- agent execution
+- speech generation

@@ -172,6 +172,81 @@ describe('ChatService streaming orchestration', () => {
     expect(result.sources).toEqual(sources);
   });
 
+  it('accepts a parent trace ID for voice workflow nesting', async () => {
+    const conversationMessages = [
+      { role: 'system', content: 'System prompt' },
+      { role: 'user', content: 'Where can I hear toucans?' },
+    ];
+
+    mockBuildConversationContext.mockResolvedValue(conversationMessages);
+    mockStreamResponseWithTools.mockResolvedValue('Listen near fruiting trees at first light.');
+
+    await chatService.processMessageStream(
+      'Where can I hear toucans?',
+      'conversation-voice',
+      '127.0.0.1',
+      { onStart: jest.fn(), onChunk: jest.fn() },
+      {
+        parentTraceId: 'voice-trace-1',
+      }
+    );
+
+    expect(mockBuildContext).toHaveBeenCalledWith(
+      conversationMessages,
+      'Where can I hear toucans?',
+      expect.objectContaining({
+        parentTraceId: expect.any(String),
+      })
+    );
+    expect(mockStreamResponseWithTools).toHaveBeenCalledWith(
+      conversationMessages,
+      expect.objectContaining({
+        parentTraceId: expect.any(String),
+      }),
+      expect.any(Object)
+    );
+  });
+
+  it('injects field assistant response mode into OpenAI messages', async () => {
+    const conversationMessages = [
+      { role: 'system', content: 'System prompt' },
+      { role: 'user', content: 'What bird should I check next?' },
+    ];
+
+    mockBuildConversationContext.mockResolvedValue(conversationMessages);
+    mockBuildContext.mockResolvedValue({
+      messages: conversationMessages,
+      sources: [],
+    });
+    mockStreamResponseWithTools.mockResolvedValue('Look into the fruiting tree canopy and listen for soft whistles.');
+
+    const result = await chatService.processMessageStream(
+      'What bird should I check next?',
+      'conversation-123',
+      '127.0.0.1',
+      { onStart: jest.fn(), onChunk: jest.fn() },
+      {
+        responseMode: 'field_assistant',
+      }
+    );
+
+    const messages = mockStreamResponseWithTools.mock.calls[0][0];
+    expect(messages).toEqual([
+      { role: 'system', content: 'System prompt' },
+      {
+        role: 'system',
+        content: expect.stringContaining('no more than 2 sentences'),
+      },
+      { role: 'user', content: 'What bird should I check next?' },
+    ]);
+    expect(mockStreamResponseWithTools.mock.calls[0][1]).toMatchObject({
+      responseMode: 'field_assistant',
+    });
+    expect(result.meta).toMatchObject({
+      responseMode: 'field_assistant',
+    });
+  });
+
   it('returns frontend metadata collected during tool calling', async () => {
     const conversationMessages = [
       { role: 'system', content: 'System prompt' },

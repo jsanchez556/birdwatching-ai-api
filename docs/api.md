@@ -48,6 +48,27 @@ Success data:
 }
 ```
 
+## Homepage Content
+These endpoints are public, return normalized JSON envelopes, and are used by the frontend homepage instead of chat streaming for static product content.
+
+### `GET /tours`
+Returns featured tour cards from PostgreSQL-backed tour data, including display fields such as `id`, `title`, `description`, `location`, `node`, `subnode`, `zone`, `duration`, `pricePerPerson`, `difficulty`, and optional media.
+
+### `GET /birds/highlights`
+Returns curated Costa Rica bird highlight cards. The backend can source names from `HOMEPAGE_BIRD_HIGHLIGHTS`/`HEAD_LINE_BIRDS`, falling back to built-in highlights.
+
+### `GET /birds/profile`
+Returns one bird profile by query parameter:
+```http
+GET /birds/profile?speciesCode=gretin1
+GET /birds/profile?name=Great%20Tinamou
+```
+
+Either `speciesCode`/`species_code` or `name` is required. Missing query input returns `422` with code `validation_error`; unknown birds return `404` with code `bird_not_found`.
+
+### `GET /addons/transportation`
+Returns public transportation add-on cards for the homepage. Booking-specific transportation selection remains part of the chat/tool flow.
+
 ## `POST /auth/signup`
 Creates a user account with a bcrypt-hashed password and returns an access token, refresh token, expiry timestamps, and safe profile data.
 
@@ -111,6 +132,43 @@ Expired, revoked, or unknown refresh tokens return `401` with code `SESSION_EXPI
 ## `POST /auth/logout`
 Revokes the current refresh token when one is provided.
 
+## `POST /voice-chat`
+Accepts a spoken user message, transcribes it, processes it through the existing chat orchestration, generates an MP3 assistant response, stores that generated audio in S3, and returns text plus a relative media URL that resolves through the CloudFront-backed `/files` route.
+
+Request:
+- Body must be the raw audio bytes.
+- `Content-Type` must be `audio/mpeg`, `audio/mp3`, `audio/wav`, or `audio/x-wav`.
+- Optional `X-Filename` may be provided and must end in `.mp3` or `.wav` when present.
+- Optional `X-Conversation-Id` continues an existing conversation.
+- Optional `X-Role` may be `visitor`.
+- Optional `X-Response-Mode` may be `field_assistant` for concise, voice-friendly field guidance capped at two sentences.
+- Optional `X-Field-Assistant: true` is accepted as shorthand for `X-Response-Mode: field_assistant`.
+- Optional `X-Customer-Context` and `X-Conversation-Context` must be JSON objects matching the existing chat context validation rules.
+
+Success data:
+```json
+{
+  "transcript": "Where can I see quetzals?",
+  "answer": "Monteverde is one of the best places to see quetzals.",
+  "audioResponseUrl": "/files/voice-chat/audio-id.mp3"
+}
+```
+
+Success meta:
+```json
+{
+  "conversationId": "conversation-123"
+}
+```
+
+The `audioResponseUrl` is a relative URL. Clients can call it to receive the normalized `/files` response containing the CloudFront URL for the generated S3 object.
+
+Standalone public transcribe or speak endpoints are intentionally not exposed. Routes and controllers should use the reusable backend audio services through voice-chat orchestration rather than adding browser-facing `/audio/transcribe` or `/audio/speak` routes.
+
+Observability:
+- The voice workflow creates a parent `voice_chat` AI execution trace.
+- Speech-to-text transcription, chat retrieval, agent execution/tool work, and speech generation are nested under that workflow in LangSmith when tracing is enabled.
+
 ## Cart And My Tours
 All cart endpoints require JWT authentication through `requireAuth`, reject unauthenticated requests, and return the normalized `{ success, data, meta }` envelope.
 
@@ -163,7 +221,8 @@ Body:
       "uiAction": { "type": "reservation_confirmation" }
     }
   },
-  "role": "customer"
+  "role": "customer",
+  "responseMode": "field_assistant"
 }
 ```
 
@@ -175,6 +234,7 @@ Validation:
 - `customerContext.customerEmail` must be a valid email address when present.
 - `customerContext.itineraryStartDate` and `customerContext.itineraryEndDate` must use `YYYY-MM-DD` when present, and the end date must not be earlier than the start date.
 - `conversationContext` is optional and must be an object when provided. The validator only preserves safe recent assistant metadata used by guided booking flows.
+- `responseMode` is optional. Set it to `"field_assistant"` for concise, voice-friendly field guidance capped at two sentences.
 - Homepage/cart reservation entry points may send `conversationType: "reservation_entry"`, `conversationSource`/`entrySource` of `featured_tour` or `tour_cart`, and a safe `reservationEntry` object containing selected tour/cart summaries. These values are treated as already provided context, not authoritative reservation records.
 
 SSE events:
@@ -410,7 +470,7 @@ Validation and behavior:
 - successful responses do not expose bucket credentials
 
 ## Current Protection
-`GET /chat/latest` requires JWT bearer authentication. `POST /chat` accepts authenticated customer/admin users or unauthenticated visitors; visitors can only ask bird-related questions, cannot execute tool-backed tour or reservation actions, and have a stricter 10-request-per-hour IP limit. Conversation and reservation `user_id` ownership is enforced server-side. `POST /auth/signup`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, and `GET /health` remain public.
+`GET /chat/latest`, `GET /chat/:conversationId`, and all `/cart` routes require JWT bearer authentication. `POST /chat` and `POST /voice-chat` accept authenticated customer/admin users or unauthenticated visitors; visitors can only ask bird-related questions, cannot execute tool-backed tour or reservation actions, and have a stricter 10-request-per-hour IP limit. Conversation and reservation `user_id` ownership is enforced server-side. `POST /auth/signup`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, homepage content endpoints, `GET /files/:folderName/:filename`, and `GET /health` remain public.
 
 Request protection includes:
 - Helmet security headers through `security.middleware.js`.
@@ -421,7 +481,7 @@ Request protection includes:
 - Global in-memory IP rate limiting at 60 requests per minute.
 
 ## Common Errors
-- Validation failures return `400` with code `VALIDATION_ERROR`.
+- Route validation failures usually return `400` with code `VALIDATION_ERROR`; controller-level public content validation may return `422` with route-specific lowercase codes such as `validation_error`.
 - Missing or invalid bearer tokens return `401` with code `UNAUTHORIZED`.
 - Rate limit failures return `429` with code `RATE_LIMITED`.
 - Unknown routes return `404` with code `NOT_FOUND`.

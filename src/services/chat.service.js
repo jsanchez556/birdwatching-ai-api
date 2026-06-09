@@ -15,6 +15,8 @@ import {
   traceAiExecutionFlow,
   traceConversationContext,
 } from '../tracing/aiTracing.middleware.js';
+import { injectResponseModeMessage } from '../ai/prompts/prompt.builder.js';
+import { FIELD_ASSISTANT_RESPONSE_MODE } from '../ai/prompts/system.prompt.js';
 
 const STREAM_GUARDRAIL_BUFFER_CHARS = 48;
 const VISITOR_ROLE = 'visitor';
@@ -71,6 +73,10 @@ function buildPromptMeta() {
       chat: CHAT_SYSTEM_PROMPT_VERSION,
     },
   };
+}
+
+function normalizeResponseMode(responseMode) {
+  return responseMode === FIELD_ASSISTANT_RESPONSE_MODE ? responseMode : undefined;
 }
 
 function mergeAuthenticatedCustomerContext(customerContext, authUser = null) {
@@ -157,6 +163,7 @@ function buildToolMeta(metadata = {}) {
 
   return {
     ...buildPromptMeta(),
+    ...(metadata.responseMode ? { responseMode: metadata.responseMode } : {}),
     ...(recentMetadata.conversationType ? { conversationType: recentMetadata.conversationType } : {}),
     ...(recentMetadata.conversationSource ? { conversationSource: recentMetadata.conversationSource } : {}),
     ...(recentMetadata.entrySource ? { entrySource: recentMetadata.entrySource } : {}),
@@ -207,6 +214,8 @@ class ChatService {
       hasAuthUser: Boolean(options.authUser),
       hasCustomerContext: Boolean(options.customerContext),
       hasConversationContext: Boolean(options.conversationContext),
+      responseMode: normalizeResponseMode(options.responseMode),
+      parentTraceId: options.parentTraceId,
     }, (trace) => this.processMessageStreamUntraced(
       message,
       activeConversationId,
@@ -295,10 +304,15 @@ class ChatService {
     throwIfAborted(signal);
 
     const customerContext = mergeAuthenticatedCustomerContext(options.customerContext, authUser);
+    const responseMode = normalizeResponseMode(options.responseMode);
+    const promptMessages = responseMode
+      ? injectResponseModeMessage(ragContext.messages, responseMode)
+      : ragContext.messages;
     const openAiMetadata = {
       clientIP,
       conversationId: activeConversationId,
       role,
+      ...(responseMode ? { responseMode } : {}),
       ...(userId ? { userId } : {}),
       ...(authUser ? { authUser } : {}),
       ...(customerContext ? { customerContext } : {}),
@@ -321,7 +335,7 @@ class ChatService {
     let response;
 
     try {
-      response = await openaiService.streamResponseWithTools(ragContext.messages, openAiMetadata, {
+      response = await openaiService.streamResponseWithTools(promptMessages, openAiMetadata, {
         onChunk: guardedEmitter.push,
         signal,
       });
@@ -460,5 +474,6 @@ export {
   buildPromptMeta,
   buildToolMeta,
   mergeAuthenticatedCustomerContext,
+  normalizeResponseMode,
 };
 export default new ChatService();

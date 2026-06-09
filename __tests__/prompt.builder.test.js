@@ -2,6 +2,7 @@ import {
   buildPrompt,
   buildChatMessages,
   injectRagContextMessage,
+  injectResponseModeMessage,
 } from '../src/ai/prompts/prompt.builder.js';
 import {
   CHAT_SYSTEM_PROMPT,
@@ -83,6 +84,22 @@ describe('prompt builder', () => {
         content: expect.stringContaining('Resplendent Quetzal'),
       }),
       { role: 'user', content: 'Where can I see quetzals?' },
+    ]);
+  });
+
+  it('injects field assistant mode after the base system prompt', () => {
+    const messages = [
+      { role: 'system', content: 'Base prompt' },
+      { role: 'user', content: 'What am I hearing?' },
+    ];
+
+    expect(injectResponseModeMessage(messages, 'field_assistant')).toEqual([
+      { role: 'system', content: 'Base prompt' },
+      {
+        role: 'system',
+        content: expect.stringContaining('Field assistant mode'),
+      },
+      { role: 'user', content: 'What am I hearing?' },
     ]);
   });
 

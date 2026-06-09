@@ -1,7 +1,12 @@
 export const CHAT_SYSTEM_PROMPT_VERSION = '2.3.0';
+export const FIELD_ASSISTANT_RESPONSE_MODE = 'field_assistant';
 
 const PROMPT_VERSIONS = {
   chat: CHAT_SYSTEM_PROMPT_VERSION,
+};
+
+const RESPONSE_MODE_PROMPTS = {
+  [FIELD_ASSISTANT_RESPONSE_MODE]: 'Field assistant mode: Reply as a birdwatching guide in the field. Keep answers voice-friendly, actionable, and no more than 2 sentences. Prioritize where to look, what to listen for, and the next observation to check; avoid long explanations, lists, markdown, and background detail.',
 };
 
 const CHAT_BASE_PROMPT = `You are a birdwatching expert in Costa Rica who helps users discover and book tours.
@@ -87,6 +92,10 @@ export function getSystemPrompt(promptName = 'chat', version = getPromptVersion(
   }
 
   return prompt;
+}
+
+export function getResponseModePrompt(responseMode) {
+  return RESPONSE_MODE_PROMPTS[responseMode];
 }
 
 export const CHAT_SYSTEM_PROMPT = getSystemPrompt('chat');
