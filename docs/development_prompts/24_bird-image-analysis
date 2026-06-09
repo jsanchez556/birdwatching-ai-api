@@ -1,0 +1,160 @@
+Create an image analysis service using OpenAI vision models.
+
+Requirements:
+
+- Accept image URL
+- Analyze image
+- Describe visible bird characteristics
+- Return structured JSON
+
+Fields:
+- colors
+- beak
+- size
+- confidence
+
+Expected Result:
+```json
+{
+  "colors": ["green", "red"],
+  "beak": "yellow",
+  "size": "medium",
+  "confidence": 0.82
+}
+```
+---
+
+## Iteration 2:
+
+Create a bird identification agent.
+
+Requirements:
+
+Input:
+- image analysis
+
+Output:
+- likely species
+- confidence score
+- reasoning
+
+```json 
+{
+  "candidates": [
+    {
+      "species": "Resplendent Quetzal",
+      "confidence": 0.91
+    }
+  ]
+}
+```
+
+Return top 3 candidate birds.
+
+---
+
+## Iteration 3:
+
+Combine bird image analysis, bird identification, and the existing PostgreSQL pgvector RAG system.
+
+Public endpoint:
+- Use only `POST /birds/identify`
+- Do not expose a public `/birds/image-analysis` endpoint
+
+Request:
+```json
+{
+  "imageUrl": "https://example.com/bird.jpg"
+}
+```
+
+Workflow:
+1. Validate `imageUrl` at the route boundary.
+2. Analyze the image internally with an OpenAI vision model.
+3. Use the generated image analysis to identify the top 3 likely bird candidates.
+4. Retrieve bird knowledge from the vector database using the top candidate species name.
+   - Use the existing RAG/retrieval services.
+   - Prefer `bird_profile` documents.
+   - Do not generate embeddings or write vectors during the request.
+5. Generate an enriched response grounded in:
+   - visible image traits
+   - identification candidates
+   - retrieved bird knowledge
+
+Response:
+```json
+{
+  "candidates": [
+    {
+      "species": "Resplendent Quetzal",
+      "confidence": 0.91,
+      "reasoning": "The visible green body, red underparts, and yellow beak are consistent with the retrieved species profile."
+    }
+  ],
+  "answer": "This is most likely a Resplendent Quetzal. The visible traits match the generated image analysis, and retrieved bird knowledge supports this species in Costa Rica cloud forest habitat.",
+  "sources": [
+    {
+      "name": "Resplendent Quetzal",
+      "location": "Monteverde",
+      "similarityScore": 0.9877,
+      "scientificName": "Pharomachrus mocinno",
+      "documentType": "bird_profile"
+    }
+  ]
+}
+```
+
+Implementation rules:
+- Keep controllers thin: parse request metadata and call services only.
+- Keep image analysis and identification prompt assets under `src/ai/prompts/`.
+- Keep structured OpenAI schemas under `src/ai/schemas/`.
+- Keep orchestration in services, not routes/controllers.
+- Validate provider output before returning it.
+- If RAG retrieval returns no documents, still return candidates and a cautious enriched answer that states retrieved bird knowledge was unavailable.
+- Do not leak raw provider errors, stack traces, prompts, secrets, or high-cardinality request data.
+- Update API docs and tests.
+
+
+## Iteration 4
+
+Task: Refactor bird identification history persistence to use PostgreSQL functions instead of inline SQL queries.
+
+Context:
+Read `CONTEXT.md` and `AGENTS.md` before making changes.
+
+Current implementation:
+`src/db/queries/birdIdentification.queries.js` currently inserts directly into `bird_identifications` using inline SQL.
+
+Goal:
+Move bird identification history persistence behind a PostgreSQL function, following the repository convention of keeping multi-step or reusable persistence logic in migrations/functions and calling those functions from query modules.
+
+Implementation requirements:
+- Add or update a database migration to create a PostgreSQL function for saving bird identification history.
+- The function should insert into `bird_identifications` and return the saved row.
+- Modify `src/db/queries/birdIdentification.queries.js` so it calls the PostgreSQL function instead of using inline `INSERT`.
+- Keep the service layer unchanged unless absolutely necessary.
+- Use parameterized queries when calling the function.
+- Preserve the existing returned fields:
+  - `id`
+  - `user_id`
+  - `image_url`
+  - `prediction`
+  - `confidence`
+  - `created_at`
+- Do not expose stack traces or database internals to API responses.
+- Preserve existing best-effort behavior in the service when history persistence fails.
+
+Documentation updates:
+- Update the relevant `.md` guidance files, especially `AGENTS.md` and any backend/database guidance docs, to instruct Codex and other agents to prefer PostgreSQL functions over inline SQL for persistence query modules when adding new database writes.
+- Make the guidance specific enough to prevent future inline `INSERT`, `UPDATE`, or multi-step persistence logic from being added directly in query modules when a PostgreSQL function is appropriate.
+
+Testing expectations:
+- Update `birdIdentification.queries` tests to assert the query module calls the PostgreSQL function.
+- Keep service tests passing.
+- Run `npm test`.
+
+Acceptance criteria:
+- `birdIdentification.queries.js` no longer contains inline `INSERT INTO bird_identifications`.
+- A PostgreSQL function handles saving bird identification history.
+- Documentation clearly tells Codex to create/call PostgreSQL functions instead of adding inline persistence SQL for new writes.
+- Tests pass.

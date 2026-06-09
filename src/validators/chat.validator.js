@@ -1,7 +1,7 @@
 import {
   normalizeOptionalText,
   normalizeSelectedTransportation,
-} from '../utils/normalizers.js';
+} from '../utils/normalizer.utils.js';
 import { FIELD_ASSISTANT_RESPONSE_MODE } from '../ai/prompts/system.prompt.js';
 
 const MAX_CHAT_MESSAGE_LENGTH = 4000;

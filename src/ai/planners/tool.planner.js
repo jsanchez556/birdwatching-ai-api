@@ -1,4 +1,4 @@
-import { normalizeTextOrEmpty } from '../../utils/normalizers.js';
+import { normalizeTextOrEmpty } from '../../utils/normalizer.utils.js';
 
 const TOUR_KEYWORDS = [
   'tour',

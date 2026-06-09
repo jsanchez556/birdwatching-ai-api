@@ -3,29 +3,15 @@ import { jest } from '@jest/globals';
 import os from 'os';
 import path from 'path';
 import {
+  generateBirdIngestData,
+} from '../src/ai/enrichment/services/birds.enrichment.service.js';
+import {
   buildBirdDocuments,
   buildMedia,
-  generateBirdIngestData,
-  parseArgs,
   selectLatestObservation,
-} from '../scripts/generate-ingest.js';
+} from '../src/ai/enrichment/utils/birds.utils.js';
 
-describe('generate-ingest script', () => {
-  test('parseArgs accepts the birds dataset', () => {
-    expect(parseArgs(['birds'])).toEqual({
-      dataset: 'birds',
-      forceDescriptions: false,
-    });
-    expect(parseArgs(['birds', '--force-descriptions'])).toEqual({
-      dataset: 'birds',
-      forceDescriptions: true,
-    });
-  });
-
-  test('parseArgs rejects unsupported datasets', () => {
-    expect(() => parseArgs(['tours'])).toThrow('Unsupported ingest dataset');
-  });
-
+describe('bird ingest data generation helpers', () => {
   test('buildMedia keeps stable empty song fields when no song matched', () => {
     expect(buildMedia({
       photo: '/photo.jpg',
@@ -203,6 +189,58 @@ describe('generate-ingest script', () => {
       description: 'Cached description.',
       metadata: {
         speciesCode: 'higtin1',
+      },
+    }]);
+
+  });
+
+  test('buildBirdDocuments enriches sparse provider data from existing RAG metadata', async () => {
+    await expect(buildBirdDocuments({
+      taxonomy: {
+        clcrob: {
+          sciName: 'Turdus grayi',
+          comName: 'Clay-colored Thrush',
+          speciesCode: 'clcrob',
+          familyComName: 'Thrushes',
+          familySciName: 'Turdidae',
+        },
+      },
+      images: {},
+      observations: {},
+      songs: {},
+    }, {
+      existingDocuments: [{
+        externalId: 'bird-clcrob',
+        description: 'Common in gardens and forest edge.',
+        locations: ['Central Valley'],
+        tags: ['national bird'],
+        metadata: {
+          speciesCode: 'clcrob',
+          media: {
+            photoUrl: '/photos/clcrob.jpg',
+            squarePhotoUrl: '/photos/clcrob-square.jpg',
+            photoAttribution: '(c) Local observer',
+          },
+        },
+      }],
+    })).resolves.toMatchObject([{
+      externalId: 'bird-clcrob',
+      description: 'Common in gardens and forest edge.',
+      locations: ['Central Valley'],
+      tags: [
+        'Clay-colored Thrush',
+        'Turdus grayi',
+        'clcrob',
+        'Thrushes',
+        'national bird',
+      ],
+      metadata: {
+        speciesCode: 'clcrob',
+        media: {
+          photoUrl: '/photos/clcrob.jpg',
+          squarePhotoUrl: '/photos/clcrob-square.jpg',
+          photoAttribution: '(c) Local observer',
+        },
       },
     }]);
 

@@ -5,10 +5,11 @@ AI-agent entry point for the Birdwatching AI API. Read this file first, then fol
 ## What This Is
 This repository is a single Express API for Costa Rica birdwatching assistance. It supports:
 - conversational chat with short-term PostgreSQL memory
-- PostgreSQL-backed RAG over ingested `src/db/ingestion/data` documents using pgvector
+- PostgreSQL-backed RAG over ingested `src/ai/enrichment/data` documents using pgvector
 - reusable external bird data clients for eBird, iNaturalist, and Xeno-canto ingestion jobs
 - media file lookup for relative bird media keys through CloudFront or `GET /files/:folderName/:filename`
 - public homepage content for hero media, featured tours, bird highlights, and transportation add-ons
+- authenticated bird identification through `POST /birds/identify`, accepting image URLs or validated image uploads before running rich visual evidence extraction, direct-image-aware candidate generation, bird-profile RAG verification/reranking, and final response assembly
 - voice chat through `POST /voice-chat`, combining speech-to-text, chat orchestration, text-to-speech, S3 storage, and CloudFront-relative audio URLs
 - OpenAI/agent tool calling for tour search, availability, transportation, pricing, discounts, and durable reservations
 - normalized JSON responses and centralized error handling
@@ -31,11 +32,12 @@ The app uses a controller-service-query split:
 - `src/controllers/*` extracts request data, logs request metadata, and returns response envelopes.
 - `src/services/*` owns orchestration, AI calls, memory construction, and persistence decisions.
 - `src/db/queries/*` owns parameterized calls to PostgreSQL functions through `src/db/pool.js`.
-- `src/db/vector`, `src/db/retrieval`, `src/db/ingestion`, and `src/db/chunking` own durable RAG storage, search, ingestion, and chunking.
-- `src/external/` owns provider HTTP clients and shared external API rate limiting for bird data ingestion.
+- `src/db/vector` and `src/ai/enrichment` own durable RAG storage, search, enrichment, and chunking.
+- `src/ai/enrichment/` owns provider HTTP clients, export orchestration, normalized enrichment data, and chunking for bird data ingestion.
 - `src/routes/media.routes.js` owns CloudFront media URL creation for relative media keys; `src/storage/` remains for S3 uploads and object checks used by ingestion jobs.
 - `src/ai/*` owns OpenAI client calls, prompt assets, structured schemas, and chat tool adapters.
 - `src/middleware/*` owns validation, sanitization, security headers, CORS protection, rate limiting, errors, and auth hooks.
+- `src/utils/` owns shared helpers. Search existing utilities before adding a helper; prefer adding reusable helpers to an existing cohesive utility module, and use the `<name>.utils.js` naming convention for new utility files.
 
 ## Runtime Flows
 Chat:
@@ -76,15 +78,17 @@ GET /chat/latest
 - Rate limiting is an in-memory per-IP bucket: 60 requests per minute.
 - `POST /auth/signup`, `POST /auth/login`, `POST /auth/refresh`, and `POST /auth/logout` are public; login/signup issue access tokens plus DB-backed rotating refresh tokens, refresh rotates sessions, and logout revokes the supplied refresh token.
 - `POST /chat` accepts JWT-authenticated customer/admin users or unauthenticated visitor requests, while `GET /chat/latest` requires JWT bearer auth through `requireAuth`.
+- `POST /birds/identify` requires JWT bearer auth. JSON URL requests preserve the existing `{ imageUrl }` flow; raw JPEG, PNG, WebP, or GIF uploads are capped at 10 MB, uploaded to S3 under `bird-identification/`, converted to a CloudFront URL, and passed into the same image-analysis pipeline. The multimodal bird identification pipeline now returns `status`, `bestMatch`, `candidates`, rich `imageAnalysis`, compatibility `imageObservations`, and conservative `notes`; confidence below `0.55` is `uncertain`, and below `0.40` is `unknown`.
 - Visitor chat is limited to bird-related questions, cannot execute tour/reservation tools, and uses a stricter in-memory IP limit.
 - `NODE_ENV=test` bypasses required `OPENAI_API_KEY`, `DATABASE_URL`, and `JWT_SECRET` validation.
-- OpenAI retry behavior lives in `src/utils/asyncRetry.js` and is used for transient OpenAI statuses.
+- OpenAI retry behavior lives in `src/utils/async.utils.js` and is used for transient OpenAI statuses.
+- Shared filesystem and media path helpers live in `src/utils/fs.utils.js` and `src/utils/file.utils.js`; use them instead of duplicating JSON file IO, freshness checks, or media URL/path normalization.
 - Streaming chat passes an `AbortSignal` to OpenAI and skips saving a completed exchange when the client disconnects before completion.
-- RAG reads only from PostgreSQL pgvector during chat. Use `npm run ingest` to ingest normalized JSON datasets from `src/db/ingestion/data` before relying on RAG context; chat does not chunk documents, generate source embeddings, or write vectors.
+- RAG reads only from PostgreSQL pgvector during chat. Use `npm run enrich -- birds` to refresh bird source data, generate `birds.json`, and ingest normalized bird documents before relying on bird RAG context; chat does not chunk documents, generate source embeddings, or write vectors.
 - Bird RAG metadata may include `meta.birdMatches[].media` with absolute URLs or relative object keys such as `/photos/123_medium.jpg`, `songs/123.mp3`, or `sonograms/123_grey-small.png`. Relative keys are intentionally not public static paths; the UI resolves them through CloudFront when configured or through `GET /files/:folderName/:filename`, which returns a normalized envelope containing `data.url`.
 - `GET /files/:folderName/:filename` normalizes and validates path segments, then returns a CloudFront URL from `CLOUDFRONT_BASE_URL`; it no longer creates S3 presigned URLs.
-- External bird data clients live under `src/external/clients/` and export orchestration lives under `src/external/services/` behind `src/external/export.service.js`. They are intended for ingestion jobs, not request handlers, and share a configurable rate limiter capped at 40 requests per minute.
-- `npm run external` exports provider JSON into `src/external/data` in `taxo`, `sounds`, `photos` order with file-age and per-species cache checks before future normalization or ingestion steps. eBird recent observations are fetched per species code from the Costa Rica species list and written incrementally as keyed `{ locations, lstDt }` summaries.
+- External bird data clients live under `src/ai/enrichment/clients/` and export orchestration lives in `src/ai/enrichment/services/birds.enrichment.service.js`. They are intended for ingestion jobs, not request handlers, and share a configurable rate limiter capped at 40 requests per minute.
+- `npm run enrich -- birds` exports provider JSON into `src/ai/enrichment/data`, applies per-resource freshness windows, regenerates `birds.json`, and ingests it into pgvector. eBird recent observations are fetched per species code from the Costa Rica species list and written incrementally as keyed `{ locations, lstDt }` summaries.
 - Tour data, availability, selection, and reservations are stored in PostgreSQL through functions in `003_create_tour_reservations.sql`; the tour helpers join the Costa Rica `country`/`zone`/`node`/`birds`/`birds_by_node` reference graph and return `location`, `node`, `subnode`, and `zone` for tour discovery, selection, and reservation metadata.
 - Tour listing, recommendation, guided action, pricing, transportation, and reservation details are returned in the `/chat` stream `done.meta` object for frontend rendering; assistant text stays short when structured metadata is present.
 - Tour selection accepts a tour ID or a clear/partial tour name such as `Monteverde tour` before pricing or reservation.
@@ -112,6 +116,6 @@ npm test
 1. Add or update validators in `src/validators/`.
 2. Controllers must only parse HTTP requests, validate and authorize input, and call services. Do not perform business logic, database access, or OpenAI prompt composition inside controllers.
 3. Put orchestration in `src/services/`.
-4. Put SQL in `src/db/queries/` and use parameterized queries.
+4. Put PostgreSQL functions and schema changes in `src/db/migrations/`; query modules should use parameterized calls to those functions for new persistence writes instead of inline write SQL.
 5. Put prompt text and schemas in `src/ai/`.
 6. Update the relevant docs link above when behavior changes.

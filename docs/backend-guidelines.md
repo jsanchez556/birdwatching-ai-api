@@ -8,6 +8,8 @@ Back to [Project Context](../CONTEXT.md). Pair this with [API Contracts](./api.m
 - Keep business orchestration in `src/services/`.
 - Keep SQL in `src/db/queries/`; never build SQL with untrusted string interpolation.
 - Keep prompt text, prompt versions, and OpenAI schemas in `src/ai/`.
+- Search `src/utils/` before adding helper functions. Reuse existing utilities first, add reusable helpers to a cohesive existing utility module when practical, and name new utility files with the `<name>.utils.js` convention.
+- Use `src/utils/fs.utils.js` for JSON file IO and freshness checks, and `src/utils/file.utils.js` for reusable file/media path helpers.
 
 ## Validation
 - Validate external input at the middleware boundary with `validate(...)`.
@@ -19,7 +21,7 @@ Back to [Project Context](../CONTEXT.md). Pair this with [API Contracts](./api.m
 
 ## Errors
 - Use `HttpError` for expected request, validation, rate limit, and provider failures.
-- Let `asyncHandler` forward promise failures to `error.middleware.js`.
+- Let `asyncHandler` from `src/utils/async.utils.js` forward promise failures to `error.middleware.js`.
 - Do not expose stack traces to clients; the middleware hides server errors behind `INTERNAL_SERVER_ERROR`.
 - Log enough metadata to debug without logging secrets or full tokens.
 
@@ -31,12 +33,13 @@ Back to [Project Context](../CONTEXT.md). Pair this with [API Contracts](./api.m
 - Keep chat tool schemas in `src/ai/schemas/`, adapters in `src/ai/tools/`, and multi-step planning in `src/ai/orchestrators/`.
 - Feed tool results into final response context before returning conversational text.
 - Log model, request ID, token usage, prompt version, and response length where available.
-- Retry only safe transient OpenAI failures through `asyncRetry`.
+- Retry only safe transient OpenAI failures through `asyncRetry` from `src/utils/async.utils.js`.
 
 ## Database
 - Use `src/db/pool.js` for all PostgreSQL access.
 - Store conversation metadata in `conversations` and chat exchanges in `messages`.
 - Keep database helper functions in migrations and call them from query modules instead of hardcoding persistence SQL in JavaScript.
+- For new database writes, prefer a PostgreSQL function created in `src/db/migrations/` and call it with parameterized `SELECT * FROM function_name(...)` from `src/db/queries/`; avoid inline `INSERT`, `UPDATE`, or `DELETE` statements in query modules unless the write is intentionally trivial and documented.
 - Treat chat persistence as best-effort unless the API contract changes.
 - Add migrations under `src/db/migrations/` for schema changes.
 - Keep auth state in `users` and `refresh_tokens`; keep usage accounting in `usage_logs`.
@@ -44,21 +47,21 @@ Back to [Project Context](../CONTEXT.md). Pair this with [API Contracts](./api.m
 - Keep pgvector RAG documents in `knowledge_documents` and `knowledge_chunks`; do not mix RAG embeddings into the tour/location reference tables.
 
 ## RAG Data
-- Keep runtime knowledge source files under `src/db/ingestion/data`.
+- Keep runtime knowledge source files under `src/ai/enrichment/data`.
 - Use normalized JSON arrays for ingestion datasets; `birds.json` is the reference contract.
 - Preserve normalized document fields used by embeddings and UI metadata: required `externalId` and `name`, plus optional `description`, `locations`, `documentType`, `category`, `tags`, and `metadata`.
 - Store generated embeddings in PostgreSQL through `src/db/vector/vector.repository.js`; do not write generated embeddings into source files.
-- Keep chunking in `src/db/chunking`, ingestion in `src/db/ingestion`, and semantic retrieval in `src/db/retrieval`.
+- Keep enrichment, chunking, and semantic retrieval in `src/ai/enrichment`.
 - Keep metadata filters parameterized and limited to known document fields, tags, and JSONB containment.
-- Run document ingestion through `npm run ingest`; do not run source document ingestion from chat or request handlers.
+- Run bird document enrichment and ingestion through `npm run enrich -- birds`; do not run source document ingestion from chat or request handlers.
 
 ## External Bird Data
-- Keep provider clients in `src/external/clients/` and ingestion orchestration in services.
-- Use `src/external/httpClient.js` for provider requests so non-2xx responses, malformed JSON, and unexpected response shapes are normalized.
-- Share `src/external/rateLimiter.js` across provider clients for ingestion jobs; do not configure external provider traffic above 40 requests per minute.
+- Keep provider clients in `src/ai/enrichment/clients/` and ingestion orchestration in services.
+- Use `src/utils/httpClient.js` for provider requests so non-2xx responses, malformed JSON, and unexpected response shapes are normalized.
+- Share `src/utils/rateLimiter.js` across provider clients for ingestion jobs; do not configure external provider traffic above 40 requests per minute.
 - Read eBird, iNaturalist, and Xeno-canto base URLs and API keys from `src/config/env.js`; never hardcode provider secrets.
-- Keep external provider JSON export and cache behavior in `src/external/export.service.js` or scripts, not in provider client classes.
-- Normalize fetched provider data before writing documents into `src/db/ingestion/data` or passing it to vector ingestion.
+- Keep external provider JSON export and cache behavior in `src/ai/enrichment/services/birds.enrichment.service.js` or enrichment services, not in provider client classes.
+- Normalize fetched provider data before writing documents into `src/ai/enrichment/data` or passing it to vector ingestion.
 
 ## Tour Tools
 - Keep tour data and reservation state in PostgreSQL; do not reintroduce JSON-backed tour state.

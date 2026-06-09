@@ -6,7 +6,7 @@ import { jest } from '@jest/globals';
 const mockIngestDocuments = jest.fn();
 const mockPoolEnd = jest.fn();
 
-await jest.unstable_mockModule('../src/db/ingestion/ingestion.service.js', () => ({
+await jest.unstable_mockModule('../src/ai/enrichment/services/ingest.service.js', () => ({
   default: {
     ingestDocuments: mockIngestDocuments,
   },
@@ -28,15 +28,13 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
 
 const {
   assertSafeDataPath,
-  discoverSupportedFiles,
+  ingestFiles,
   normalizeFileName,
-  parseArgs,
   parseJson,
   readDocumentsFromFile,
-  runIngestionCli,
-} = await import('../scripts/ingest-documents.js');
+} = await import('../src/ai/enrichment/services/birds.enrichment.service.js');
 
-describe('ingest-documents CLI helpers', () => {
+describe('enrichment ingestion helpers', () => {
   let dataDir;
 
   beforeEach(async () => {
@@ -48,43 +46,14 @@ describe('ingest-documents CLI helpers', () => {
     await rm(dataDir, { recursive: true, force: true });
   });
 
-  it('parses explicit files and default all-files mode', () => {
-    expect(parseArgs(['birds.json', 'tours'])).toEqual({
-      force: false,
-      all: false,
-      files: ['birds.json', 'tours'],
-    });
-
-    expect(parseArgs([])).toEqual({
-      force: false,
-      all: true,
-      files: [],
-    });
-
-    expect(parseArgs(['--all', '--force'])).toEqual({
-      force: true,
-      all: true,
-      files: [],
-    });
-  });
-
   it('normalizes dataset names to JSON file names', () => {
     expect(normalizeFileName('birds')).toBe('birds.json');
     expect(normalizeFileName('birds.json')).toBe('birds.json');
   });
 
-  it('rejects paths outside src/db/ingestion/data', () => {
+  it('rejects paths outside src/ai/enrichment/data', () => {
     expect(() => assertSafeDataPath('../secrets.json', dataDir))
-      .toThrow('Refusing to read outside src/db/ingestion/data');
-  });
-
-  it('discovers normalized JSON files in deterministic order', async () => {
-    await writeFile(path.join(dataDir, 'a.json'), '[]');
-    await writeFile(path.join(dataDir, 'z.json'), '[]');
-    await writeFile(path.join(dataDir, 'notes.md'), '# Notes');
-    await writeFile(path.join(dataDir, 'ignore.txt'), 'nope');
-
-    await expect(discoverSupportedFiles(dataDir)).resolves.toEqual(['a.json', 'z.json']);
+      .toThrow('Refusing to read outside src/ai/enrichment/data');
   });
 
   it('rejects JSON shapes that are not normalized document arrays', () => {
@@ -106,7 +75,7 @@ describe('ingest-documents CLI helpers', () => {
       skippedCount: 0,
     });
 
-    await expect(runIngestionCli(['birds.json'], { dataDir })).resolves.toEqual([{
+    await expect(ingestFiles(['birds.json'], { dataDir })).resolves.toEqual([{
       fileName: 'birds.json',
       skipped: false,
       documentCount: 1,
@@ -134,7 +103,7 @@ describe('ingest-documents CLI helpers', () => {
       skippedCount: 0,
     });
 
-    await expect(runIngestionCli(['birds'], { dataDir })).resolves.toEqual([{
+    await expect(ingestFiles(['birds'], { dataDir })).resolves.toEqual([{
       fileName: 'birds.json',
       skipped: false,
       documentCount: 0,
@@ -148,7 +117,7 @@ describe('ingest-documents CLI helpers', () => {
     });
   });
 
-  it('processes all supported files when no files are specified', async () => {
+  it('processes multiple supported files', async () => {
     await writeFile(path.join(dataDir, 'birds.json'), '[]');
     await writeFile(path.join(dataDir, 'tours.json'), '[]');
     mockIngestDocuments.mockResolvedValue({
@@ -157,7 +126,7 @@ describe('ingest-documents CLI helpers', () => {
       skippedCount: 0,
     });
 
-    await runIngestionCli([], { dataDir });
+    await ingestFiles(['birds.json', 'tours.json'], { dataDir });
 
     expect(mockIngestDocuments).toHaveBeenCalledTimes(2);
   });

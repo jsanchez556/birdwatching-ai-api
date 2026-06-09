@@ -56,6 +56,13 @@ const corsOrigins = (process.env.CORS_ORIGINS || '')
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+const corsAllowedHeaders = (
+  process.env.CORS_ALLOWED_HEADERS || 'Content-Type, Authorization, X-Filename'
+)
+  .split(',')
+  .map((header) => header.trim())
+  .filter(Boolean);
+
 const headLineBirds = (process.env.HEAD_LINE_BIRDS || process.env.HOMEPAGE_BIRD_HIGHLIGHTS || '')
   .split(',')
   .map((name) => name.trim())
@@ -75,6 +82,7 @@ const env = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   refreshTokenExpiresInDays: Number(process.env.REFRESH_TOKEN_EXPIRES_IN_DAYS) || 30,
   corsOrigins,
+  corsAllowedHeaders,
   headLineBirds,
   homepageBirdHighlights: headLineBirds,
   logFilesEnabled: process.env.LOG_FILES_ENABLED === 'true',

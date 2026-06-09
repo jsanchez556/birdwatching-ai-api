@@ -13,21 +13,24 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
 }));
 
 const {
-  default: ExternalDataExportService,
-  DAY_MS,
-  EXTERNAL_DATA_DIR,
-} = await import('../src/external/export.service.js');
+  default: BirdsExportService,
+} = await import('../src/ai/enrichment/services/birds.enrichment.service.js');
 const {
+  DAY_MS,
+} = await import('../src/utils/constants.utils.js');
+const {
+  extensionFromXenoCantoAudio,
   buildXenoCantoAudioAssetName,
   buildXenoCantoSonogramAssetName,
-  extensionFromXenoCantoAudio,
-  normalizeXenoCantoLicense,
   normalizeXenoCantoSourceUrl,
-} = await import('../src/external/services/xenoCanto.service.js');
+} = await import('../src/ai/enrichment/utils/birds.utils.js');
+const {
+  normalizeLicense,
+} = await import('../src/utils/license.utils.js');
 const {
   parseArgs,
-  runExternalDataCli,
-} = await import('../scripts/export-external-data.js');
+  runEnrichCli,
+} = await import('../src/ai/enrichment/scripts/enrich.js');
 const logger = (await import('../src/utils/logger.js')).default;
 
 function createEBirdClientMock(overrides = {}) {
@@ -165,7 +168,7 @@ function createWikiServiceMock(overrides = {}) {
   };
 }
 
-describe('ExternalDataExportService', () => {
+describe('BirdsExportService', () => {
   let dataDir;
 
   beforeEach(async () => {
@@ -177,18 +180,14 @@ describe('ExternalDataExportService', () => {
     await rm(dataDir, { recursive: true, force: true });
   });
 
-  it('uses src/external/data as the default export directory', () => {
-    expect(EXTERNAL_DATA_DIR).toBe(path.resolve(process.cwd(), 'src/external/data'));
-  });
-
   it('normalizes the Xeno-canto attribution source URL from API config', () => {
     expect(normalizeXenoCantoSourceUrl('https://xeno-canto.org/api/3')).toBe('https://xeno-canto.org/');
   });
 
-  it('normalizes Xeno-canto Creative Commons license URLs', () => {
-    expect(normalizeXenoCantoLicense('https://creativecommons.org/licenses/by-sa/4.0/'))
+  it('normalizes Creative Commons license URLs', () => {
+    expect(normalizeLicense('https://creativecommons.org/licenses/by-sa/4.0/'))
       .toBe('cc-by-sa');
-    expect(normalizeXenoCantoLicense('https://creativecommons.org/licenses/by-nc-nd/4.0/'))
+    expect(normalizeLicense('https://creativecommons.org/licenses/by-nc-nd/4.0/'))
       .toBe('cc-by-nc-nd');
   });
 
@@ -218,7 +217,7 @@ describe('ExternalDataExportService', () => {
 
   it('fetches and writes the eBird species list when no fresh file exists', async () => {
     const eBirdClient = createEBirdClientMock();
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient,
     });
@@ -241,7 +240,7 @@ describe('ExternalDataExportService', () => {
     const eBirdClient = createEBirdClientMock();
     const filePath = path.join(dataDir, 'ebird-species-list-cr.json');
     await writeFile(filePath, '["cached"]\n');
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient,
     });
@@ -279,7 +278,7 @@ describe('ExternalDataExportService', () => {
         familySciName: 'Cached familia',
       },
     }));
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient,
     });
@@ -325,7 +324,7 @@ describe('ExternalDataExportService', () => {
         speciesCode: 'gretin1',
       },
     }));
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient,
     });
@@ -341,7 +340,7 @@ describe('ExternalDataExportService', () => {
 
   it('runs eBird species list, taxonomy, and recent observations in order', async () => {
     const eBirdClient = createEBirdClientMock();
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient,
     });
@@ -421,7 +420,7 @@ describe('ExternalDataExportService', () => {
       'higtin1',
       'gretin1',
     ]));
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient,
     });
@@ -534,7 +533,7 @@ describe('ExternalDataExportService', () => {
         lng: -84,
       },
     }));
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient,
       now: () => now + DAY_MS,
@@ -598,10 +597,65 @@ describe('ExternalDataExportService', () => {
     expect(eBirdClient.getRecentObservations).toHaveBeenCalledTimes(2);
   });
 
+  it('continues eBird recent observations when one species returns a recoverable provider error', async () => {
+    const eBirdClient = createEBirdClientMock({
+      getRecentObservations: jest.fn().mockImplementation(async (_countryCode, speciesCode) => {
+        if (speciesCode === 'badjson1') {
+          const error = new Error('eBird returned malformed JSON');
+          error.status = 502;
+          error.code = 'EXTERNAL_API_MALFORMED_RESPONSE';
+          throw error;
+        }
+
+        return [
+          {
+            speciesCode: 'higtin1',
+            comName: 'Highland Tinamou',
+            sciName: 'Nothocercus bonapartei',
+            locId: 'L1',
+            locName: 'Monteverde Cloud Forest Reserve',
+            obsDt: '2026-05-18 08:12',
+            howMany: 1,
+            lat: 10.304,
+            lng: -84.808,
+          },
+        ];
+      }),
+    });
+    const filePath = path.join(dataDir, 'ebird-recent-observations-cr.json');
+    await writeFile(path.join(dataDir, 'ebird-species-list-cr.json'), JSON.stringify([
+      'badjson1',
+      'higtin1',
+    ]));
+    const service = new BirdsExportService({
+      dataDir,
+      eBirdClient,
+    });
+
+    await expect(service.exportEBirdRecentObservations()).resolves.toMatchObject({
+      provider: 'ebird',
+      resource: 'recent-observations',
+      count: 1,
+      fetchedCount: 1,
+      failedCount: 1,
+      failedSpeciesCodes: ['badjson1'],
+    });
+
+    await expect(readFile(filePath, 'utf8')).resolves.toContain('higtin1');
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Skipping eBird recent observations for one species after recoverable provider error',
+      expect.objectContaining({
+        event: 'ebird_recent_observations_species_skipped',
+        code: 'EXTERNAL_API_MALFORMED_RESPONSE',
+        failedCount: 1,
+      })
+    );
+  });
+
   it('fetches all Xeno-canto pages through the client and writes one simplified keyed file', async () => {
     const xenoCantoClient = createXenoCantoClientMock();
     const mediaAssetService = createMediaAssetServiceMock();
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient: createEBirdClientMock(),
       xenoCantoClient,
@@ -713,7 +767,7 @@ describe('ExternalDataExportService', () => {
         };
       }),
     });
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient: createEBirdClientMock(),
       xenoCantoClient,
@@ -774,7 +828,7 @@ describe('ExternalDataExportService', () => {
       }),
     });
     const mediaAssetService = createMediaAssetServiceMock();
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient: createEBirdClientMock(),
       xenoCantoClient,
@@ -834,7 +888,7 @@ describe('ExternalDataExportService', () => {
         attr_html: '<p>Sound recording sourced from <a href="https://xeno-canto.org/" target="_blank" rel="noopener noreferrer">xeno-canto</a>.</p>',
       },
     }));
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient: createEBirdClientMock(),
       xenoCantoClient,
@@ -877,7 +931,7 @@ describe('ExternalDataExportService', () => {
       uploadAudioFromUrl: jest.fn().mockResolvedValue({ skipped: true, reason: 'exists' }),
       uploadImageFromUrl: jest.fn().mockResolvedValue({ skipped: true, reason: 'exists' }),
     });
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient: createEBirdClientMock(),
       xenoCantoClient,
@@ -909,7 +963,7 @@ describe('ExternalDataExportService', () => {
         sono: 'sonograms/774101_grey-small.png',
       },
     }));
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient: createEBirdClientMock(),
       xenoCantoClient,
@@ -968,7 +1022,7 @@ describe('ExternalDataExportService', () => {
         sono: 'sonograms/774101_grey-small.png',
       },
     }));
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient: createEBirdClientMock(),
       xenoCantoClient,
@@ -1024,7 +1078,7 @@ describe('ExternalDataExportService', () => {
         file: 'songs/774101.wav',
       },
     }));
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient: createEBirdClientMock(),
       xenoCantoClient,
@@ -1093,7 +1147,7 @@ describe('ExternalDataExportService', () => {
         hotlinkUrl: assetUrl,
       })),
     });
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient: createEBirdClientMock(),
       xenoCantoClient,
@@ -1143,7 +1197,7 @@ describe('ExternalDataExportService', () => {
       }),
     });
     const filePath = path.join(dataDir, 'xenocanto-costa-rica-bird-songs.json');
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient: createEBirdClientMock(),
       xenoCantoClient,
@@ -1186,7 +1240,7 @@ describe('ExternalDataExportService', () => {
         rec: 'Paul Driver',
       },
     }));
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient: createEBirdClientMock(),
       xenoCantoClient,
@@ -1239,7 +1293,7 @@ describe('ExternalDataExportService', () => {
         },
       ],
     }));
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient: createEBirdClientMock(),
       xenoCantoClient,
@@ -1290,7 +1344,7 @@ describe('ExternalDataExportService', () => {
         speciesCode: 'different-provider-code',
       },
     }));
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient: createEBirdClientMock(),
       iNaturalistClient,
@@ -1372,7 +1426,7 @@ describe('ExternalDataExportService', () => {
         speciesCode: 'tubmot1',
       },
     }));
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient: createEBirdClientMock(),
       iNaturalistClient,
@@ -1445,7 +1499,7 @@ describe('ExternalDataExportService', () => {
         speciesCode: 'tubmot1',
       },
     }));
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient: createEBirdClientMock(),
       iNaturalistClient,
@@ -1502,7 +1556,7 @@ describe('ExternalDataExportService', () => {
         comName: 'Brown Jay',
       },
     ]));
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient: createEBirdClientMock(),
       iNaturalistClient,
@@ -1546,7 +1600,7 @@ describe('ExternalDataExportService', () => {
         lastUpdate: '2024-01-01',
       },
     }));
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient: createEBirdClientMock(),
       iNaturalistClient,
@@ -1599,7 +1653,7 @@ describe('ExternalDataExportService', () => {
         speciesCode: 'brnjay',
       },
     }));
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient: createEBirdClientMock(),
       iNaturalistClient,
@@ -1657,7 +1711,7 @@ describe('ExternalDataExportService', () => {
         },
       ],
     }));
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient: createEBirdClientMock(),
       iNaturalistClient,
@@ -1727,7 +1781,7 @@ describe('ExternalDataExportService', () => {
         wikiTitle: 'Highland_tinamou',
       },
     }));
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient: createEBirdClientMock(),
       iNaturalistClient,
@@ -1773,7 +1827,7 @@ describe('ExternalDataExportService', () => {
         speciesCode: 'noname1',
       },
     }));
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient: createEBirdClientMock(),
       iNaturalistClient,
@@ -1824,7 +1878,7 @@ describe('ExternalDataExportService', () => {
         },
       ],
     }));
-    const service = new ExternalDataExportService({
+    const service = new BirdsExportService({
       dataDir,
       eBirdClient: createEBirdClientMock(),
       iNaturalistClient,
@@ -1841,64 +1895,35 @@ describe('ExternalDataExportService', () => {
   });
 });
 
-describe('external data export CLI helpers', () => {
-  it('parses provider arguments and options', () => {
-    expect(parseArgs(['taxo', 'photos', '--force'])).toEqual({
-      providers: ['taxo', 'photos'],
+describe('enrich CLI helpers', () => {
+  it('parses target arguments and options', () => {
+    expect(parseArgs(['birds', '--force', '--country', 'CR', '--per-page', '250'])).toEqual({
+      target: 'birds',
       options: {
         force: true,
+        forceDescriptions: false,
         countryCode: 'CR',
-        perPage: 500,
+        perPage: 250,
       },
     });
   });
 
-  it('defaults to taxo, songs, and photos in order', () => {
-    expect(parseArgs([]).providers).toEqual(['taxo', 'songs', 'photos']);
+  it('requires an enrichment target', () => {
+    expect(() => parseArgs([])).toThrow('Enrichment target is required');
   });
 
-  it('runs taxo, songs, and photos exports', async () => {
-    const service = {
-      exportEBird: jest.fn().mockResolvedValue([{
-        provider: 'ebird',
-        resource: 'species-list',
-      }]),
-      exportXenoCanto: jest.fn().mockResolvedValue({
-        provider: 'xenocanto',
-        resource: 'costa-rica-bird-songs',
-      }),
-      exportINaturalist: jest.fn().mockResolvedValue({
-        provider: 'inaturalist',
-        resource: 'costa-rica-bird-images',
-      }),
+  it('runs the selected enrichment target', async () => {
+    const birdsExportService = {
+      enrichBirds: jest.fn().mockResolvedValue({ target: 'birds' }),
     };
 
-    await expect(runExternalDataCli(['taxo', 'songs', 'photos'], { service })).resolves.toEqual([
-      {
-        provider: 'ebird',
-        resource: 'species-list',
-      },
-      {
-        provider: 'xenocanto',
-        resource: 'costa-rica-bird-songs',
-      },
-      {
-        provider: 'inaturalist',
-        resource: 'costa-rica-bird-images',
-      },
-    ]);
-    expect(service.exportEBird).toHaveBeenCalledWith({
+    await expect(runEnrichCli(['birds'], {
+      birdsExportService,
+    })).resolves.toEqual({ target: 'birds' });
+
+    expect(birdsExportService.enrichBirds).toHaveBeenCalledWith({
       force: false,
-      countryCode: 'CR',
-      perPage: 500,
-    });
-    expect(service.exportXenoCanto).toHaveBeenCalledWith({
-      force: false,
-      countryCode: 'CR',
-      perPage: 500,
-    });
-    expect(service.exportINaturalist).toHaveBeenCalledWith({
-      force: false,
+      forceDescriptions: false,
       countryCode: 'CR',
       perPage: 500,
     });

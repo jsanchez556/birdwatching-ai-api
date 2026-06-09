@@ -121,7 +121,10 @@ class ObservabilityService {
   toLangSmithRunType(type) {
     const runTypes = {
       ai_execution_flow: 'chain',
+      bird_identification_pipeline: 'chain',
       conversation_context: 'chain',
+      final_response: 'chain',
+      image_input: 'tool',
       llm: 'llm',
       rag_pipeline: 'chain',
       rag_retrieval: 'retriever',

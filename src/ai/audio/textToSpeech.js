@@ -1,6 +1,6 @@
 import openaiClient from '../openai.client.js';
 import { traceLlmCall } from '../../tracing/aiTracing.middleware.js';
-import asyncRetry from '../../utils/asyncRetry.js';
+import { asyncRetry } from '../../utils/async.utils.js';
 import logger from '../../utils/logger.js';
 
 const SPEECH_MODEL = 'gpt-4o-mini-tts';
@@ -79,8 +79,6 @@ class TextToSpeech {
 }
 
 export {
-  SPEECH_MODEL,
-  SPEECH_VOICE,
   assertAudioBuffer,
   responseToBuffer,
 };

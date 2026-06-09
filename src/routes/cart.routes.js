@@ -2,7 +2,7 @@ import express from 'express';
 import cartController from '../controllers/cart.controller.js';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import validate from '../middleware/validate.middleware.js';
-import asyncHandler from '../utils/asyncHandler.js';
+import { asyncHandler } from '../utils/async.utils.js';
 import {
   validateAddCartItemBody,
   validateCreateCartReservationsBody,

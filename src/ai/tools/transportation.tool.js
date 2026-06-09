@@ -1,5 +1,5 @@
 import { DEFAULT_CURRENCY, TRANSPORTATION_OPTIONS } from '../../constants/business.js';
-import { normalizeText } from '../../utils/normalizers.js';
+import { normalizeText } from '../../utils/normalizer.utils.js';
 import { invalidArguments, toPositiveInteger } from '../../utils/toolResponses.js';
 
 const transportationProfiles = [

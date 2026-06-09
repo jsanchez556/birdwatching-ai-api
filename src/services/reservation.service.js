@@ -7,7 +7,7 @@ import {
   normalizeComparableText,
   normalizeOptionalText,
   normalizeText,
-} from '../utils/normalizers.js';
+} from '../utils/normalizer.utils.js';
 import { invalidArguments, toPositiveInteger } from '../utils/toolResponses.js';
 
 const MAX_CONFIRMATION_ATTEMPTS = 3;

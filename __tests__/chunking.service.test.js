@@ -1,7 +1,7 @@
 import chunkingService, {
   countApproximateTokens,
   normalizeWhitespace,
-} from '../src/db/chunking/chunking.service.js';
+} from '../src/ai/enrichment/services/chunking.service.js';
 
 describe('ChunkingService', () => {
   it('normalizes whitespace before chunking text', () => {

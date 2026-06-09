@@ -2,26 +2,34 @@ import { jest } from '@jest/globals';
 import EBirdClient, {
   isRecentObservationsResponse,
   isSpeciesListResponse,
-} from '../src/external/clients/ebird.client.js';
+} from '../src/ai/enrichment/clients/ebird.client.js';
 import INaturalistClient, {
   isTaxaSearchResponse,
-} from '../src/external/clients/inaturalist.client.js';
+} from '../src/ai/enrichment/clients/inaturalist.client.js';
 import XenoCantoClient, {
   COSTA_RICA_BIRD_SONG_QUERY,
   isXenoCantoResponse,
-} from '../src/external/clients/xenoCanto.client.js';
+} from '../src/ai/enrichment/clients/xenoCanto.client.js';
 import WikiClient, {
   WIKI_RATE_LIMIT_MAX_REQUESTS,
   WIKI_RATE_LIMIT_WINDOW_MS,
-} from '../src/external/clients/wiki.client.js';
-import ExternalHttpClient from '../src/external/httpClient.js';
-import ExternalApiRateLimiter from '../src/external/rateLimiter.js';
+} from '../src/ai/enrichment/clients/wiki.client.js';
+import HttpClient from '../src/utils/httpClient.js';
+import ApiRateLimiter from '../src/utils/rateLimiter.js';
 
 function jsonResponse(body, options = {}) {
   return {
     ok: options.ok ?? true,
     status: options.status ?? 200,
     text: jest.fn().mockResolvedValue(JSON.stringify(body)),
+  };
+}
+
+function textResponse(body, options = {}) {
+  return {
+    ok: options.ok ?? true,
+    status: options.status ?? 200,
+    text: jest.fn().mockResolvedValue(body),
   };
 }
 
@@ -102,7 +110,7 @@ describe('external API clients', () => {
     await client.getRecentObservations('CR', 'brnjay');
 
     expect(fetchImpl.mock.calls[0][0].toString())
-      .toBe('https://api.ebird.test/v2/data/obs/CR/recent/brnjay?hotspot=true');
+      .toBe('https://api.ebird.test/v2/data/obs/CR/recent/brnjay?hotspot=true&back=30');
   });
 
   it('searches iNaturalist taxa by name', async () => {
@@ -241,12 +249,12 @@ describe('external API clients', () => {
       results: [],
     }));
 
-    const failedClient = new ExternalHttpClient({
+    const failedClient = new HttpClient({
       baseUrl: 'https://provider.test',
       provider: 'Provider',
       fetchImpl: failedFetch,
     });
-    const malformedClient = new ExternalHttpClient({
+    const malformedClient = new HttpClient({
       baseUrl: 'https://provider.test',
       provider: 'Provider',
       fetchImpl: malformedFetch,
@@ -264,10 +272,27 @@ describe('external API clients', () => {
     });
   });
 
+  it('preserves non-2xx provider status when the error body is not JSON', async () => {
+    const failedFetch = jest.fn().mockResolvedValue(textResponse('<html>temporarily unavailable</html>', {
+      ok: false,
+      status: 503,
+    }));
+    const client = new HttpClient({
+      baseUrl: 'https://provider.test',
+      provider: 'Provider',
+      fetchImpl: failedFetch,
+    });
+
+    await expect(client.get('/birds')).rejects.toMatchObject({
+      status: 503,
+      code: 'EXTERNAL_API_REQUEST_FAILED',
+    });
+  });
+
   it('paces requests through the shared external API rate limit window', async () => {
     let currentTime = 0;
     const waits = [];
-    const limiter = new ExternalApiRateLimiter({
+    const limiter = new ApiRateLimiter({
       maxRequests: 2,
       windowMs: 1000,
       now: () => currentTime,

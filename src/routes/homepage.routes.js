@@ -1,6 +1,6 @@
 import express from 'express';
 import homepageController from '../controllers/homepage.controller.js';
-import asyncHandler from '../utils/asyncHandler.js';
+import { asyncHandler } from '../utils/async.utils.js';
 
 const router = express.Router();
 

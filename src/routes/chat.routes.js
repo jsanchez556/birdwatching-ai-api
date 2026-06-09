@@ -3,7 +3,7 @@ import chatController from '../controllers/chat.controller.js';
 import { optionalAuth, requireAuth } from '../middleware/auth.middleware.js';
 import { aiRateLimit, visitorAiRateLimit } from '../middleware/rateLimit.middleware.js';
 import validate from '../middleware/validate.middleware.js';
-import asyncHandler from '../utils/asyncHandler.js';
+import { asyncHandler } from '../utils/async.utils.js';
 import { validateChatBody } from '../validators/chat.validator.js';
 
 const router = express.Router();

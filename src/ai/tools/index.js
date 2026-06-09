@@ -146,4 +146,4 @@ export async function executeToolCall(name, args = {}, metadata = {}) {
   });
 }
 
-export { createToolRegistry, tourSchema, TOOL_EXECUTION_FAILED_MESSAGE };
+export { createToolRegistry, TOOL_EXECUTION_FAILED_MESSAGE };

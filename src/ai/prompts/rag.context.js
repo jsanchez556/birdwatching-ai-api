@@ -1,4 +1,4 @@
-export function formatScore(score) {
+function formatScore(score) {
   return Number.isFinite(score) ? Number(score.toFixed(4)) : 0;
 }
 

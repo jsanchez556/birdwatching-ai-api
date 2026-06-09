@@ -1,6 +1,6 @@
 import express from 'express';
 import env from '../config/env.js';
-import asyncHandler from '../utils/asyncHandler.js';
+import { asyncHandler } from '../utils/async.utils.js';
 import HttpError from '../utils/httpError.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 

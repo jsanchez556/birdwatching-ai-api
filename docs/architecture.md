@@ -13,12 +13,12 @@ src/
   config/                environment parsing and validation
   controllers/           thin HTTP handlers
   db/                    pg pool, migrations, query modules
-  external/              external provider HTTP clients and rate limiting
+  ai/enrichment/         external provider clients, enrichment data, chunking, and vector enrichment
   middleware/            validation, rate limit, error handling, auth
   routes/                route modules
   services/              business orchestration
   validators/            request payload validators
-  utils/                 logger, retry, async handler, responses, errors
+  utils/                 shared helpers; prefer <name>.utils.js for new utility modules
   observability/         LangSmith-compatible trace configuration and trace lifecycle service
   tracing/               reusable AI tracing wrappers for LLM, RAG, tools, and agents
   monitoring/            centralized AI telemetry for latency, token usage, and errors
@@ -54,17 +54,30 @@ Chat context is assembled from:
 4. optional retrieved context injected after the base system message
 
 RAG uses:
-1. `npm run ingest` to parse normalized JSON datasets from `src/db/ingestion/data`, chunk them, generate embeddings, and persist documents plus vectors in PostgreSQL
-2. `src/db/retrieval/retrieval.service.js` to embed the user question and retrieve ranked chunks through `src/db/vector/vector.repository.js`
+1. `npm run enrich -- birds` to refresh bird provider data, generate `birds.json`, chunk it, generate embeddings, and persist documents plus vectors in PostgreSQL
+2. `src/ai/enrichment/services/retrieval.service.js` to embed the user question and retrieve ranked chunks through `src/db/vector/vector.repository.js`
 3. `rag.service.js` to inject a compact system context message and return frontend-safe `sources`
 4. `rag.service.js` to derive compact `birdMatches` metadata from top `bird_profile` documents, including optional media references stored in document metadata
 
+Bird identification uses:
+1. authenticated `POST /birds/identify` requests with either a JSON `imageUrl` or raw JPEG, PNG, WebP, or GIF bytes
+2. `imageUpload.middleware.js` plus `birdIdentification.validator.js` to enforce content type, size, and one-input-only rules
+3. `birdIdentificationImageStorage.service.js` to upload raw images to S3 under `bird-identification/` and produce a CloudFront URL for provider image analysis
+4. `birdImageAnalysis.service.js` to extract rich visible field marks, image quality, apparent group, bill details, plumage areas, and conservative confidence from the image
+5. `birdIdentification.agent.js` to generate conservative candidate species from the rich evidence and, when available, the provider-readable image URL
+6. `birdIdentification.service.js` to retrieve bird-profile RAG for candidates and confusion species, run verification/reranking against retrieved profiles, calibrate confidence thresholds, and assemble the final normalized response
+
 External bird data ingestion uses:
-1. provider-specific clients in `src/external/clients/` for eBird, iNaturalist, and Xeno-canto
-2. `src/external/httpClient.js` for shared GET request construction, JSON parsing, non-2xx errors, and response-shape validation
-3. `src/external/rateLimiter.js` for a shared async limiter capped at 40 requests per minute
-4. focused export services in `src/external/services/` to orchestrate provider calls without coupling the clients to routes or controllers
-5. `src/external/export.service.js` plus `scripts/export-external-data.js` to export provider JSON under `src/external/data` from `npm run external`
+1. provider-specific clients in `src/ai/enrichment/clients/` for eBird, iNaturalist, and Xeno-canto
+2. `src/utils/httpClient.js` for shared GET request construction, JSON parsing, non-2xx errors, and response-shape validation
+3. `src/utils/rateLimiter.js` for a shared async limiter capped at 40 requests per minute
+4. focused export services in `src/ai/enrichment/services/` to orchestrate provider calls without coupling the clients to routes or controllers
+5. reusable bird normalization helpers in `src/ai/enrichment/utils/birds.utils.js`, imported from their defining module instead of re-exported through services
+6. `src/ai/enrichment/services/birds.enrichment.service.js` plus `src/ai/enrichment/scripts/enrich.js` to export provider JSON under `src/ai/enrichment/data` from `npm run enrich -- birds`
+
+Shared utility modules should be checked before adding new helper code. JSON file
+IO and freshness checks live in `src/utils/fs.utils.js`; reusable file and media
+path helpers live in `src/utils/file.utils.js`.
 
 The current external provider methods are `getSpeciesList`, `getRecentObservations`,
 `searchTaxaByName`, and `getCostaRicaBirdSongs`. They read base URLs and API
@@ -77,25 +90,15 @@ species code at a time.
 recordings into one provider-shaped response; pass `{ paginate: false }` when a
 caller needs only one page.
 
-`npm run external -- taxo` exports the eBird species list first, uses that list
-to append missing taxonomy records into `ebird-species-taxo-cr.json` in chunks
-of 50 species codes, then reads the same species list to refresh recent Costa
-Rica observations one species at a time. Species lists are skipped when the file
-is less than one year old. Taxonomy is incremental by species code, and recent
-observations are written incrementally after each species. The observations file
-is keyed by species code; each entry contains `locations` observation objects
-sorted newest first plus `lstDt` for the most recent observation.
-`npm run external -- sounds` fetches all Xeno-canto pages, maps recordings to
-the simplified ingestion fields, writes one
-`xenocanto-costa-rica-bird-songs.json` object keyed by English name, and skips
-it for one year when fresh. `npm run external -- photos` reads
-`ebird-species-taxo-cr.json`, de-duplicates species, searches
-iNaturalist by common name, and writes
-`inaturalist-costa-rica-bird-images.json` as a species-code keyed object with
-image URLs and per-entry update dates. Each species lookup is skipped for one
-year when its entry update date is fresh.
-With no arguments, `npm run external` runs `taxo`, `sounds`, and `photos` in
-that order.
+`npm run enrich -- birds` runs the bird enrichment target end to end. It refreshes
+`ebird-species-list-cr.json` when missing or at least one month old,
+`ebird-species-taxo-cr.json` when missing or at least six months old,
+`ebird-recent-observations-cr.json` when missing or at least one week old,
+`inaturalist-costa-rica-bird-images.json` when missing or at least one month old,
+and `xenocanto-costa-rica-bird-songs.json` when missing or at least six months
+old. It then validates those source files, regenerates `birds.json`, and ingests
+that normalized dataset into pgvector. Taxonomy remains incremental by species
+code, and recent observations are written incrementally after each species.
 
 Media routing uses:
 1. `src/routes/media.routes.js` to validate `GET /files/:folderName/:filename`

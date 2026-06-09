@@ -3,7 +3,7 @@ import voiceChatController from '../controllers/voiceChat.controller.js';
 import audioUpload from '../middleware/audioUpload.middleware.js';
 import { optionalAuth } from '../middleware/auth.middleware.js';
 import { aiRateLimit, visitorAiRateLimit } from '../middleware/rateLimit.middleware.js';
-import asyncHandler from '../utils/asyncHandler.js';
+import { asyncHandler } from '../utils/async.utils.js';
 import HttpError from '../utils/httpError.js';
 import { validateAudioUpload } from '../validators/audio.validator.js';
 import { validateVoiceChatContext } from '../validators/voiceChat.validator.js';

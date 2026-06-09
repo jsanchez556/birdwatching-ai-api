@@ -30,6 +30,8 @@ backed tour reservation tools for Costa Rica.
 5. Keep validators at the middleware boundary.
 6. Normalize success and error responses through `src/utils/apiResponse.js`.
 7. Use centralized `HttpError`, `asyncHandler`, and `src/middleware/error.middleware.js` for expected and unexpected failures.
+8. Before creating a helper, search `src/utils/` for existing behavior. Reuse utilities when possible; add new shared helpers to an appropriate existing utility module before creating a new file. New utility files should use the `<name>.utils.js` naming convention.
+9. Keep filesystem helpers in `src/utils/fs.utils.js` and file/media path helpers in `src/utils/file.utils.js`; do not duplicate JSON file IO, freshness checks, or URL/path normalization in feature modules.
 
 ## Security and logging
 1. Reject malformed payloads before service execution.
@@ -69,21 +71,22 @@ When a response appears to match more than one category, follow the precedence r
 Persistence & Migrations
 1. Use parameterized SQL in query modules.
 2. Keep table definitions and SQL helper functions in migrations under `src/db/migrations/`.
-3. For multi-step persistence workflows and row-locking, implement logic inside PostgreSQL functions and call them from query modules.
-4. Add migrations for schema changes.
-5. Do not mix persistence logic into services beyond orchestration decisions.
-6. When hashing identifiers for logs, store the project salt in a secure secrets store, rotate it quarterly, and document rotation procedures to avoid unverifiable historical hashes.
-7. If migrations fail during startup, abort with exit code != 0, log a high-level error without credentials, and alert on-call.
+3. For new persistence writes, create or update PostgreSQL functions in migrations and call those functions from query modules. Do not add inline `INSERT`, `UPDATE`, or `DELETE` statements in JavaScript query modules when a database function can own the write contract.
+4. For multi-step persistence workflows and row-locking, implement logic inside PostgreSQL functions and call them from query modules.
+5. Add migrations for schema changes.
+6. Do not mix persistence logic into services beyond orchestration decisions.
+7. When hashing identifiers for logs, store the project salt in a secure secrets store, rotate it quarterly, and document rotation procedures to avoid unverifiable historical hashes.
+8. If migrations fail during startup, abort with exit code != 0, log a high-level error without credentials, and alert on-call.
 
 Stop conditions: migrations applied successfully, startup hooks completed, no schema drift detected.
 
 Ingestion & RAG
-1. Runtime knowledge source files live under `src/db/ingestion/data`.
+1. Runtime knowledge source files live under `src/ai/enrichment/data`.
 2. Ingestion datasets are normalized JSON arrays; `birds.json` is the reference shape.
 3. During ingestion, validate each document: if `externalId` or `name` is missing, reject the document and log an ingestion error; if `externalId` duplicates an existing record, skip or upsert based on a flag and emit a warning with counts.
 4. Keep normalized document fields explicit enough for embedding text: required `externalId` and `name`, plus optional `description`, `locations`, `documentType`, `category`, `tags`, and `metadata`.
 5. Store embedded vectors in PostgreSQL through pgvector; do not write generated embeddings into source files.
-6. Run ingestion with `npm run ingest`; chat requests should only retrieve already-ingested knowledge.
+6. Run bird enrichment with `npm run enrich -- birds`; chat requests should only retrieve already-ingested knowledge.
 
 Stop conditions: ingestion completes with validated counts and no critical validation errors.
 

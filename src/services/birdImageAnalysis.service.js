@@ -1,0 +1,203 @@
+import openaiClient from '../ai/openai.client.js';
+import { isRetryableOpenAIError } from '../ai/openaiRetry.js';
+import {
+  BIRD_IMAGE_ANALYSIS_PROMPT_VERSION,
+  BIRD_IMAGE_ANALYSIS_SYSTEM_PROMPT,
+} from '../ai/prompts/birdImageAnalysis.prompt.js';
+import { BIRD_IMAGE_ANALYSIS_RESPONSE_SCHEMA } from '../ai/schemas/birdImageAnalysis.schema.js';
+import env from '../config/env.js';
+import { traceLlmCall } from '../tracing/aiTracing.middleware.js';
+import { asyncRetry } from '../utils/async.utils.js';
+import HttpError from '../utils/httpError.js';
+import logger from '../utils/logger.js';
+
+const DEFAULT_IMAGE_ANALYSIS = {
+  dominantColors: [],
+  fieldMarks: [],
+  bill: {
+    color: 'unknown',
+    shape: 'unknown',
+    length: 'unknown',
+  },
+  head: 'unknown',
+  throat: 'unknown',
+  underparts: 'unknown',
+  upperparts: 'unknown',
+  wings: 'unknown',
+  tail: 'unknown',
+  legs: 'unknown',
+  bodyShape: 'unknown',
+  apparentGroup: 'unknown',
+  habitatHint: 'unknown',
+  imageQuality: 'unknown',
+  confidence: 0,
+};
+
+function normalizeText(value, fallback = 'unknown') {
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+}
+
+function normalizeStringList(values, maxItems) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  return values
+    .map((value) => normalizeText(value, ''))
+    .filter(Boolean)
+    .slice(0, maxItems);
+}
+
+function normalizeConfidence(value) {
+  const confidence = Number(value);
+
+  if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+    throw new HttpError(502, 'Image analysis provider returned an invalid response.', {
+      code: 'provider_malformed_response',
+    });
+  }
+
+  return confidence;
+}
+
+function normalizeBill(rawBill = {}, legacyBeak) {
+  const bill = rawBill && typeof rawBill === 'object' && !Array.isArray(rawBill) ? rawBill : {};
+
+  return {
+    color: normalizeText(bill.color || legacyBeak),
+    shape: normalizeText(bill.shape),
+    length: normalizeText(bill.length),
+  };
+}
+
+export function normalizeBirdImageAnalysis(rawAnalysis) {
+  if (!rawAnalysis || typeof rawAnalysis !== 'object' || Array.isArray(rawAnalysis)) {
+    throw new HttpError(502, 'Image analysis provider returned an invalid response.', {
+      code: 'provider_malformed_response',
+    });
+  }
+
+  const confidence = normalizeConfidence(rawAnalysis.confidence ?? DEFAULT_IMAGE_ANALYSIS.confidence);
+  const dominantColors = normalizeStringList(
+    rawAnalysis.dominantColors || rawAnalysis.colors,
+    8
+  );
+  const fieldMarks = normalizeStringList(rawAnalysis.fieldMarks, 12);
+  const bill = normalizeBill(rawAnalysis.bill, rawAnalysis.beak);
+
+  return {
+    dominantColors,
+    fieldMarks,
+    bill,
+    head: normalizeText(rawAnalysis.head || rawAnalysis.headPattern),
+    throat: normalizeText(rawAnalysis.throat),
+    underparts: normalizeText(rawAnalysis.underparts || rawAnalysis.bellyColor),
+    upperparts: normalizeText(rawAnalysis.upperparts),
+    wings: normalizeText(rawAnalysis.wings || rawAnalysis.wingPattern),
+    tail: normalizeText(rawAnalysis.tail),
+    legs: normalizeText(rawAnalysis.legs),
+    bodyShape: normalizeText(rawAnalysis.bodyShape || rawAnalysis.size),
+    apparentGroup: normalizeText(rawAnalysis.apparentGroup),
+    habitatHint: normalizeText(rawAnalysis.habitatHint),
+    imageQuality: normalizeText(rawAnalysis.imageQuality),
+    confidence,
+    colors: dominantColors.slice(0, 3),
+    beak: bill.color,
+    size: normalizeText(rawAnalysis.size || rawAnalysis.bodyShape),
+    wingPattern: normalizeText(rawAnalysis.wingPattern || rawAnalysis.wings),
+    headPattern: normalizeText(rawAnalysis.headPattern || rawAnalysis.head),
+    bellyColor: normalizeText(rawAnalysis.bellyColor || rawAnalysis.underparts),
+  };
+}
+
+class BirdImageAnalysisService {
+  async analyze({ imageUrl, metadata = {} }) {
+    const response = await traceLlmCall('bird_image_analysis', {
+      model: env.openAiModel,
+      promptVersion: BIRD_IMAGE_ANALYSIS_PROMPT_VERSION,
+      parentTraceId: metadata.parentTraceId,
+    }, () => asyncRetry(() => openaiClient.client.chat.completions.create({
+      model: env.openAiModel,
+      messages: [
+        {
+          role: 'system',
+          content: BIRD_IMAGE_ANALYSIS_SYSTEM_PROMPT,
+        },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: 'Describe the visible bird characteristics in this image.',
+            },
+            {
+              type: 'image_url',
+              image_url: {
+                url: imageUrl,
+              },
+            },
+          ],
+        },
+      ],
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'bird_image_analysis',
+          strict: true,
+          schema: BIRD_IMAGE_ANALYSIS_RESPONSE_SCHEMA,
+        },
+      },
+    }), {
+      retries: 2,
+      shouldRetry: isRetryableOpenAIError,
+    }), {
+      tokenUsage: null,
+      outputMetadata: (result) => ({
+        requestId: result.id,
+        model: result.model || env.openAiModel,
+      }),
+    });
+
+    const rawContent = response.choices?.[0]?.message?.content;
+
+    if (typeof rawContent !== 'string' || !rawContent.trim()) {
+      throw new HttpError(502, 'Image analysis provider returned an empty response.', {
+        code: 'provider_malformed_response',
+      });
+    }
+
+    let parsed;
+
+    try {
+      parsed = JSON.parse(rawContent);
+    } catch (error) {
+      logger.warn('Image analysis provider returned invalid JSON; using low-confidence fallback', {
+        event: 'bird_image_analysis_parse_failed',
+        model: response.model || env.openAiModel,
+        requestId: response.id,
+      });
+      parsed = DEFAULT_IMAGE_ANALYSIS;
+    }
+
+    const analysis = normalizeBirdImageAnalysis(parsed);
+
+    logger.info('Bird image analysis finished', {
+      event: 'bird_image_analysis',
+      model: response.model || env.openAiModel,
+      requestId: response.id,
+      promptVersion: BIRD_IMAGE_ANALYSIS_PROMPT_VERSION,
+      colorCount: analysis.dominantColors.length,
+      fieldMarkCount: analysis.fieldMarks.length,
+      confidence: analysis.confidence,
+    });
+
+    return {
+      ...analysis,
+      promptVersion: BIRD_IMAGE_ANALYSIS_PROMPT_VERSION,
+      model: response.model || env.openAiModel,
+      providerRequestId: response.id,
+    };
+  }
+}
+
+export default new BirdImageAnalysisService();

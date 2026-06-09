@@ -780,5 +780,3 @@ export class ToolExecutor {
     });
   }
 }
-
-export { appendToolMetadata, buildTourSearchAction };

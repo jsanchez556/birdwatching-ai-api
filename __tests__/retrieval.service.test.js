@@ -29,7 +29,7 @@ const {
   diversifyByDocument,
   mapRetrievedChunk,
   normalizeFilters,
-} = await import('../src/db/retrieval/retrieval.service.js');
+} = await import('../src/ai/enrichment/services/retrieval.service.js');
 
 describe('RetrievalService helpers', () => {
   beforeEach(() => {

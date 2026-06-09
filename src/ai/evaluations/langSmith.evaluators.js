@@ -226,12 +226,9 @@ class LangSmithEvaluationTracker {
 }
 
 export {
-  answerRelevanceEvaluator,
   evaluateAnswerRelevance,
   evaluateGroundingQuality,
   evaluateToolCorrectness,
   groundingQualityEvaluator,
   LangSmithEvaluationTracker,
-  toolCorrectnessEvaluator,
 };
-export default new LangSmithEvaluationTracker();

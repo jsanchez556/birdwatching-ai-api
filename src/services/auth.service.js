@@ -1,13 +1,14 @@
 import crypto from 'crypto';
+import bcrypt from 'bcrypt';
 import userQueries from '../db/queries/user.queries.js';
 import refreshTokenQueries from '../db/queries/refreshToken.queries.js';
 import env from '../config/env.js';
 import HttpError from '../utils/httpError.js';
 import { getAuthTokenExpiresAt, signAuthToken } from '../utils/authTokens.js';
-import { hashPassword, verifyPassword } from '../utils/passwords.js';
 
 const DUPLICATE_KEY_ERROR = '23505';
 const REFRESH_TOKEN_BYTES = 32;
+const SALT_ROUNDS = 12;
 
 function safeUser(user) {
   return {
@@ -59,7 +60,7 @@ class AuthService {
 
   async signup({ email, password, name }) {
     const normalizedEmail = normalizeEmail(email);
-    const passwordHash = await hashPassword(password);
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
     try {
       const user = await userQueries.create({
@@ -84,7 +85,7 @@ class AuthService {
     const normalizedEmail = normalizeEmail(email);
     const user = await userQueries.findByEmail(normalizedEmail);
     const passwordMatches = user
-      ? await verifyPassword(password, user.passwordHash)
+      ? await bcrypt.compare(password, user.passwordHash)
       : false;
 
     if (!user || !passwordMatches) {

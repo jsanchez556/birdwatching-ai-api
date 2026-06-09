@@ -1,6 +1,6 @@
 import reservationService from '../../services/reservation.service.js';
 
-export async function calculatePricing(args = {}) {
+async function calculatePricing(args = {}) {
   return reservationService.calculateTourPrice(args);
 }
 

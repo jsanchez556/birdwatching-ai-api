@@ -115,8 +115,5 @@ class PromptEvaluationTracker {
 export {
   calculateRetrievalQuality,
   comparePromptEvaluations,
-  normalizePromptEvaluation,
-  normalizeTokenUsage,
   PromptEvaluationTracker,
 };
-export default new PromptEvaluationTracker();

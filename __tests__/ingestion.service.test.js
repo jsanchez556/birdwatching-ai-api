@@ -6,7 +6,7 @@ await jest.unstable_mockModule('../src/ai/openai.client.js', () => ({
   },
 }));
 
-await jest.unstable_mockModule('../src/services/embeddings.service.js', () => ({
+await jest.unstable_mockModule('../src/ai/enrichment/services/embeddings.service.js', () => ({
   default: {
   },
   documentToText: (document) => [
@@ -40,9 +40,9 @@ const {
   hashContent,
   normalizeDocument,
   validateNormalizedDocument,
-} = await import('../src/db/ingestion/ingestion.service.js');
+} = await import('../src/ai/enrichment/services/ingest.service.js');
 
-describe('IngestionService helpers', () => {
+describe('IngestService helpers', () => {
   it('creates stable hashes for idempotent document ingestion', () => {
     expect(hashContent('quetzal')).toBe(hashContent('quetzal'));
     expect(hashContent('quetzal')).not.toBe(hashContent('toucan'));

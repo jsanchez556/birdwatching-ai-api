@@ -3,7 +3,7 @@ import { jest } from '@jest/globals';
 const mockRetrieve = jest.fn();
 const mockFindBirdProfile = jest.fn();
 
-await jest.unstable_mockModule('../src/db/retrieval/retrieval.service.js', () => ({
+await jest.unstable_mockModule('../src/ai/enrichment/services/retrieval.service.js', () => ({
   default: {
     retrieve: mockRetrieve,
   },

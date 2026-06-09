@@ -13,7 +13,11 @@ const {
   traceAgentPlanning,
   traceAgentOrchestration,
   traceAgentToolSequence,
+  traceBirdIdentificationFinalResponse,
+  traceBirdIdentificationPipeline,
+  traceBirdIdentificationRagRetrieval,
   traceConversationContext,
+  traceImageInput,
   traceLlmCall,
   traceRagPipeline,
   traceRagRetrieval,
@@ -184,6 +188,113 @@ describe('AI tracing middleware', () => {
         user: 2,
         assistant: 1,
       },
+    });
+  });
+
+  it('wraps bird identification multimodal tracing spans', async () => {
+    await traceBirdIdentificationPipeline('bird_identification_multimodal_pipeline', {
+      parentTraceId: 'incoming-trace',
+      hasImageUrl: true,
+    }, async () => ({
+      summary: 'A likely quetzal.',
+      imageObservations: { colors: ['green'] },
+      candidates: [{ commonName: 'Resplendent Quetzal', confidence: 0.91 }],
+      promptVersions: {
+        birdImageAnalysis: '1.0.0',
+        birdIdentification: '1.3.0',
+      },
+      ragTrace: {
+        retrievedChunkCount: 3,
+        sourceCount: 2,
+      },
+    }));
+
+    await traceImageInput('bird_identification_image_input', {
+      parentTraceId: 'parent-trace',
+      hasImageUrl: true,
+    }, async () => ({
+      hasImageUrl: true,
+      imageUrlLength: 32,
+      userIdPresent: true,
+    }));
+
+    await traceBirdIdentificationRagRetrieval('bird_identification_rag_retrieval', {
+      parentTraceId: 'parent-trace',
+      topK: 3,
+    }, async () => ({
+      sources: [{ name: 'Bird source' }],
+      birdMatches: [{ commonName: 'Resplendent Quetzal' }],
+      ragTrace: {
+        retrievedChunkCount: 3,
+        contextMessageLength: 512,
+      },
+    }));
+
+    await traceBirdIdentificationFinalResponse('bird_identification_final_response', {
+      parentTraceId: 'parent-trace',
+    }, async () => ({
+      summary: 'A likely quetzal.',
+      candidates: [{ commonName: 'Resplendent Quetzal', confidence: 0.91 }],
+      ragTrace: {
+        retrievedChunkCount: 3,
+        sourceCount: 2,
+      },
+    }));
+
+    expect(mockTrace.mock.calls[0][0]).toMatchObject({
+      type: 'bird_identification_pipeline',
+      name: 'bird_identification_multimodal_pipeline',
+      parentTraceId: 'incoming-trace',
+    });
+    expect(mockTrace.mock.calls[0][0].outputMetadata({
+      summary: 'A likely quetzal.',
+      imageObservations: { colors: ['green'] },
+      candidates: [{ commonName: 'Resplendent Quetzal', confidence: 0.91 }],
+      promptVersions: { birdIdentification: '1.3.0' },
+      ragTrace: { retrievedChunkCount: 3, sourceCount: 2 },
+    })).toEqual({
+      hasImageObservations: true,
+      summaryLength: 17,
+      candidateCount: 1,
+      topCandidate: 'Resplendent Quetzal',
+      topConfidence: 0.91,
+      promptVersions: { birdIdentification: '1.3.0' },
+      retrievedChunkCount: 3,
+      sourceCount: 2,
+    });
+    expect(mockTrace.mock.calls[1][0]).toMatchObject({
+      type: 'image_input',
+      name: 'bird_identification_image_input',
+      parentTraceId: 'parent-trace',
+    });
+    expect(mockTrace.mock.calls[1][0].outputMetadata({
+      hasImageUrl: true,
+      imageUrlLength: 32,
+      userIdPresent: true,
+    })).toEqual({
+      hasImageUrl: true,
+      imageUrlLength: 32,
+      userIdPresent: true,
+    });
+    expect(mockTrace.mock.calls[2][0]).toMatchObject({
+      type: 'rag_retrieval',
+      name: 'bird_identification_rag_retrieval',
+      parentTraceId: 'parent-trace',
+    });
+    expect(mockTrace.mock.calls[2][0].outputMetadata({
+      sources: [{ name: 'Bird source' }],
+      birdMatches: [{ commonName: 'Resplendent Quetzal' }],
+      ragTrace: { retrievedChunkCount: 3, contextMessageLength: 512 },
+    })).toEqual({
+      sourceCount: 1,
+      birdMatchCount: 1,
+      retrievedChunkCount: 3,
+      contextMessageLength: 512,
+    });
+    expect(mockTrace.mock.calls[3][0]).toMatchObject({
+      type: 'final_response',
+      name: 'bird_identification_final_response',
+      parentTraceId: 'parent-trace',
     });
   });
 

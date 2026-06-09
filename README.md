@@ -35,6 +35,7 @@ Common optional variables:
 - `OPENAI_MODEL` defaults to `gpt-4o`
 - `OPENAI_EMBEDDING_MODEL` defaults to `text-embedding-3-small`
 - `CORS_ORIGINS` accepts a comma-separated allowlist
+- `CORS_ALLOWED_HEADERS` accepts a comma-separated allowlist for request headers
 - `LOG_FILES_ENABLED` accepts `true` or `false`
 - `E_BIRD_API_BASE_URL` and `E_BIRD_API_KEY` enable eBird ingestion clients
 - `INATURALIST_API_BASE_URL` enables iNaturalist taxa lookups
@@ -60,19 +61,20 @@ psql "$DATABASE_URL" -f src/db/migrations/011_tours_refactor.sql
 
 ## Bird Knowledge Base
 Chat responses use a PostgreSQL-backed RAG flow with `pgvector`. Documents must
-be ingested from `src/db/ingestion/data` before retrieval can return RAG context. The
+be ingested from `src/ai/enrichment/data` before retrieval can return RAG context. The
 ingestion command parses normalized JSON datasets, chunks each document, embeds
 chunks with the OpenAI embeddings API, and persists documents, chunks, metadata,
 and vectors in PostgreSQL.
 
-Run ingestion after migrations and whenever source knowledge files change:
+Run enrichment after migrations and whenever bird source knowledge needs to be refreshed:
 ```bash
-npm run ingest              # ingest all .json datasets in src/db/ingestion/data
-npm run ingest -- birds.json
-npm run ingest -- birds     # dataset names without .json are accepted
-npm run ingest -- file1.json file2.json
-npm run ingest -- --all
+npm run enrich -- birds
 ```
+
+The `birds` enrichment target refreshes stale external provider JSON, generates
+`birds.json`, chunks and embeds the normalized bird documents, and persists the
+result in PostgreSQL pgvector. The command is target-based so future datasets can
+add their own pipeline behind the same command shape.
 
 Supported source files are normalized `.json` arrays. `birds.json` is the
 reference contract: each document requires stable `externalId` and `name`, and
@@ -81,12 +83,11 @@ structured `metadata`. Media URLs stay in metadata; generated embeddings are
 stored only in PostgreSQL.
 
 Reusable external API clients for future ingestion jobs live in
-`src/external/clients/`. eBird fetches Costa Rica species codes and recent
+`src/ai/enrichment/clients/`. eBird fetches Costa Rica species codes and recent
 observations, iNaturalist searches taxa by name with one request, and
 Xeno-canto fetches Costa Rica bird song recordings across all available pages by
-default. `src/external/export.service.js` and the focused services under
-`src/external/services/` orchestrate provider exports, while
-`src/external/rateLimiter.js` keeps calls at or below 40 requests per minute.
+default. `src/ai/enrichment/services/birds.enrichment.service.js` orchestrates provider exports, while
+`src/utils/rateLimiter.js` keeps calls at or below 40 requests per minute.
 Fetched provider data should be normalized before passing documents into the
 existing vector ingestion service.
 
@@ -109,34 +110,23 @@ with `data.url`, then render that URL. The endpoint requires
 `CLOUDFRONT_BASE_URL` and returns public CDN URLs only. Absolute provider URLs
 may still be returned and can be rendered directly by clients.
 
-External provider responses can be exported to `src/external/data` for
-inspection or later normalization:
+The bird enrichment pipeline writes external provider responses to
+`src/ai/enrichment/data` before generating `birds.json`. Run:
 ```bash
-npm run external
-npm run external -- taxo
-npm run external -- sounds
-npm run external -- photos
-npm run external -- taxo sounds photos
+npm run enrich -- birds
 ```
 
-With no arguments, `npm run external` runs `taxo`, `sounds`, then `photos`.
-The `taxo` export writes `ebird-species-list-cr.json` and
-`ebird-species-taxo-cr.json`, then incrementally refreshes
-`ebird-recent-observations-cr.json`. Species lists are reused for one year.
-Taxonomy exports read the generated species list, fetch missing species in
-chunks of 50 codes, and preserve existing keyed taxonomy records. Recent
-observations read the species list, fetch eBird sightings per species code, and
-write after each species. The observations file is keyed by species code, with
-each entry containing sorted `locations` observation objects and `lstDt` for the
-most recent sighting. The `sounds` export follows all provider pages, then writes
-`xenocanto-costa-rica-bird-songs.json` as a simplified object keyed by English
-name for ingestion, and it is reused for one year. The `photos` export reads
-`ebird-species-taxo-cr.json`, searches taxa by common name, and writes
-`inaturalist-costa-rica-bird-images.json` as a species-code keyed object with
-image URLs and per-entry update dates. Each iNaturalist species lookup is reused
-for one year.
+The pipeline refreshes `ebird-species-list-cr.json` when missing or at least one
+month old, `ebird-species-taxo-cr.json` when missing or at least six months old,
+`ebird-recent-observations-cr.json` when missing or at least one week old,
+`inaturalist-costa-rica-bird-images.json` when missing or at least one month old,
+and `xenocanto-costa-rica-bird-songs.json` when missing or at least six months
+old. It then validates those source files, regenerates `birds.json`, and ingests
+that normalized dataset into the vector store. Taxonomy exports still fetch
+missing species in chunks of 50 codes and preserve existing keyed records; recent
+observations are written incrementally after each species.
 
-Semantic retrieval runs through `src/db/retrieval/retrieval.service.js` and
+Semantic retrieval runs through `src/ai/enrichment/services/retrieval.service.js` and
 `src/db/vector/vector.repository.js`, with optional metadata filters for fields
 such as source, category, document type, locale, tags, and JSON metadata. If
 PostgreSQL or `pgvector` is unavailable, chat continues without RAG context.
@@ -184,8 +174,7 @@ When LangSmith tracing is enabled, voice chat creates one `voice_chat` parent tr
 ```bash
 npm start      # node src/server.js
 npm run dev    # nodemon src/server.js
-npm run ingest # ingest all normalized src/db/ingestion/data JSON datasets into pgvector
-npm run external # export external provider JSON into src/external/data
+npm run enrich -- birds # refresh bird data, generate birds.json, and ingest pgvector documents
 npm test       # Jest ESM test runner
 ```
 

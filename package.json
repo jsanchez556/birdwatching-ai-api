@@ -9,9 +9,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "ingest": "node scripts/ingest-documents.js",
-    "generate-ingest": "node scripts/generate-ingest.js",
-    "external": "node scripts/export-external-data.js",
+    "enrich": "node src/ai/enrichment/scripts/enrich.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
   },
   "keywords": [],

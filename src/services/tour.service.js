@@ -1,5 +1,5 @@
 import tourQueries from '../db/queries/tour.queries.js';
-import { normalizeComparableText, normalizeText } from '../utils/normalizers.js';
+import { normalizeComparableText, normalizeText } from '../utils/normalizer.utils.js';
 import { invalidArguments, toPositiveInteger } from '../utils/toolResponses.js';
 
 const budgetMaxPrice = {

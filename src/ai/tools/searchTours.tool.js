@@ -1,6 +1,6 @@
 import tourService from '../../services/tour.service.js';
 
-export async function searchTours(args = {}) {
+async function searchTours(args = {}) {
   if (args.recommend === true || args.budget || args.limit) {
     return tourService.recommendTours({
       location: args.location,

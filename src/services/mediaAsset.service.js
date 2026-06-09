@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import mediaAssetsConfig from '../config/mediaAssets.json' with { type: 'json' };
-import ExternalApiRateLimiter from '../external/rateLimiter.js';
+import ApiRateLimiter from '../utils/rateLimiter.js';
 import S3BucketService from '../storage/s3Bucket.service.js';
 import logger from '../utils/logger.js';
 
@@ -17,7 +17,7 @@ const RESTRICTED_MEDIA_ASSET_LICENSES = new Set([
   'all rights reserved',
 ]);
 
-const mediaAssetDownloadRateLimiter = new ExternalApiRateLimiter({
+const mediaAssetDownloadRateLimiter = new ApiRateLimiter({
   maxRequests: 1,
   windowMs: 500,
 });

@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import env from '../config/env.js';
-import asyncRetry from '../utils/asyncRetry.js';
+import { asyncRetry } from '../utils/async.utils.js';
 import logger from '../utils/logger.js';
 import { availableTools, executeToolCall } from './tools/index.js';
 import { addCompletionUsage } from './evaluations/token.usage.js';

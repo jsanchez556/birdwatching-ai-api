@@ -1,0 +1,17 @@
+const COSTA_RICA_COUNTRY_CODE = 'CR';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const WEEK_MS = 7 * DAY_MS;
+const MONTH_MS = 30 * DAY_MS;
+const YEAR_MS = 365 * DAY_MS;
+const SIX_MONTHS_MS = 180 * DAY_MS;
+
+
+export {
+  COSTA_RICA_COUNTRY_CODE,
+  DAY_MS,
+  MONTH_MS,
+  SIX_MONTHS_MS,
+  WEEK_MS,
+  YEAR_MS,
+};

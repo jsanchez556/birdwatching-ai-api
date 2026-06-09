@@ -1,5 +1,5 @@
 import logger from '../utils/logger.js';
-import retrievalService from '../db/retrieval/retrieval.service.js';
+import retrievalService from '../ai/enrichment/services/retrieval.service.js';
 import vectorRepository from '../db/vector/vector.repository.js';
 import { injectRagContextMessage } from '../ai/prompts/prompt.builder.js';
 import { toKnowledgeSource } from '../ai/prompts/rag.context.js';

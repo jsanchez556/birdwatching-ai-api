@@ -20,7 +20,7 @@ const {
   documentToText,
   normalizeKnowledgeBase,
   normalizeLocations,
-} = await import('../src/services/embeddings.service.js');
+} = await import('../src/ai/enrichment/services/embeddings.service.js');
 
 describe('EmbeddingsService helpers', () => {
   beforeEach(() => {

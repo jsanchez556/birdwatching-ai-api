@@ -1,4 +1,4 @@
-import { normalizeTextOrEmpty } from '../../utils/normalizers.js';
+import { normalizeTextOrEmpty } from '../../utils/normalizer.utils.js';
 
 const PROMPT_EXTRACTION_PATTERNS = [
   /\b(ignore|disregard|override)\b[\s\S]{0,80}\b(previous|prior|system|developer)\b[\s\S]{0,80}\b(instruction|instructions|prompt|message|messages)\b/i,

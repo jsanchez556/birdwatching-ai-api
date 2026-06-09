@@ -30,6 +30,7 @@ Optional:
 - `LANGCHAIN_TRACING`, set to `true` to enable LangSmith-compatible tracing
 - `LANGCHAIN_PROJECT`, defaults to `birdwatching-ai`
 - `CORS_ORIGINS`, comma-separated allowed origins; empty means no CORS allow-origin header is set
+- `CORS_ALLOWED_HEADERS`, comma-separated allowed request headers; defaults to `Content-Type, Authorization, X-Filename`
 - `LOG_FILES_ENABLED`, `true` or `false`; defaults to console-only logging
 - `JWT_EXPIRES_IN`, defaults to `7d`
 - `E_BIRD_API_BASE_URL`, required when using eBird ingestion clients
@@ -68,9 +69,9 @@ Run migrations in order with `psql`, Railway shell, or your deployment platform'
 Production database connections use SSL with `rejectUnauthorized: false`.
 
 ## Runtime Data
-- RAG source datasets live under `src/db/ingestion/data` as normalized JSON arrays and must be ingested with `npm run ingest` after vector migrations run.
-- External bird data clients for eBird, iNaturalist, and Xeno-canto live under `src/external/`. They are reusable building blocks for ingestion jobs and are rate-limited to no more than 40 requests per minute before data is normalized for the vector store.
-- External provider JSON exports are written to `src/external/data` by `npm run external -- taxo sounds photos`. With no provider arguments, `npm run external` runs that same order. The eBird taxonomy export is incremental from the refreshed species list, eBird recent observations are fetched per species code from that list and written incrementally as a keyed `{ locations, lstDt }` summary, and the eBird species list, simplified Xeno-canto songs export, and iNaturalist per-species image lookups are valid for one year.
+- Bird RAG source data lives under `src/ai/enrichment/data`; run `npm run enrich -- birds` after vector migrations to refresh provider data, generate `birds.json`, and ingest it.
+- External bird data clients for eBird, iNaturalist, and Xeno-canto live under `src/ai/enrichment/`. They are reusable building blocks for ingestion jobs and are rate-limited to no more than 40 requests per minute before data is normalized for the vector store.
+- External provider JSON exports are written to `src/ai/enrichment/data` by `npm run enrich -- birds`. The eBird taxonomy export is incremental from the refreshed species list, eBird recent observations are fetched per species code from that list and written incrementally as a keyed `{ locations, lstDt }` summary. The enrich pipeline refreshes the species list monthly, taxonomy and Xeno-canto songs every six months, recent observations weekly, and iNaturalist images monthly.
 - RAG retrieval reads PostgreSQL `knowledge_documents` and `knowledge_chunks`; chat requests do not ingest files or write vectors.
 - Tour seed data begins in `003_create_tour_reservations.sql`; `011_tours_refactor.sql` adds tour `node_id`, coordinates, start/end dates, and the `country`/`zone`/`node`/`birds`/`birds_by_node` reference tables for Costa Rica birding geography and target species.
 - Tour reservation availability is durable PostgreSQL state and is updated transactionally by PostgreSQL functions.
@@ -127,6 +128,12 @@ matches an allowlisted origin, that origin is echoed. If the allowlist is
 non-empty and the incoming origin does not match, the first configured origin is
 sent. If the allowlist is empty, no allow-origin header is set.
 
+`CORS_ALLOWED_HEADERS` is parsed as a comma-separated list and returned as
+`Access-Control-Allow-Headers`. Browser voice chat requests need:
+```text
+Content-Type,Authorization,Accept,X-Filename,X-Conversation-Id,X-Role,X-Response-Mode,X-Customer-Context,X-Conversation-Context
+```
+
 ## Railway
 `railway.json` uses Nixpacks and runs from the repository root:
 ```bash
@@ -157,4 +164,4 @@ Also verify:
 - OpenAI embedding model access is available for `OPENAI_EMBEDDING_MODEL`
 - `JWT_SECRET` is set to a strong secret and not exposed to the frontend
 - all database migrations have run
-- `npm run ingest` has been run after RAG source file changes
+- `npm run enrich -- birds` has been run after bird RAG source file changes

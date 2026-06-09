@@ -5,12 +5,26 @@ Back to [Project Context](../CONTEXT.md). See [Memory](./memory.md) for how chat
 ## Runtime Prompt Assets
 - Prompt builder and message composition: `src/ai/prompts/prompt.builder.js`
 - Versioned system and tool instructions: `src/ai/prompts/system.prompt.js`
+- Bird image analysis instructions: `src/ai/prompts/birdImageAnalysis.prompt.js`
+- Bird identification instructions: `src/ai/prompts/birdIdentification.prompt.js`
 - RAG context formatting: `src/ai/prompts/rag.context.js`
 - Booking planner and agent wiring: `src/ai/agents/birdwatching.agent.js`
+- Bird identification agent: `src/ai/agents/birdIdentification.agent.js`
 - Chat orchestration: `src/ai/orchestrators/agent.orchestrator.js`
 - Chat tour tool schemas: `src/ai/schemas/tour.schema.js`
+- Bird image analysis response schema: `src/ai/schemas/birdImageAnalysis.schema.js`
+- Bird identification response schema: `src/ai/schemas/birdIdentification.schema.js`
 
 Prompt modules export both content and a semantic prompt version. Keep version changes intentional and loggable.
+
+## Bird Identification Prompt Flow
+Bird identification uses three model-facing stages, all returning JSON through strict response schemas:
+
+1. `birdImageAnalysis.service.js` uses `BIRD_IMAGE_ANALYSIS_SYSTEM_PROMPT` to extract rich visible evidence only: dominant plumage colors, field marks, bill color/shape/length, head/throat/upperpart/underpart/tail/wing details, apparent group, habitat hints when visible, image quality, and visual-analysis confidence. It must not guess species, exact location, photographer details, season, behavior, or hidden context.
+2. `birdIdentification.agent.js` uses `BIRD_CANDIDATE_GENERATION_SYSTEM_PROMPT` to generate 0-5 conservative candidates from the visual evidence and, when available, the provider-readable image URL. Candidates include `commonName`, optional `scientificName`, confidence, reasoning, visible evidence, possible confusions, and missing evidence. Weak evidence should return multiple candidates or `unknown`, not a forced species.
+3. `birdIdentification.agent.js` uses `BIRD_IDENTIFICATION_VERIFICATION_SYSTEM_PROMPT` to compare candidates against retrieved bird-profile RAG, preserve visual evidence as primary, add `ragSupport`, note contradictions/missing evidence, rerank, and calibrate final confidence.
+
+Confidence calibration is enforced in service code as well as prompts: `0.90+` requires distinctive diagnostic traits, `0.70-0.89` is likely, `0.40-0.69` is plausible/uncertain, best candidate below `0.55` returns `uncertain`, and below `0.40` returns `unknown`. Blurry, distant, obscured, cropped, backlit, or otherwise weak images cap confidence so final responses do not claim certainty from poor evidence.
 
 ## Chat Prompt Flow
 `prompt.builder.js` exposes a generic prompt composition API:
@@ -32,7 +46,7 @@ in this order:
 `rag.service.js` then uses the prompt builder to optionally inject a second
 `system` message immediately after the base system prompt. The retrieved context
 comes from PostgreSQL pgvector-backed knowledge chunks created by
-`npm run ingest`; source files live under `src/db/ingestion/data` as normalized
+`npm run enrich -- birds`; source files live under `src/ai/enrichment/data` as normalized
 JSON arrays. Retrieved sources can
 include similarity scores, locations, snippets, and document metadata. If
 retrieval or embedding fails, chat continues with the base messages and an empty

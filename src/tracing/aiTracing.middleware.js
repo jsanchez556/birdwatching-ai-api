@@ -50,6 +50,67 @@ function traceAiExecutionFlow(name, metadata, operation) {
   }, operation);
 }
 
+function traceBirdIdentificationPipeline(name, metadata, operation) {
+  return withAiTrace({
+    type: 'bird_identification_pipeline',
+    name,
+    metadata,
+    outputMetadata: (result = {}) => ({
+      hasImageObservations: Boolean(result.imageObservations),
+      summaryLength: result.summary?.length || 0,
+      candidateCount: result.candidates?.length || 0,
+      topCandidate: result.candidates?.[0]?.commonName || result.candidates?.[0]?.species,
+      topConfidence: result.candidates?.[0]?.confidence,
+      promptVersions: result.promptVersions,
+      retrievedChunkCount: result.ragTrace?.retrievedChunkCount,
+      sourceCount: result.ragTrace?.sourceCount,
+    }),
+  }, operation);
+}
+
+function traceImageInput(name, metadata, operation) {
+  return withAiTrace({
+    type: 'image_input',
+    name,
+    metadata,
+    outputMetadata: (result = {}) => ({
+      hasImageUrl: Boolean(result.hasImageUrl),
+      imageUrlLength: result.imageUrlLength,
+      userIdPresent: Boolean(result.userIdPresent),
+    }),
+  }, operation);
+}
+
+function traceBirdIdentificationRagRetrieval(name, metadata, operation) {
+  return withAiTrace({
+    type: 'rag_retrieval',
+    name,
+    metadata,
+    outputMetadata: (result = {}) => ({
+      sourceCount: result.sources?.length || 0,
+      birdMatchCount: result.birdMatches?.length || 0,
+      retrievedChunkCount: result.ragTrace?.retrievedChunkCount,
+      contextMessageLength: result.ragTrace?.contextMessageLength,
+    }),
+  }, operation);
+}
+
+function traceBirdIdentificationFinalResponse(name, metadata, operation) {
+  return withAiTrace({
+    type: 'final_response',
+    name,
+    metadata,
+    outputMetadata: (result = {}) => ({
+      summaryLength: result.summary?.length || 0,
+      candidateCount: result.candidates?.length || 0,
+      topCandidate: result.candidates?.[0]?.commonName || result.candidates?.[0]?.species,
+      topConfidence: result.candidates?.[0]?.confidence,
+      retrievedChunkCount: result.ragTrace?.retrievedChunkCount,
+      sourceCount: result.ragTrace?.sourceCount,
+    }),
+  }, operation);
+}
+
 function traceConversationContext(name, metadata, operation) {
   return withAiTrace({
     type: 'conversation_context',
@@ -160,7 +221,11 @@ export {
   traceAgentPlanning,
   traceAgentOrchestration,
   traceAgentToolSequence,
+  traceBirdIdentificationFinalResponse,
+  traceBirdIdentificationPipeline,
+  traceBirdIdentificationRagRetrieval,
   traceConversationContext,
+  traceImageInput,
   traceLlmCall,
   traceRagPipeline,
   traceRagRetrieval,

@@ -1,7 +1,7 @@
 import express from 'express';
 import authController from '../controllers/auth.controller.js';
 import validate from '../middleware/validate.middleware.js';
-import asyncHandler from '../utils/asyncHandler.js';
+import { asyncHandler } from '../utils/async.utils.js';
 import {
   validateLoginBody,
   validateLogoutBody,

@@ -2,6 +2,16 @@ import { jest } from '@jest/globals';
 import request from 'supertest';
 
 process.env.CORS_ORIGINS = ' https://app.example.com, https://admin.example.com , ';
+process.env.CORS_ALLOWED_HEADERS = [
+  'Content-Type',
+  'Authorization',
+  'X-Filename',
+  'X-Conversation-Id',
+  'X-Role',
+  'X-Response-Mode',
+  'X-Customer-Context',
+  'X-Conversation-Context',
+].join(', ');
 
 await jest.unstable_mockModule('../src/utils/logger.js', () => ({
   default: {
@@ -23,7 +33,22 @@ describe('security middleware', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['x-content-type-options']).toBe('nosniff');
     expect(res.headers['access-control-allow-origin']).toBe('https://app.example.com');
+    expect(res.headers['access-control-allow-headers']).toBe(process.env.CORS_ALLOWED_HEADERS);
     expect(res.headers.vary).toContain('Origin');
+  });
+
+  it('allows configured voice chat CORS request headers during preflight', async () => {
+    const res = await request(app)
+      .options('/voice-chat')
+      .set('Origin', 'https://app.example.com')
+      .set(
+        'Access-Control-Request-Headers',
+        'content-type,x-response-mode,x-conversation-id,x-customer-context,x-conversation-context,x-role,authorization'
+      );
+
+    expect(res.statusCode).toBe(204);
+    expect(res.headers['access-control-allow-origin']).toBe('https://app.example.com');
+    expect(res.headers['access-control-allow-headers']).toBe(process.env.CORS_ALLOWED_HEADERS);
   });
 
   it('allows additional comma-separated CORS origins after trimming whitespace', async () => {

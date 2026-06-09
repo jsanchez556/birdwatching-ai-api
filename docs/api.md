@@ -66,6 +66,87 @@ GET /birds/profile?name=Great%20Tinamou
 
 Either `speciesCode`/`species_code` or `name` is required. Missing query input returns `422` with code `validation_error`; unknown birds return `404` with code `bird_not_found`.
 
+### `POST /birds/identify`
+Requires JWT bearer authentication. Analyzes a bird image URL or uploaded bird image internally, extracts rich visible field marks, generates conservative candidate species, verifies/reranks candidates against bird-profile RAG, and returns an identified, uncertain, or unknown result.
+
+URL body:
+```json
+{
+  "imageUrl": "https://example.com/bird.jpg"
+}
+```
+
+Image upload body:
+```http
+POST /birds/identify
+Authorization: Bearer jwt
+Content-Type: image/jpeg
+X-Filename: bird.jpg
+
+<raw image bytes>
+```
+
+Success data:
+```json
+{
+  "status": "identified",
+  "bestMatch": {
+    "commonName": "Resplendent Quetzal",
+    "scientificName": "Pharomachrus mocinno",
+    "confidence": 0.91,
+    "reasoning": "Green upperparts, red underparts, and long tail coverts match visible field marks and retrieved profile support.",
+    "visualEvidence": ["green upperparts", "red underparts", "long tail coverts"],
+    "contradictions": [],
+    "ragSupport": ["Retrieved profile describes emerald upperparts and red belly."]
+  },
+  "candidates": [
+    {
+      "species": "Resplendent Quetzal",
+      "commonName": "Resplendent Quetzal",
+      "scientificName": "Pharomachrus mocinno",
+      "confidence": 0.91,
+      "reasoning": "Green upperparts, red underparts, and long tail coverts match visible field marks and retrieved profile support.",
+      "visualEvidence": ["green upperparts", "red underparts", "long tail coverts"],
+      "contradictions": [],
+      "ragSupport": ["Retrieved profile describes emerald upperparts and red belly."]
+    }
+  ],
+  "imageAnalysis": {
+    "dominantColors": ["green", "red"],
+    "fieldMarks": ["long tail coverts", "red underparts"],
+    "bill": { "color": "yellow", "shape": "short", "length": "short" },
+    "head": "green head with crest",
+    "throat": "green",
+    "underparts": "red",
+    "upperparts": "green",
+    "wings": "green",
+    "tail": "long",
+    "legs": "unknown",
+    "bodyShape": "trogon-like",
+    "apparentGroup": "trogon",
+    "habitatHint": "forest",
+    "imageQuality": "clear",
+    "confidence": 0.86
+  },
+  "notes": []
+}
+```
+
+`imageObservations` remains present as a compatibility alias for older clients. Normal responses omit internal debug details. Authenticated admins may request `?debug=true` to receive internal debug metadata under `meta.debug` with raw candidates, retrieved profile identifiers/names, and verification notes.
+
+Confidence calibration:
+- `0.90+` is reserved for distinctive species with clear diagnostic traits.
+- `0.70-0.89` means likely but not perfect.
+- `0.40-0.69` means plausible but uncertain.
+- Best match below `0.55` returns `status: "uncertain"`; below `0.40` returns `status: "unknown"`.
+
+Validation:
+- The request must provide either `imageUrl` or a raw image upload, not both.
+- `imageUrl` is trimmed, must be a valid `http` or `https` URL, and must be 2048 characters or fewer.
+- Raw uploads must be JPEG, PNG, WebP, or GIF images and are limited to 10 MB.
+- Uploaded images are stored in S3 under `bird-identification/`, converted to a CloudFront URL, and then passed into the same image-analysis pipeline as URL requests.
+- Unknown JSON body fields are rejected.
+
 ### `GET /addons/transportation`
 Returns public transportation add-on cards for the homepage. Booking-specific transportation selection remains part of the chat/tool flow.
 
@@ -470,7 +551,7 @@ Validation and behavior:
 - successful responses do not expose bucket credentials
 
 ## Current Protection
-`GET /chat/latest`, `GET /chat/:conversationId`, and all `/cart` routes require JWT bearer authentication. `POST /chat` and `POST /voice-chat` accept authenticated customer/admin users or unauthenticated visitors; visitors can only ask bird-related questions, cannot execute tool-backed tour or reservation actions, and have a stricter 10-request-per-hour IP limit. Conversation and reservation `user_id` ownership is enforced server-side. `POST /auth/signup`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, homepage content endpoints, `GET /files/:folderName/:filename`, and `GET /health` remain public.
+`GET /chat/latest`, `GET /chat/:conversationId`, `POST /birds/identify`, and all `/cart` routes require JWT bearer authentication. `POST /chat` and `POST /voice-chat` accept authenticated customer/admin users or unauthenticated visitors; visitors can only ask bird-related questions, cannot execute tool-backed tour or reservation actions, and have a stricter 10-request-per-hour IP limit. Conversation and reservation `user_id` ownership is enforced server-side. `POST /auth/signup`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, homepage content endpoints, `GET /files/:folderName/:filename`, and `GET /health` remain public.
 
 Request protection includes:
 - Helmet security headers through `security.middleware.js`.

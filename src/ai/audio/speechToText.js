@@ -1,7 +1,7 @@
 import { File } from 'node:buffer';
 import openaiClient from '../openai.client.js';
 import { traceLlmCall } from '../../tracing/aiTracing.middleware.js';
-import asyncRetry from '../../utils/asyncRetry.js';
+import { asyncRetry } from '../../utils/async.utils.js';
 import logger from '../../utils/logger.js';
 
 const TRANSCRIPTION_MODEL = 'gpt-4o-mini-transcribe';
@@ -61,5 +61,5 @@ class SpeechToText {
   }
 }
 
-export { TRANSCRIPTION_MODEL, normalizeTranscript };
+export { normalizeTranscript };
 export default new SpeechToText();

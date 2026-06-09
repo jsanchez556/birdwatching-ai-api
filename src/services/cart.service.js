@@ -2,7 +2,7 @@ import cartQueries from '../db/queries/cart.queries.js';
 import reservationQueries from '../db/queries/reservation.queries.js';
 import reservationService from './reservation.service.js';
 import HttpError from '../utils/httpError.js';
-import { normalizeText } from '../utils/normalizers.js';
+import { normalizeText } from '../utils/normalizer.utils.js';
 
 function isIsoDate(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);

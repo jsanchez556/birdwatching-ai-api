@@ -2,10 +2,10 @@ Context:
 
 Backend repo:
 - `/home/jose/Documents/projects/birdwatching-ai-api/AGENTS.md`
-- `/home/jose/Documents/projects/birdwatching-ai-api/src/db/ingestion/data/birds.json`
-- `/home/jose/Documents/projects/birdwatching-ai-api/scripts/generate-ingest.js`
-- `/home/jose/Documents/projects/birdwatching-ai-api/src/db/ingestion/ingestion.service.js`
-- `/home/jose/Documents/projects/birdwatching-ai-api/src/db/retrieval/retrieval.service.js`
+- `/home/jose/Documents/projects/birdwatching-ai-api/src/ai/enrichment/data/birds.json`
+- `/home/jose/Documents/projects/birdwatching-ai-api/src/ai/enrichment/services/birds.enrichment.service.js`
+- `/home/jose/Documents/projects/birdwatching-ai-api/src/ai/enrichment/services/ingest.service.js`
+- `/home/jose/Documents/projects/birdwatching-ai-api/src/ai/enrichment/services/retrieval.service.js`
 - `/home/jose/Documents/projects/birdwatching-ai-api/src/ai/prompts/rag.context.js`
 - `/home/jose/Documents/projects/birdwatching-ai-api/src/services/rag.service.js`
 - `/home/jose/Documents/projects/birdwatching-ai-api/src/controllers/chat.controller.js`

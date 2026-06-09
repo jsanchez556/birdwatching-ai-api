@@ -33,7 +33,7 @@ export function corsProtection(req, res, next) {
   const allowedOrigin = getAllowedOrigin(origin);
 
   res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', env.corsAllowedHeaders.join(', '));
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
 
   if (allowedOrigin) {
