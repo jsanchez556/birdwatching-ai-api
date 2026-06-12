@@ -952,6 +952,50 @@ describe('birdIdentificationService', () => {
     });
   });
 
+  it('uses tolerant fallback verification when the verifier fails with sparse candidates', async () => {
+    mockVerifyAndRerank.mockRejectedValue(new Error('malformed verifier response'));
+
+    const result = await birdIdentificationService.verifyAndRerankBirdCandidates({
+      imageAnalysis: {
+        dominantColors: ['green'],
+        fieldMarks: ['red underparts'],
+        bill: {
+          color: 'yellow',
+        },
+        imageQuality: 'clear',
+        confidence: 0.72,
+      },
+      candidates: [
+        {
+          commonName: 'Resplendent Quetzal',
+          scientificName: 'Pharomachrus mocinno',
+          confidence: 0.62,
+        },
+      ],
+      retrievedProfiles: [
+        {
+          commonName: 'Resplendent Quetzal',
+          scientificName: 'Pharomachrus mocinno',
+          description: 'Retrieved profile mentions red underparts and green plumage.',
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      status: 'identified',
+      bestMatch: {
+        commonName: 'Resplendent Quetzal',
+        confidence: 0.62,
+        reasoning: 'Candidate kept from the image-identification step after verifier fallback calibration.',
+        visualEvidence: ['red underparts', 'green plumage', 'yellow bill'],
+        ragSupport: ['Retrieved profile mentions red underparts and green plumage.'],
+      },
+      notes: [
+        'Candidate verification used fallback confidence calibration because the verifier did not return a usable response.',
+      ],
+    });
+  });
+
   it('builds a compact RAG query from candidate names and visible traits', () => {
     expect(buildBirdKnowledgeQuery({
       imageAnalysis: {

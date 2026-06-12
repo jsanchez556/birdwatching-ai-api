@@ -260,6 +260,23 @@ function buildVisibleTraitEntries(imageAnalysis = {}) {
   ].filter(Boolean);
 }
 
+function buildFallbackVisualEvidence(imageAnalysis = {}) {
+  return [
+    ...(imageAnalysis.fieldMarks || []),
+    ...(imageAnalysis.dominantColors || imageAnalysis.colors || []).map((color) => `${color} plumage`),
+    imageAnalysis.bill?.color || imageAnalysis.beak ? `${imageAnalysis.bill?.color || imageAnalysis.beak} bill` : '',
+    imageAnalysis.head || imageAnalysis.headPattern,
+    imageAnalysis.throat,
+    imageAnalysis.upperparts,
+    imageAnalysis.underparts || imageAnalysis.bellyColor,
+    imageAnalysis.tail,
+    imageAnalysis.wings || imageAnalysis.wingPattern,
+    imageAnalysis.bodyShape || imageAnalysis.size,
+    imageAnalysis.apparentGroup,
+    imageAnalysis.habitatHint,
+  ].map(normalizeText).filter(Boolean).slice(0, 8);
+}
+
 function buildBirdKnowledgeQuery({ imageAnalysis, candidates = [] }) {
   const candidateText = candidates
     .flatMap((candidate) => [
@@ -670,6 +687,38 @@ function normalizeVerifiedCandidate(candidate = {}, { imageAnalysis } = {}) {
   });
 }
 
+function normalizeFallbackVerifiedCandidate(candidate = {}, { imageAnalysis } = {}) {
+  const commonName = normalizeText(candidate.commonName || candidate.species || candidate.name);
+  const confidence = calibrateConfidence(candidate.confidence, imageAnalysis);
+  const visualEvidence = normalizeStringList(candidate.visualEvidence).length
+    ? normalizeStringList(candidate.visualEvidence).slice(0, 8)
+    : buildFallbackVisualEvidence(imageAnalysis);
+
+  if (
+    !candidate
+    || typeof candidate !== 'object'
+    || Array.isArray(candidate)
+    || !commonName
+    || confidence === null
+  ) {
+    return null;
+  }
+
+  return compactObject({
+    species: commonName,
+    commonName,
+    scientificName: normalizeText(candidate.scientificName, ''),
+    confidence,
+    reasoning: normalizeText(candidate.reasoning)
+      || 'Candidate kept from the image-identification step after verifier fallback calibration.',
+    visualEvidence,
+    possibleConfusions: normalizeStringList(candidate.possibleConfusions).slice(0, 6),
+    ragSupport: normalizeStringList(candidate.ragSupport).slice(0, 8),
+    contradictions: normalizeStringList(candidate.contradictions).slice(0, 8),
+    missingEvidence: normalizeStringList(candidate.missingEvidence).slice(0, 8),
+  });
+}
+
 export function normalizeBirdIdentification(rawIdentification) {
   if (!rawIdentification || typeof rawIdentification !== 'object' || Array.isArray(rawIdentification)) {
     throw new HttpError(502, 'Bird identification provider returned an invalid response.', {
@@ -732,12 +781,12 @@ function buildFallbackVerification({ imageAnalysis, identification, birdKnowledg
     candidates: identification.candidates,
     birdKnowledge,
   });
-  const candidates = enrichedCandidates.map((candidate) => normalizeVerifiedCandidate({
+  const candidates = enrichedCandidates.map((candidate) => normalizeFallbackVerifiedCandidate({
     ...candidate,
     ragSupport: candidate.description ? [candidate.description] : [],
     contradictions: [],
     missingEvidence: candidate.missingEvidence || [],
-  }, { imageAnalysis }));
+  }, { imageAnalysis })).filter(Boolean);
   const calibrated = enforceConfidenceStatus(candidates, identification.status);
 
   return {
