@@ -2,18 +2,18 @@ import { jest } from '@jest/globals';
 import EBirdClient, {
   isRecentObservationsResponse,
   isSpeciesListResponse,
-} from '../src/ai/enrichment/clients/ebird.client.js';
+} from '../src/ingestion/clients/ebird.client.js';
 import INaturalistClient, {
   isTaxaSearchResponse,
-} from '../src/ai/enrichment/clients/inaturalist.client.js';
+} from '../src/ingestion/clients/inaturalist.client.js';
 import XenoCantoClient, {
   COSTA_RICA_BIRD_SONG_QUERY,
   isXenoCantoResponse,
-} from '../src/ai/enrichment/clients/xenoCanto.client.js';
+} from '../src/ingestion/clients/xenoCanto.client.js';
 import WikiClient, {
   WIKI_RATE_LIMIT_MAX_REQUESTS,
   WIKI_RATE_LIMIT_WINDOW_MS,
-} from '../src/ai/enrichment/clients/wiki.client.js';
+} from '../src/ingestion/clients/wiki.client.js';
 import HttpClient from '../src/utils/httpClient.js';
 import ApiRateLimiter from '../src/utils/rateLimiter.js';
 

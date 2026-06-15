@@ -3,7 +3,7 @@
 AI-agent entry point for the Birdwatching AI API. Read this file first, then follow links for deeper details.
 
 ## What This Is
-This repository is a single Express API for Costa Rica birdwatching assistance. It supports:
+This repository is a Node.js backend for Costa Rica birdwatching assistance, split into separate HTTP API and BullMQ worker entrypoints. It supports:
 - conversational chat with short-term PostgreSQL memory
 - PostgreSQL-backed RAG over ingested `src/ai/enrichment/data` documents using pgvector
 - reusable external bird data clients for eBird, iNaturalist, and Xeno-canto ingestion jobs
@@ -13,9 +13,10 @@ This repository is a single Express API for Costa Rica birdwatching assistance. 
 - voice chat through `POST /voice-chat`, combining speech-to-text, chat orchestration, text-to-speech, S3 storage, and CloudFront-relative audio URLs
 - OpenAI/agent tool calling for tour search, availability, transportation, pricing, discounts, and durable reservations
 - Redis-backed caches for AI responses, semantic response reuse, RAG retrieval results, and embedding generation
+- BullMQ-backed document ingestion, embedding, and bird-identification jobs with retry/backoff and dead-letter handling
 - normalized JSON responses and centralized error handling
 - email/password authentication with bcrypt password hashes and JWT-protected AI routes
-- Railway-oriented deployment with environment-driven configuration
+- Railway-oriented deployment with environment-driven configuration for separate API and worker services
 
 ## Source Of Truth Map
 - Human overview and setup: [README.md](./README.md)
@@ -29,16 +30,19 @@ This repository is a single Express API for Costa Rica birdwatching assistance. 
 
 ## Current Architecture
 The app uses a controller-service-query split:
-- `src/routes/*` binds HTTP paths to middleware and controllers.
-- `src/controllers/*` extracts request data, logs request metadata, and returns response envelopes.
+- `src/api/server.js` starts the HTTP API process.
+- `src/workers/index.js` starts the BullMQ worker process.
+- `src/api/routes/*` binds HTTP paths to middleware and controllers.
+- `src/api/controllers/*` extracts request data, logs request metadata, and returns response envelopes.
 - `src/services/*` owns orchestration, AI calls, memory construction, and persistence decisions.
 - `src/db/queries/*` owns parameterized calls to PostgreSQL functions through `src/db/pool.js`.
 - `src/db/vector` and `src/ai/enrichment` own durable RAG storage, search, enrichment, and chunking.
 - `src/cache/` owns Redis client creation and cache abstractions used by AI response, retrieval, and embedding flows.
+- `src/queues/` owns BullMQ queue registration, producers, and shared queue configuration used by the API and workers.
 - `src/ai/enrichment/` owns provider HTTP clients, export orchestration, normalized enrichment data, and chunking for bird data ingestion.
-- `src/routes/media.routes.js` owns CloudFront media URL creation for relative media keys; `src/storage/` remains for S3 uploads and object checks used by ingestion jobs.
+- `src/api/routes/media.routes.js` owns CloudFront media URL creation for relative media keys; `src/storage/` remains for S3 uploads and object checks used by ingestion jobs.
 - `src/ai/*` owns OpenAI client calls, prompt assets, structured schemas, and chat tool adapters.
-- `src/middleware/*` owns validation, sanitization, security headers, CORS protection, rate limiting, errors, and auth hooks.
+- `src/api/middleware/*` owns validation, sanitization, security headers, CORS protection, rate limiting, errors, and auth hooks.
 - `src/utils/` owns shared helpers. Search existing utilities before adding a helper; prefer adding reusable helpers to an existing cohesive utility module, and use the `<name>.utils.js` naming convention for new utility files.
 
 ## Runtime Flows
@@ -79,7 +83,7 @@ GET /chat/latest
 ## Important Implementation Facts
 - ESM is enabled through `"type": "module"` in `package.json`.
 - Express JSON payloads are limited to `64kb`.
-- Security headers, CORS protection, and request sanitization are applied through `src/middleware/security.middleware.js`; CORS uses `CORS_ORIGINS`.
+- Security headers, CORS protection, and request sanitization are applied through `src/api/middleware/security.middleware.js`; CORS uses `CORS_ORIGINS`.
 - Rate limiting is an in-memory per-IP bucket: 60 requests per minute.
 - `POST /auth/signup`, `POST /auth/login`, `POST /auth/refresh`, and `POST /auth/logout` are public; login/signup issue access tokens plus DB-backed rotating refresh tokens, refresh rotates sessions, and logout revokes the supplied refresh token.
 - `POST /chat` accepts JWT-authenticated customer/admin users or unauthenticated visitor requests, while `GET /chat/latest` requires JWT bearer auth through `requireAuth`.
@@ -96,7 +100,10 @@ GET /chat/latest
 - Bird RAG metadata may include `meta.birdMatches[].media` with absolute URLs or relative object keys such as `/photos/123_medium.jpg`, `songs/123.mp3`, or `sonograms/123_grey-small.png`. Relative keys are intentionally not public static paths; the UI resolves them through CloudFront when configured or through `GET /files/:folderName/:filename`, which returns a normalized envelope containing `data.url`.
 - `GET /files/:folderName/:filename` normalizes and validates path segments, then returns a CloudFront URL from `CLOUDFRONT_BASE_URL`; it no longer creates S3 presigned URLs.
 - External bird data clients live under `src/ai/enrichment/clients/` and export orchestration lives in `src/ai/enrichment/services/birds.enrichment.service.js`. They are intended for ingestion jobs, not request handlers, and share a configurable rate limiter capped at 40 requests per minute.
-- `npm run enrich -- birds` exports provider JSON into `src/ai/enrichment/data`, applies per-resource freshness windows, regenerates `birds.json`, and ingests it into pgvector. eBird recent observations are fetched per species code from the Costa Rica species list and written incrementally as keyed `{ locations, lstDt }` summaries.
+- `npm run enrich -- birds` exports provider JSON into `src/ai/enrichment/data`, applies per-resource freshness windows, regenerates `birds.json`, persists normalized documents, and queues BullMQ embedding jobs. The embedding worker chunks stored document content, generates embeddings, and writes pgvector chunks idempotently. eBird recent observations are fetched per species code from the Costa Rica species list and written incrementally as keyed `{ locations, lstDt }` summaries.
+- `POST /ingestions` accepts authenticated normalized JSON documents or raw text uploads, persists the source payload, queues an ingestion job, and returns processing status. The ingestion worker loads the stored payload, runs the existing ingestion service, and queues embedding jobs; `GET /ingestions/:id` returns status metadata without source document contents.
+- BullMQ AI jobs use configurable exponential backoff through `BULLMQ_JOB_ATTEMPTS` and `BULLMQ_JOB_BACKOFF_DELAY_MS`. Exhausted jobs are copied to a sanitized dead-letter queue when `BULLMQ_DLQ_ENABLED` is not `false`; DLQ payloads must not include raw documents, prompts, image URLs, provider responses, secrets, or PII. Malformed job payloads should use `src/jobs/jobErrors.js` so BullMQ does not retry non-retryable validation failures.
+- BullMQ queue registration, enqueueing, worker execution, retry scheduling, failures, and DLQ handoff are traced through the LangSmith-compatible background job tracing adapter without exporting raw payloads or retryable provider error details.
 - Tour data, availability, selection, and reservations are stored in PostgreSQL through functions in `003_create_tour_reservations.sql`; the tour helpers join the Costa Rica `country`/`zone`/`node`/`birds`/`birds_by_node` reference graph and return `location`, `node`, `subnode`, and `zone` for tour discovery, selection, and reservation metadata.
 - Tour listing, recommendation, guided action, pricing, transportation, and reservation details are returned in the `/chat` stream `done.meta` object for frontend rendering; assistant text stays short when structured metadata is present.
 - Tour selection accepts a tour ID or a clear/partial tour name such as `Monteverde tour` before pricing or reservation.
@@ -123,7 +130,7 @@ npm test
 ```
 
 ## When Extending
-1. Add or update validators in `src/validators/`.
+1. Add or update validators in `src/api/validators/`.
 2. Controllers must only parse HTTP requests, validate and authorize input, and call services. Do not perform business logic, database access, or OpenAI prompt composition inside controllers.
 3. Put orchestration in `src/services/`.
 4. Put PostgreSQL functions and schema changes in `src/db/migrations/`; query modules should use parameterized calls to those functions for new persistence writes instead of inline write SQL.

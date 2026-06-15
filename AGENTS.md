@@ -29,7 +29,7 @@ backed tour reservation tools for Costa Rica.
 4. Keep prompt assets and OpenAI schemas in `src/ai/`, not in controllers.
 5. Keep validators at the middleware boundary.
 6. Normalize success and error responses through `src/utils/apiResponse.js`.
-7. Use centralized `HttpError`, `asyncHandler`, and `src/middleware/error.middleware.js` for expected and unexpected failures.
+7. Use centralized `HttpError`, `asyncHandler`, and `src/api/middleware/error.middleware.js` for expected and unexpected failures.
 8. Before creating a helper, search `src/utils/` for existing behavior. Reuse utilities when possible; add new shared helpers to an appropriate existing utility module before creating a new file. New utility files should use the `<name>.utils.js` naming convention.
 9. Keep filesystem helpers in `src/utils/fs.utils.js` and file/media path helpers in `src/utils/file.utils.js`; do not duplicate JSON file IO, freshness checks, or URL/path normalization in feature modules.
 
@@ -40,7 +40,7 @@ backed tour reservation tools for Costa Rica.
 4. Production logs may include only low-cardinality request IDs, provider request IDs, aggregated token counts, and coarse-grained operational buckets.
 5. Do not log secrets, prompt contents, response contents, PII, or high-cardinality identifiers such as API keys, database URLs, passwords, tokens, or full authorization headers.
 6. Preserve the existing per-key and per-IP rate limits. If replacing a limiter, document that the new solution preserves or lowers requests per minute, burst capacity, and concurrency; supports distributed counters; exposes health-check endpoints; and falls back automatically if unavailable.
-7. Use `optionalAuth` and `requireAuth` from `src/middleware/auth.middleware.js`.
+7. Use `optionalAuth` and `requireAuth` from `src/api/middleware/auth.middleware.js`.
 
 ## AI/provider behavior
 1. Use role-based messages: `system`, `user`, `assistant`.
@@ -141,12 +141,12 @@ Stop conditions: provider health settled (ok/degraded), retry policy exhausted o
 - Run `npm test` before handing off behavior changes.
 
 ## Recommended files for changes
-- Routes: `src/routes/*`
-- Controllers: `src/controllers/*`
+- Routes: `src/api/routes/*`
+- Controllers: `src/api/controllers/*`
 - Services: `src/services/*`
 - Queries and migrations: `src/db/*`
-- Middleware: `src/middleware/*`
-- Validators: `src/validators/*`
+- Middleware: `src/api/middleware/*`
+- Validators: `src/api/validators/*`
 - AI prompts/schemas/client: `src/ai/*`
 - Config: `src/config/env.js`
 - Documentation: `CONTEXT.md`, `README.md`, `docs/*`

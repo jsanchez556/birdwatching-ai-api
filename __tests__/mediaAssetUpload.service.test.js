@@ -29,9 +29,9 @@ const {
 const {
   createFileHandler,
   normalizeFileName,
-} = await import('../src/routes/media.routes.js');
+} = await import('../src/api/routes/media.routes.js');
 const { default: HttpError } = await import('../src/utils/httpError.js');
-const { default: errorMiddleware } = await import('../src/middleware/error.middleware.js');
+const { default: errorMiddleware } = await import('../src/api/middleware/error.middleware.js');
 
 function createConfig() {
   return {

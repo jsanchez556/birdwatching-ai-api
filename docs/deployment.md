@@ -3,17 +3,29 @@
 Back to [Project Context](../CONTEXT.md).
 
 ## Runtime
-Start command:
+API start command:
 ```bash
-npm start
+npm run start:api
 ```
 
-Development command:
+Worker start command:
 ```bash
-npm run dev
+npm run start:worker
 ```
 
-The server listens on `0.0.0.0` and uses `PORT` from `src/config/env.js`.
+API development command:
+```bash
+npm run dev:api
+```
+
+Worker development command:
+```bash
+npm run dev:worker
+```
+
+The API server listens on `0.0.0.0` and uses `PORT` from `src/config/env.js`.
+The worker process does not expose an HTTP server; it registers BullMQ queues
+and processors, then consumes background jobs.
 
 ## Environment Variables
 Required outside tests:
@@ -28,6 +40,11 @@ Optional:
 - `OPENAI_EMBEDDING_MODEL`, defaults to `text-embedding-3-small`
 - `REDIS_URL`, defaults to `redis://localhost:6379`
 - `REDIS_KEY_PREFIX`, defaults to `birdwatching-ai:`
+- `BULLMQ_KEY_PREFIX`, defaults to `birdwatching-ai:jobs`
+- `BULLMQ_JOB_ATTEMPTS`, defaults to `3`
+- `BULLMQ_JOB_BACKOFF_DELAY_MS`, defaults to `5000`
+- `BULLMQ_DLQ_ENABLED`, `true` or `false`; defaults to `true`
+- `BULLMQ_DLQ_QUEUE_NAME`, defaults to `dead-letter`
 - `REDIS_CACHE_TTL_SECONDS`, defaults to `300`
 - `AI_RESPONSE_CACHE_TTL_SECONDS`, defaults to `300`
 - `RETRIEVAL_CACHE_TTL_SECONDS`, defaults to `300`
@@ -112,6 +129,7 @@ Current AI trace boundaries:
 - Multi-tool execution flows, including planner output, ordered tool steps, failures, skipped steps, retry counts, and retry scheduling events
 - Tour tool execution through the registry and agent executor
 - Voice chat workflow spans for OpenAI audio transcription, conversation context/RAG retrieval, agent execution/tool work, final chat response generation, and OpenAI speech generation
+- BullMQ background job spans for queue registration, job enqueueing, worker execution, retry scheduling, final failure, and dead-letter handoff
 
 Verify traces by running a chat request with the variables above set, then checking
 the `birdwatching-ai` project in LangSmith. Application logs also include
@@ -148,12 +166,27 @@ Content-Type,Authorization,Accept,X-Filename,X-Conversation-Id,X-Role,X-Response
 ## Railway
 `railway.json` uses Nixpacks and runs from the repository root:
 ```bash
-npm install
-npm start
+npm install && npm run build
+npm run start:api
 ```
 
-The current Railway config sets `build.buildCommand` to `npm install` and
-`deploy.startCommand` to `npm start`.
+The current Railway config sets `build.buildCommand` to
+`npm install && npm run build`, with `deploy.startCommand` set to
+`npm run start:api`.
+
+Create two Railway services from this repository when running background jobs:
+
+- API service: use `npm run start:api`. This service owns Express, validates
+  HTTP requests and auth, enqueues BullMQ jobs, and returns job IDs or normal
+  API responses.
+- Worker service: use `npm run start:worker`. This service owns BullMQ worker
+  processors for ingestion, embeddings, bird identification, OpenAI work, image
+  analysis, and result persistence.
+
+Both services should receive the same application variables, including
+`DATABASE_URL`, `REDIS_URL`, `OPENAI_API_KEY`, and `LANGCHAIN_API_KEY` when
+tracing is enabled. The worker service does not need `PORT` unless the platform
+requires one for service configuration.
 
 For Railway object storage, create or attach a bucket, then copy the region,
 bucket name, access key ID, and secret access key into the variables above.

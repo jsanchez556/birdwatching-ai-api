@@ -14,7 +14,7 @@ const { ToolPlanner } = await import('../src/ai/planners/tool.planner.js');
 const { ToolExecutor } = await import('../src/ai/tools/tool.executor.js');
 const { calculateTransportation } = await import('../src/ai/tools/transportation.tool.js');
 const { AgentOrchestrator } = await import('../src/ai/orchestrators/agent.orchestrator.js');
-const { validateChatBody } = await import('../src/validators/chat.validator.js');
+const { validateChatBody } = await import('../src/api/validators/chat.validator.js');
 
 describe('multi-tool agent planning and orchestration', () => {
   it('plans a single tour search tool for discovery requests', () => {

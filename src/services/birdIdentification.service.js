@@ -687,6 +687,35 @@ function normalizeVerifiedCandidate(candidate = {}, { imageAnalysis } = {}) {
   });
 }
 
+function findFallbackCandidate(candidate = {}, fallbackCandidates = []) {
+  const candidateKeys = getKnowledgeKeys(candidate);
+
+  return fallbackCandidates.find((fallbackCandidate) => (
+    getKnowledgeKeys(fallbackCandidate).some((key) => candidateKeys.includes(key))
+  ));
+}
+
+function mergeVerifierCandidate(candidate = {}, fallbackCandidates = []) {
+  const fallbackCandidate = findFallbackCandidate(candidate, fallbackCandidates) || {};
+  const visualEvidence = normalizeStringList(candidate.visualEvidence);
+  const missingEvidence = normalizeStringList(candidate.missingEvidence);
+
+  return {
+    ...fallbackCandidate,
+    ...candidate,
+    commonName: normalizeText(candidate.commonName || candidate.species)
+      || normalizeText(fallbackCandidate.commonName || fallbackCandidate.species),
+    scientificName: normalizeText(candidate.scientificName)
+      || normalizeText(fallbackCandidate.scientificName),
+    reasoning: normalizeText(candidate.reasoning) || normalizeText(fallbackCandidate.reasoning),
+    visualEvidence: visualEvidence.length ? visualEvidence : normalizeStringList(fallbackCandidate.visualEvidence),
+    possibleConfusions: normalizeStringList(candidate.possibleConfusions).length
+      ? normalizeStringList(candidate.possibleConfusions)
+      : normalizeStringList(fallbackCandidate.possibleConfusions),
+    missingEvidence: missingEvidence.length ? missingEvidence : normalizeStringList(fallbackCandidate.missingEvidence),
+  };
+}
+
 function normalizeFallbackVerifiedCandidate(candidate = {}, { imageAnalysis } = {}) {
   const commonName = normalizeText(candidate.commonName || candidate.species || candidate.name);
   const confidence = calibrateConfidence(candidate.confidence, imageAnalysis);
@@ -764,8 +793,14 @@ export function normalizeBirdVerification(rawVerification, { imageAnalysis, fall
     });
   }
 
-  const sourceCandidates = rawVerification.candidates.length ? rawVerification.candidates : fallbackCandidates;
-  const candidates = sourceCandidates.map((candidate) => normalizeVerifiedCandidate(candidate, { imageAnalysis }));
+  const verifierCandidates = rawVerification.candidates.length
+    ? rawVerification.candidates
+    : [rawVerification.bestMatch].filter(Boolean);
+  const sourceCandidates = verifierCandidates.length ? verifierCandidates : fallbackCandidates;
+  const candidates = sourceCandidates.map((candidate) => normalizeVerifiedCandidate(
+    mergeVerifierCandidate(candidate, fallbackCandidates),
+    { imageAnalysis }
+  ));
   const calibrated = enforceConfidenceStatus(candidates, normalizeStatus(rawVerification.status, candidates));
 
   return {

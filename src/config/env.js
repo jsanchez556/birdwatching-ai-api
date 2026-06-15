@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { parsePositiveInteger } from '../utils/number.utils.js';
 
 dotenv.config({ quiet: true });
 
@@ -21,6 +22,14 @@ const numericEnvKeys = [
   'AI_RATE_LIMIT_MAX_REQUESTS',
   'EXTERNAL_API_RATE_LIMIT_WINDOW_MS',
   'EXTERNAL_API_RATE_LIMIT_MAX_REQUESTS',
+  'BULLMQ_JOB_ATTEMPTS',
+  'BULLMQ_JOB_BACKOFF_DELAY_MS',
+  'BULLMQ_REMOVE_ON_COMPLETE_AGE_SECONDS',
+  'BULLMQ_REMOVE_ON_COMPLETE_COUNT',
+  'BULLMQ_REMOVE_ON_FAIL_AGE_SECONDS',
+  'BULLMQ_REMOVE_ON_FAIL_COUNT',
+  'BULLMQ_WORKER_CONCURRENCY',
+  'BIRD_IDENTIFICATION_JOB_STALL_TIMEOUT_MS',
 ];
 
 for (const key of numericEnvKeys) {
@@ -34,6 +43,13 @@ if (
   !['true', 'false'].includes(process.env.LOG_FILES_ENABLED)
 ) {
   throw new Error('LOG_FILES_ENABLED must be true or false');
+}
+
+if (
+  process.env.BULLMQ_DLQ_ENABLED &&
+  !['true', 'false'].includes(process.env.BULLMQ_DLQ_ENABLED)
+) {
+  throw new Error('BULLMQ_DLQ_ENABLED must be true or false');
 }
 
 if (nodeEnv !== 'test') {
@@ -106,6 +122,10 @@ const env = {
     secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
   },
   adminEmail: process.env.ADMIN_EMAIL,
+  birdIdentificationJobStallTimeoutMs: parsePositiveInteger(
+    process.env.BIRD_IDENTIFICATION_JOB_STALL_TIMEOUT_MS,
+    5 * 60 * 1000
+  ),
 };
 
 export default env;

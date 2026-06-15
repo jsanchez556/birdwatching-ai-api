@@ -3,22 +3,29 @@
 Back to [Project Context](../CONTEXT.md).
 
 ## Shape
-This is a single-service Node.js API. There is no active `apps/` monorepo layout in the current tree.
+This is a Node.js backend with separate API and worker process entrypoints.
+There is no active `apps/` monorepo layout in the current tree.
 
 ```text
 src/
-  app.js                 Express app, CORS, JSON parsing, rate limit, routes, errors
-  server.js              process entrypoint
+  api/
+    app.js               Express app, CORS, JSON parsing, rate limit, routes, errors
+    server.js            HTTP API process entrypoint
+    controllers/         thin HTTP handlers
+    middleware/          validation, rate limit, error handling, auth
+    routes/              route modules
+    streaming/           HTTP response streaming helpers
+    validators/          request payload validators
   ai/                    OpenAI client/service, agents, orchestrators, prompts, evaluations, guardrails, schemas, chat tools
   cache/                 Redis client and reusable response/retrieval cache abstractions
   config/                environment parsing and validation
-  controllers/           thin HTTP handlers
   db/                    pg pool, migrations, query modules
+  events/                BullMQ queue and worker event wiring
+  jobs/                  shared background job names and default job options
+  queues/                BullMQ queue configuration and queue manager
+  workers/               BullMQ worker process entrypoint, manager, and job processors
   ai/enrichment/         external provider clients, enrichment data, chunking, and vector enrichment
-  middleware/            validation, rate limit, error handling, auth
-  routes/                route modules
   services/              business orchestration
-  validators/            request payload validators
   utils/                 shared helpers; prefer <name>.utils.js for new utility modules
   observability/         LangSmith-compatible trace configuration and trace lifecycle service
   tracing/               reusable AI tracing wrappers for LLM, RAG, tools, and agents
@@ -32,6 +39,9 @@ src/
 - Query modules own SQL and should use parameterized queries.
 - AI modules own prompt text, prompt versions, schemas, provider calls, retry, and token usage logging.
 - Cache modules own Redis connection details and generic get/set behavior; callers decide cache eligibility and fallback behavior.
+- Queue modules own BullMQ queue registration and enqueueing for async background jobs.
+- Worker modules own BullMQ worker startup and processors; processors call services instead of embedding business logic in queue plumbing.
+- The API process registers queues so it can enqueue jobs, but it does not import worker processors or start workers.
 - Middleware owns cross-cutting request behavior before and after controllers.
 
 ## Request Lifecycle
@@ -56,7 +66,7 @@ Chat context is assembled from:
 4. optional retrieved context injected after the base system message
 
 RAG uses:
-1. `npm run enrich -- birds` to refresh bird provider data, generate `birds.json`, chunk it, generate embeddings, and persist documents plus vectors in PostgreSQL
+1. `npm run enrich -- birds` to refresh bird provider data, generate `birds.json`, normalize documents, persist source text, and enqueue embedding jobs
 2. `rag.service.js` to check Redis for an equivalent retrieval query and relevant retrieval options
 3. `src/ai/enrichment/services/retrieval.service.js` to embed the user question and retrieve ranked chunks through `src/db/vector/vector.repository.js` on cache miss
 4. `rag.service.js` to write successful retrieval results back to Redis using the configured retrieval TTL
@@ -100,12 +110,15 @@ caller needs only one page.
 `ebird-recent-observations-cr.json` when missing or at least one week old,
 `inaturalist-costa-rica-bird-images.json` when missing or at least one month old,
 and `xenocanto-costa-rica-bird-songs.json` when missing or at least six months
-old. It then validates those source files, regenerates `birds.json`, and ingests
-that normalized dataset into pgvector. Taxonomy remains incremental by species
-code, and recent observations are written incrementally after each species.
+old. It then validates those source files, regenerates `birds.json`, persists
+the normalized documents, and queues BullMQ embedding jobs. The
+`embeddingWorker` loads persisted document content, chunks it, generates
+embeddings, and replaces pgvector chunks idempotently. Taxonomy remains
+incremental by species code, and recent observations are written incrementally
+after each species.
 
 Media routing uses:
-1. `src/routes/media.routes.js` to validate `GET /files/:folderName/:filename`
+1. `src/api/routes/media.routes.js` to validate `GET /files/:folderName/:filename`
 2. `CLOUDFRONT_BASE_URL` to return public CDN URLs
 3. the normalized response envelope so UI clients receive `data.url` plus delivery metadata
 
@@ -211,6 +224,69 @@ continues through OpenAI or PostgreSQL. Cache helpers reuse shared utilities fro
 `src/utils/hash.utils.js`, `src/utils/number.utils.js`, and
 `src/utils/text.utils.js` for deterministic keys, TTL/threshold parsing, metric
 formatting, and normalized prompt hashing.
+
+## Background Jobs
+BullMQ infrastructure lives under `src/jobs`, `src/queues`, `src/workers`, and
+`src/events`. `src/queues/bullmq.config.js` reads Redis and BullMQ settings from
+environment variables, reusing `REDIS_URL` by default and allowing a separate
+`BULLMQ_KEY_PREFIX`. Queue and worker managers accept injectable BullMQ classes
+so tests can mock Redis boundaries.
+
+The initial queue set is:
+- `birdIdentificationQueue`
+- `embeddingQueue`
+- `ingestionQueue`
+- `deadLetterQueue`
+
+The initial worker set is:
+- `birdIdentificationWorker`
+- `embeddingWorker`
+- `ingestionWorker`
+
+Job names are centralized in `src/jobs/jobTypes.js`. New background workloads
+should add a job type, queue mapping, queue registration module, worker
+registration module, and focused manager tests. Processors should delegate to
+existing service modules and keep queue retry, logging, and lifecycle behavior
+inside the queue/worker layer.
+
+AI background jobs share exponential retry options from
+`src/queues/bullmq.config.js`. `BULLMQ_JOB_ATTEMPTS` controls the maximum
+attempt count and `BULLMQ_JOB_BACKOFF_DELAY_MS` controls the base exponential
+backoff delay. When a job exhausts its configured attempts, queue event handling
+adds a sanitized record to the dead-letter queue, controlled by
+`BULLMQ_DLQ_ENABLED` and `BULLMQ_DLQ_QUEUE_NAME`. DLQ payloads include stable
+job identifiers, original queue/job names, attempts made, a safe error
+message/code, and small allowlisted metadata only; they must not contain raw
+documents, prompts, image URLs, provider responses, secrets, or PII. Worker
+payload validation failures should throw `UnrecoverableError` through
+`src/jobs/jobErrors.js` so malformed jobs are not retried like transient
+provider, Redis, or PostgreSQL failures. Durable job records should be marked
+failed only on the final retry attempt or on unrecoverable validation failure,
+so polling clients do not see failed status while BullMQ still has retries
+scheduled.
+
+Background job lifecycle traces are emitted through
+`src/tracing/backgroundJobTracing.js` into the same LangSmith-compatible
+observability service used by chat, RAG, tools, and voice workflows. Queue
+registration, job enqueueing, worker execution, retry scheduling, final
+failures, and DLQ handoff are traced with queue/job identifiers, attempt counts,
+worker names, and status metadata only. Worker execution traces sanitize
+retryable error messages before exporting to LangSmith while still rethrowing
+the original error to BullMQ.
+
+Embedding jobs are enqueued by `src/services/embeddingJob.service.js` with a
+small payload containing only the source `documentId`. The worker reloads the
+document from PostgreSQL, chunks the stored source text, calls the existing
+OpenAI embedding client, and writes through `vector.repository.replaceDocumentChunks`
+so retries replace existing vectors instead of duplicating them.
+
+Document ingestion jobs enter through `POST /ingestions`. The controller accepts
+normalized JSON documents or raw text uploads, `documentIngestion.service.js`
+persists the source payload in PostgreSQL, and BullMQ receives only the `jobId`.
+The `ingestionWorker` loads the stored source payload, runs the existing
+ingestion service, and lets that service queue embedding jobs. Polling through
+`GET /ingestions/:id` returns lifecycle metadata without exposing document
+contents.
 
 ## AI Observability
 The observability layer is split into three small modules:

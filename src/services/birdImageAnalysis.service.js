@@ -1,5 +1,5 @@
-import openaiClient from '../ai/openai.client.js';
-import { isRetryableOpenAIError } from '../ai/openaiRetry.js';
+import openaiClient from '../ai/clients/openai.client.js';
+import { isRetryableOpenAIError } from '../ai/utils/openaiRetry.utils.js';
 import {
   BIRD_IMAGE_ANALYSIS_PROMPT_VERSION,
   BIRD_IMAGE_ANALYSIS_SYSTEM_PROMPT,

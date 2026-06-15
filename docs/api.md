@@ -67,7 +67,10 @@ GET /birds/profile?name=Great%20Tinamou
 Either `speciesCode`/`species_code` or `name` is required. Missing query input returns `422` with code `validation_error`; unknown birds return `404` with code `bird_not_found`.
 
 ### `POST /birds/identify`
-Requires JWT bearer authentication. Analyzes a bird image URL or uploaded bird image internally, extracts rich visible field marks, generates conservative candidate species, verifies/reranks candidates against bird-profile RAG, and returns an identified, uncertain, or unknown result.
+Requires JWT bearer authentication. Accepts a bird image URL or uploaded bird
+image, stores uploaded images in S3, queues a BullMQ bird-identification job,
+and returns immediately with a job ID. `POST /bird-identification` is available
+as an equivalent alias for new clients.
 
 URL body:
 ```json
@@ -86,22 +89,26 @@ X-Filename: bird.jpg
 <raw image bytes>
 ```
 
-Success data:
+Accepted response data:
 ```json
 {
-  "status": "identified",
-  "bestMatch": {
-    "commonName": "Resplendent Quetzal",
-    "scientificName": "Pharomachrus mocinno",
-    "confidence": 0.91,
-    "reasoning": "Green upperparts, red underparts, and long tail coverts match visible field marks and retrieved profile support.",
-    "visualEvidence": ["green upperparts", "red underparts", "long tail coverts"],
-    "contradictions": [],
-    "ragSupport": ["Retrieved profile describes emerald upperparts and red belly."]
-  },
-  "candidates": [
-    {
-      "species": "Resplendent Quetzal",
+  "jobId": "job-123",
+  "status": "queued"
+}
+```
+
+Use `GET /jobs/:id` to poll the job status and final result. Completed result
+data contains the same public bird-identification shape that this endpoint
+previously returned synchronously.
+
+Completed job result:
+```json
+{
+  "jobId": "job-123",
+  "status": "completed",
+  "result": {
+    "status": "identified",
+    "bestMatch": {
       "commonName": "Resplendent Quetzal",
       "scientificName": "Pharomachrus mocinno",
       "confidence": 0.91,
@@ -109,28 +116,150 @@ Success data:
       "visualEvidence": ["green upperparts", "red underparts", "long tail coverts"],
       "contradictions": [],
       "ragSupport": ["Retrieved profile describes emerald upperparts and red belly."]
-    }
-  ],
-  "imageAnalysis": {
-    "dominantColors": ["green", "red"],
-    "fieldMarks": ["long tail coverts", "red underparts"],
-    "bill": { "color": "yellow", "shape": "short", "length": "short" },
-    "head": "green head with crest",
-    "throat": "green",
-    "underparts": "red",
-    "upperparts": "green",
-    "wings": "green",
-    "tail": "long",
-    "legs": "unknown",
-    "bodyShape": "trogon-like",
-    "apparentGroup": "trogon",
-    "habitatHint": "forest",
-    "imageQuality": "clear",
-    "confidence": 0.86
-  },
-  "notes": []
+    },
+    "candidates": [
+      {
+        "species": "Resplendent Quetzal",
+        "commonName": "Resplendent Quetzal",
+        "scientificName": "Pharomachrus mocinno",
+        "confidence": 0.91,
+        "reasoning": "Green upperparts, red underparts, and long tail coverts match visible field marks and retrieved profile support.",
+        "visualEvidence": ["green upperparts", "red underparts", "long tail coverts"],
+        "contradictions": [],
+        "ragSupport": ["Retrieved profile describes emerald upperparts and red belly."]
+      }
+    ],
+    "imageAnalysis": {
+      "dominantColors": ["green", "red"],
+      "fieldMarks": ["long tail coverts", "red underparts"],
+      "bill": { "color": "yellow", "shape": "short", "length": "short" },
+      "head": "green head with crest",
+      "throat": "green",
+      "underparts": "red",
+      "upperparts": "green",
+      "wings": "green",
+      "tail": "long",
+      "legs": "unknown",
+      "bodyShape": "trogon-like",
+      "apparentGroup": "trogon",
+      "habitatHint": "forest",
+      "imageQuality": "clear",
+      "confidence": 0.86
+    },
+    "notes": []
+  }
 }
 ```
+
+### `GET /jobs/:id`
+Requires JWT bearer authentication. Returns the polling state for an
+authenticated user's background job.
+
+Queued or active response data:
+```json
+{
+  "jobId": "job-123",
+  "status": "queued"
+}
+```
+
+Failed response data:
+```json
+{
+  "jobId": "job-123",
+  "status": "failed",
+  "error": {
+    "message": "Bird identification failed. Please try again."
+  }
+}
+```
+
+Unknown or expired job response data:
+```json
+{
+  "jobId": "job-123",
+  "status": "not_found"
+}
+```
+
+Bird identification job statuses are `queued`, `active`, `completed`, `failed`,
+and `not_found`.
+
+The worker extracts rich visible field marks, generates conservative candidate
+species, verifies/reranks candidates against bird-profile RAG, and stores an
+identified, uncertain, or unknown result for polling.
+
+### `POST /ingestions`
+Requires JWT bearer authentication. Accepts normalized JSON documents or a raw
+text-like upload, persists the source payload, queues a BullMQ ingestion job,
+and returns immediately.
+
+JSON body:
+```json
+{
+  "documents": [
+    {
+      "externalId": "field-note-1",
+      "name": "Field note",
+      "description": "Cloud forest bird habitat notes.",
+      "documentType": "field_note"
+    }
+  ],
+  "source": "manual-upload",
+  "force": false
+}
+```
+
+Raw text upload:
+```http
+POST /ingestions
+Authorization: Bearer jwt
+Content-Type: text/plain
+X-Filename: notes.txt
+
+Cloud forest bird habitat notes.
+```
+
+Accepted response data:
+```json
+{
+  "jobId": "job-123",
+  "status": "processing"
+}
+```
+
+### `GET /ingestions/:id`
+Requires JWT bearer authentication. Returns the authenticated user's ingestion
+job status without exposing the stored source document contents.
+
+Completed response data:
+```json
+{
+  "jobId": "job-123",
+  "status": "completed",
+  "result": {
+    "documentCount": 1,
+    "chunkCount": 2,
+    "queuedCount": 1,
+    "skippedCount": 0
+  }
+}
+```
+
+Failed response data:
+```json
+{
+  "jobId": "job-123",
+  "status": "failed",
+  "error": {
+    "message": "Document ingestion failed. Please try again."
+  }
+}
+```
+
+Document ingestion statuses are `processing`, `active`, `completed`, `failed`,
+and `not_found`. The ingestion worker validates and persists documents through
+the existing ingestion service, which queues embedding jobs for pgvector storage.
 
 `imageObservations` remains present as a compatibility alias for older clients. Normal responses omit internal debug details. Authenticated admins may request `?debug=true` to receive internal debug metadata under `meta.debug` with raw candidates, retrieved profile identifiers/names, and verification notes.
 

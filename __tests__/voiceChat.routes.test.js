@@ -33,7 +33,7 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
   },
 }));
 
-const { default: app } = await import('../src/app.js');
+const { default: app } = await import('../src/api/app.js');
 
 describe('voice chat endpoint', () => {
   beforeEach(() => {

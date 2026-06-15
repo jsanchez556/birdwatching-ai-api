@@ -1,5 +1,5 @@
-import openaiClient from '../openai.client.js';
-import { isRetryableOpenAIError } from '../openaiRetry.js';
+import openaiClient from '../clients/openai.client.js';
+import { isRetryableOpenAIError } from '../utils/openaiRetry.utils.js';
 import {
   BIRD_IDENTIFICATION_PROMPT_VERSION,
   BIRD_IDENTIFICATION_VERIFICATION_PROMPT_VERSION,

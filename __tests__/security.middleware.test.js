@@ -21,8 +21,8 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
   },
 }));
 
-const { default: app } = await import('../src/app.js');
-const { sanitizeRequestValue } = await import('../src/middleware/security.middleware.js');
+const { default: app } = await import('../src/api/app.js');
+const { sanitizeRequestValue } = await import('../src/api/middleware/security.middleware.js');
 
 describe('security middleware', () => {
   it('sets helmet security headers and allows configured CORS origins', async () => {

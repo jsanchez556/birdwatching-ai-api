@@ -41,7 +41,7 @@ await jest.unstable_mockModule('../src/services/chat.service.js', () => ({
   },
 }));
 
-const { default: app } = await import('../src/app.js');
+const { default: app } = await import('../src/api/app.js');
 
 function authHeader() {
   const token = jwt.sign(

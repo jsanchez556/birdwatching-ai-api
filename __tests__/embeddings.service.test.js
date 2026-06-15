@@ -2,7 +2,7 @@ import { jest } from '@jest/globals';
 
 const mockWarn = jest.fn();
 
-await jest.unstable_mockModule('../src/ai/openai.client.js', () => ({
+await jest.unstable_mockModule('../src/ai/clients/openai.client.js', () => ({
   default: {
     generateEmbedding: jest.fn(),
   },
@@ -20,7 +20,7 @@ const {
   documentToText,
   normalizeKnowledgeBase,
   normalizeLocations,
-} = await import('../src/ai/enrichment/services/embeddings.service.js');
+} = await import('../src/ai/services/embeddings.service.js');
 
 describe('EmbeddingsService helpers', () => {
   beforeEach(() => {

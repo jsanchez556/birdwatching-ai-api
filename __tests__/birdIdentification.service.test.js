@@ -952,6 +952,51 @@ describe('birdIdentificationService', () => {
     });
   });
 
+  it('verification reuses generated candidate evidence when verifier omits it', () => {
+    expect(normalizeBirdVerification({
+      status: 'identified',
+      bestMatch: null,
+      candidates: [
+        {
+          commonName: 'Resplendent Quetzal',
+          scientificName: 'Pharomachrus mocinno',
+          confidence: 0.82,
+          reasoning: '',
+          visualEvidence: [],
+          ragSupport: ['Retrieved profile mentions green plumage and red underparts.'],
+          contradictions: [],
+          missingEvidence: [],
+        },
+      ],
+      notes: [],
+    }, {
+      imageAnalysis: {
+        confidence: 0.86,
+        imageQuality: 'clear',
+      },
+      fallbackCandidates: [
+        {
+          commonName: 'Resplendent Quetzal',
+          scientificName: 'Pharomachrus mocinno',
+          confidence: 0.84,
+          reasoning: 'Green upperparts and red underparts match a male quetzal.',
+          visualEvidence: ['green upperparts', 'red underparts'],
+          missingEvidence: ['tail streamers not visible'],
+        },
+      ],
+    })).toMatchObject({
+      status: 'identified',
+      bestMatch: {
+        commonName: 'Resplendent Quetzal',
+        confidence: 0.82,
+        reasoning: 'Green upperparts and red underparts match a male quetzal.',
+        visualEvidence: ['green upperparts', 'red underparts'],
+        ragSupport: ['Retrieved profile mentions green plumage and red underparts.'],
+        missingEvidence: ['tail streamers not visible'],
+      },
+    });
+  });
+
   it('uses tolerant fallback verification when the verifier fails with sparse candidates', async () => {
     mockVerifyAndRerank.mockRejectedValue(new Error('malformed verifier response'));
 

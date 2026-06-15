@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import openaiService from '../ai/openai.service.js';
+import openaiService from '../ai/services/openai.service.js';
 import {
   applyChatOutputGuardrails,
   assessChatInput,

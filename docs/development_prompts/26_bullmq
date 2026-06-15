@@ -1,0 +1,478 @@
+Treat [AGENTS.md](/home/jose/Documents/projects/birdwatching-ai-api/AGENTS.md) as the source of truth for architecture, coding style, testing expectations, and response format. Do not make changes that conflict with it unless I explicitly override those instructions.
+
+Implement BullMQ-based background job infrastructure for the AI platform.
+
+Goal:
+Add a reusable queue and worker architecture that supports async AI platform workloads such as bird identification, embeddings, ingestion, enrichment, and future background tasks.
+
+Requirements:
+- Add Redis connection support using existing environment/config patterns.
+- Implement a reusable queue abstraction.
+- Implement a reusable worker abstraction.
+- Implement managers for queue creation, worker registration, lifecycle handling, and graceful shutdown.
+- Define shared job type constants or enums to avoid string duplication.
+- Keep the architecture extensible so new queues/workers can be added with minimal boilerplate.
+- Keep BullMQ-specific details isolated from business logic where practical.
+- Add logging and error handling consistent with the existing backend patterns.
+- Do not introduce frontend code or unrelated refactors.
+
+Suggested structure:
+
+```txt
+src/
+  jobs/
+    jobTypes.js
+    jobOptions.js
+  queues/
+    queue.manager.js
+    birdIdentification.queue.js
+    embedding.queue.js
+    ingestion.queue.js
+  workers/
+    worker.manager.js
+    birdIdentification.worker.js
+    embedding.worker.js
+    ingestion.worker.js
+  events/
+    queue.events.js
+```
+
+Expected queues:
+- `birdIdentificationQueue`
+- `embeddingQueue`
+- `ingestionQueue`
+
+Expected workers:
+- `birdIdentificationWorker`
+- `embeddingWorker`
+- `ingestionWorker`
+
+Implementation expectations:
+1. Inspect the existing project structure, config, logging, async utility, and testing patterns before editing.
+2. Add Redis/BullMQ configuration in the appropriate config layer.
+3. Create a centralized Redis connection factory or config module if one does not already exist.
+4. Create queue manager APIs for:
+   - registering queues
+   - retrieving queues by name/type
+   - adding jobs with validated job names and payloads
+   - closing queues gracefully
+5. Create worker manager APIs for:
+   - registering workers
+   - starting workers
+   - handling worker events
+   - closing workers gracefully
+6. Create reusable default job options for retries, backoff, removal policy, and timeouts.
+7. Add placeholder processors for the expected workers if the domain implementation is not already available, but keep the code ready for real processors.
+8. Add tests for the queue manager, worker manager, job type definitions, and Redis/BullMQ adapter behavior using mocks where appropriate.
+9. Update documentation if the repository has relevant architecture or backend docs.
+
+Verification:
+- Run the relevant test suite.
+- If full tests cannot run because Redis is unavailable, mock Redis/BullMQ boundaries and clearly document what was verified.
+- Ensure no secrets are committed and Redis configuration comes from environment variables.
+
+---
+
+## Iteration 2, ASYNC BIRD IDENTIFICATION
+
+Move the bird identification workflow to BullMQ.
+
+Goal:
+Change bird image identification from a synchronous request workflow into an asynchronous job workflow. The API should accept the image, enqueue a BullMQ job, return a `jobId` immediately, and expose a status/result endpoint for polling.
+
+Workflow:
+1. User uploads an image or submits an image URL.
+2. API validates the request using the existing bird identification validation rules.
+3. API stores the uploaded image if needed using the existing image storage service.
+4. API creates a BullMQ bird identification job.
+5. API immediately returns the queued job ID.
+6. Worker processes the job.
+7. Worker runs the existing bird identification service.
+8. Worker stores the result in a durable location.
+9. API exposes job status and result through a status endpoint.
+10. Completion should be logged and exposed through polling; add event hooks for future real-time notification support if appropriate.
+
+Required API behavior:
+
+```http
+POST /bird-identification
+```
+
+Immediate response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "jobId": "abc123",
+    "status": "queued"
+  },
+  "meta": {}
+}
+```
+
+Status endpoint:
+
+```http
+GET /jobs/:id
+```
+
+Queued or active response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "jobId": "abc123",
+    "status": "queued"
+  },
+  "meta": {}
+}
+```
+
+Completed response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "jobId": "abc123",
+    "status": "completed",
+    "result": {
+      "species": "Resplendent Quetzal"
+    }
+  },
+  "meta": {}
+}
+```
+
+Failed response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "jobId": "abc123",
+    "status": "failed",
+    "error": {
+      "message": "Bird identification failed. Please try again."
+    }
+  },
+  "meta": {}
+}
+```
+
+Implementation requirements:
+- Reuse the BullMQ queue and worker infrastructure already added under `src/jobs`, `src/queues`, `src/workers`, and `src/events`.
+- Use the existing bird identification route, validator, controller, upload middleware, storage service, and identification service wherever possible.
+- Do not duplicate image validation, upload handling, OpenAI calls, RAG logic, or bird identification business logic.
+- Add a job status/result abstraction so `GET /jobs/:id` does not reach directly into BullMQ from the controller.
+- Store completed job results durably enough for polling after worker completion. Prefer an existing database pattern if available; otherwise add a focused persistence layer with tests.
+- Ensure job payloads do not contain raw image bytes, secrets, API keys, or unnecessary PII.
+- Keep logs low-cardinality and avoid logging image URLs, user emails, prompts, provider responses, or full result payloads.
+- Preserve normalized API response envelopes through `src/utils/apiResponse.js`.
+- Preserve existing auth requirements for bird identification.
+- Add retry/backoff behavior through the existing BullMQ job options.
+- Make job status values stable, for example: `queued`, `active`, `completed`, `failed`, `not_found`.
+- Add graceful handling for missing, expired, or unknown job IDs.
+
+Suggested files:
+```txt
+src/api/controllers/birdIdentification.controller.js
+src/api/routes/birdIdentification.routes.js
+src/services/birdIdentification.service.js
+src/services/birdIdentificationJob.service.js
+src/jobs/jobTypes.js
+src/queues/birdIdentification.queue.js
+src/workers/birdIdentification.worker.js
+src/api/controllers/job.controller.js
+src/api/routes/job.routes.js
+src/services/jobStatus.service.js
+src/db/queries/*
+src/db/migrations/*
+```
+
+Testing expectations:
+- Add or update route tests for `POST /bird-identification`.
+- Add route tests for `GET /jobs/:id`.
+- Add service tests for enqueueing bird identification jobs.
+- Add worker tests verifying the worker calls the existing bird identification service and stores the result.
+- Mock BullMQ, Redis, OpenAI, S3, and PostgreSQL boundaries where appropriate.
+- Run `npm test`.
+
+Verification:
+- `POST /bird-identification` returns immediately with `{ jobId, status: "queued" }`.
+- Worker can process a queued job using the existing bird identification pipeline.
+- `GET /jobs/:id` returns queued, active, completed, failed, and not-found states.
+- Completed results include the existing bird identification response shape under `result`.
+---
+
+## Iteration 3, EMBEDDING PIPELINE
+
+Move embedding generation to BullMQ asynchronous jobs.
+
+Goal:
+Change embedding generation from a synchronous inline operation into a reusable asynchronous job workflow. The API/service layer should enqueue embedding work, workers should generate embeddings, and results should be stored in PostgreSQL/pgvector through the existing vector persistence layer.
+
+Requirements:
+- Reuse the existing BullMQ infrastructure under `src/jobs`, `src/queues`, `src/workers`, and `src/events`.
+- Reuse the existing embedding service and pgvector repository wherever possible.
+- Do not duplicate OpenAI embedding logic, chunking logic, vector SQL, Redis cache logic, or ingestion validation.
+- Add an enqueue abstraction for embedding jobs.
+- Add a real `embeddingWorker` processor.
+- Store generated embeddings in pgvector using the existing repository/query patterns.
+- Support retries through the existing BullMQ default job options.
+- Keep job payloads small and safe: use document IDs, chunk IDs, text hashes, or storage references instead of large raw datasets when possible.
+- Do not store API keys, prompts, raw provider responses, or unnecessary PII in job payloads or logs.
+- Preserve idempotency so retrying an embedding job does not duplicate vector rows.
+- Add graceful handling for failed jobs and missing source records.
+- Log low-cardinality lifecycle events: queued, active, completed, failed.
+
+Suggested workflow:
+1. A service receives documents or chunks that need embeddings.
+2. The service validates and persists source document/chunk records if needed.
+3. The service enqueues one or more embedding jobs.
+4. API/service returns queued job metadata immediately.
+5. Worker loads the source text/chunk data.
+6. Worker calls the existing embedding generation logic.
+7. Worker stores embeddings through the existing pgvector repository.
+8. Worker marks the job completed or failed.
+9. Failed jobs retry according to BullMQ job options.
+
+Suggested files:
+```txt
+src/jobs/jobTypes.js
+src/queues/embedding.queue.js
+src/workers/embedding.worker.js
+src/services/embeddingJob.service.js
+src/ai/enrichment/services/embeddings.service.js
+src/ai/enrichment/services/ingest.service.js
+src/db/vector/vector.repository.js
+src/db/migrations/*
+src/db/queries/*
+__tests__/workers/embedding.worker.test.js
+__tests__/embeddingJob.service.test.js
+```
+
+Implementation expectations:
+- Inspect the current ingestion, embedding, chunking, and pgvector flow before editing.
+- Identify where embeddings are currently generated synchronously.
+- Refactor only the embedding generation/storage boundary needed for async execution.
+- Keep existing public behavior stable unless a route/service currently blocks on embedding generation and must now return queued metadata.
+- If adding a status endpoint or shared job table support, reuse the existing job status patterns from bird identification.
+- Use dependency injection in services/workers so BullMQ, OpenAI, and PostgreSQL can be mocked in tests.
+- Ensure retries do not create duplicate chunks or duplicate embeddings.
+
+Testing expectations:
+- Add tests for enqueueing embedding jobs.
+- Add worker tests verifying the worker loads source data, generates embeddings, and stores vectors.
+- Add retry/idempotency-related tests where practical.
+- Mock BullMQ, OpenAI, Redis, and PostgreSQL boundaries.
+- Run `npm test`.
+
+Verification:
+- Embedding work can be enqueued without generating embeddings inline.
+- `embeddingWorker` processes queued jobs.
+- Embeddings are persisted to pgvector.
+- Failed jobs are retryable through BullMQ options.
+- Full test suite passes.
+
+---
+
+## Iteration 4, INGESTION PIPELINE
+
+Create an asynchronous document ingestion pipeline.
+
+Goal:
+Add a reusable document ingestion workflow where uploaded documents are accepted by the API, persisted safely, queued for background processing, chunked, embedded, stored in pgvector, and exposed through stable ingestion status metadata.
+
+Workflow:
+1. User uploads a document.
+2. API validates the document type, size, and metadata.
+3. API stores the uploaded document or normalized source payload.
+4. API creates an ingestion job.
+5. API immediately returns processing status.
+6. Worker loads the stored document.
+7. Worker extracts/normalizes text.
+8. Worker chunks the document.
+9. Worker enqueues or runs embedding generation using the existing async embedding architecture.
+10. Worker stores vectors in pgvector through the existing vector repository.
+11. Worker marks ingestion complete or failed.
+
+Expected immediate response:
+```json
+{
+  "success": true,
+  "data": {
+    "jobId": "abc123",
+    "status": "processing"
+  },
+  "meta": {}
+}
+```
+
+Requirements:
+- Reuse existing BullMQ infrastructure under `src/jobs`, `src/queues`, `src/workers`, and `src/events`.
+- Reuse the existing ingestion, chunking, embedding job, and pgvector repository patterns wherever possible.
+- Do not duplicate embedding generation, chunking, vector SQL, Redis cache logic, or existing ingestion validation.
+- Add a document ingestion queue/job type if one does not already exist.
+- Add an ingestion enqueue service.
+- Add a real ingestion worker processor.
+- Persist enough ingestion state to support polling and debugging without storing secrets or unnecessary PII.
+- Keep job payloads small: pass IDs or storage keys, not raw document bytes.
+- Store vectors through existing pgvector paths.
+- Preserve idempotency so retries do not duplicate vectors.
+- Support retries through BullMQ default job options.
+- Mark lifecycle states clearly: `processing`, `queued`, `active`, `completed`, `failed`, `not_found`.
+- Keep logs low-cardinality and avoid logging document contents.
+
+Suggested API:
+```http
+POST /ingestions
+```
+
+Suggested status API:
+```http
+GET /ingestions/:id
+```
+
+Suggested files:
+```txt
+src/jobs/jobTypes.js
+src/queues/ingestion.queue.js
+src/workers/ingestion.worker.js
+src/services/documentIngestion.service.js
+src/services/embeddingJob.service.js
+src/ingestion/services/ingest.service.js
+src/db/vector/vector.repository.js
+src/api/controllers/ingestion.controller.js
+src/api/routes/ingestion.routes.js
+src/db/migrations/*
+__tests__/documentIngestion.service.test.js
+__tests__/workers/ingestion.worker.test.js
+__tests__/ingestion.routes.test.js
+```
+
+Testing expectations:
+- Add route tests for upload/enqueue behavior.
+- Add service tests for creating ingestion jobs.
+- Add worker tests for loading, chunking, embedding/vector handoff, completion, and failure.
+- Mock BullMQ, OpenAI, Redis, file/object storage, and PostgreSQL boundaries.
+- Run `npm test`.
+
+Verification:
+- Upload returns immediately with `{ status: "processing" }`.
+- Ingestion job is queued.
+- Worker processes the document.
+- Document is chunked.
+- Embeddings are generated asynchronously or through the existing embedding job flow.
+- Vectors are stored in pgvector.
+- Job status is marked completed or failed.
+- Full test suite passes.
+
+---
+
+## Iteration 5, RETRIES
+
+Add a robust retry and dead-letter strategy for failed AI background jobs.
+
+Goal:
+Ensure BullMQ AI jobs tolerate transient provider, network, Redis, and database failures by retrying with exponential backoff and moving exhausted jobs into a dead-letter queue for inspection or replay.
+
+Requirements:
+- Apply exponential backoff to AI-related BullMQ jobs.
+- Make retry count configurable through environment variables.
+- Add a dead-letter queue for jobs that exhaust retries.
+- Preserve existing worker behavior for successful jobs.
+- Avoid retrying clearly non-retryable validation or malformed-input failures.
+- Keep logs low-cardinality and do not log prompts, raw document contents, image URLs, provider responses, API keys, tokens, or PII.
+- Ensure failed AI workers do not crash the API process unnecessarily.
+- Keep job payloads small and safe.
+- Add tests for retry configuration, backoff options, and DLQ handoff.
+
+Target jobs:
+- `bird-identification`
+- `embedding`
+- `ingestion`
+- Future AI jobs registered through the shared queue manager
+
+Expected lifecycle:
+```txt
+Attempt 1
+Attempt 2
+Attempt 3
+DLQ
+```
+
+Implementation expectations:
+1. Inspect the existing BullMQ infrastructure under:
+   - `src/jobs/`
+   - `src/queues/`
+   - `src/workers/`
+   - `src/events/`
+2. Reuse the existing queue manager and job option patterns.
+3. Add or extend centralized job options so retry behavior is shared.
+4. Add environment-driven settings, for example:
+   - `BULLMQ_JOB_ATTEMPTS`
+   - `BULLMQ_JOB_BACKOFF_DELAY_MS`
+   - `BULLMQ_DLQ_ENABLED`
+   - `BULLMQ_DLQ_QUEUE_NAME`
+5. Add a dead-letter queue abstraction.
+6. On final failure, enqueue a sanitized DLQ payload containing:
+   - original queue name
+   - job name/type
+   - job id
+   - attempts made
+   - sanitized error code/message
+   - timestamp
+   - safe metadata only
+7. Do not put raw source documents, image bytes, image URLs, prompts, provider responses, or secrets into DLQ payloads.
+8. Mark durable job records as failed with a safe user-facing error when retries are exhausted.
+9. Ensure workers throw retryable errors so BullMQ can retry them, but classify non-retryable errors where appropriate.
+10. Update docs for retry/DLQ behavior.
+
+Suggested files:
+```txt
+src/jobs/jobOptions.js
+src/jobs/jobTypes.js
+src/queues/bullmq.config.js
+src/queues/queue.manager.js
+src/queues/deadLetter.queue.js
+src/events/queue.events.js
+src/workers/*.worker.js
+src/services/*Job.service.js
+src/config/env.js
+docs/architecture.md
+__tests__/queues/*
+__tests__/workers/*
+__tests__/jobs/*
+```
+
+Testing expectations:
+- Test default retry/backoff options.
+- Test environment override parsing.
+- Test DLQ payload sanitization.
+- Test failed job event handling moves exhausted jobs to DLQ.
+- Test that non-exhausted failures are not moved to DLQ.
+- Mock BullMQ, Redis, OpenAI, and PostgreSQL boundaries.
+- Run `npm test`.
+
+Verification:
+- Failed AI jobs retry with exponential backoff.
+- Retry count is configurable.
+- Exhausted jobs are moved to DLQ.
+- Workers tolerate AI API failures without crashing unrelated workers/API.
+- Full test suite passes.
+
+---
+
+## Iteration 6, LANGSMITH + JOBS
+
+Trace asynchronous AI workflows in LangSmith.
+
+Track:
+
+- queue creation
+- worker execution
+- retries
+- failures

@@ -6,7 +6,7 @@ await jest.unstable_mockModule('../src/ai/orchestrators/agent.orchestrator.js', 
   },
 }));
 
-await jest.unstable_mockModule('../src/ai/openai.client.js', () => ({
+await jest.unstable_mockModule('../src/ai/clients/openai.client.js', () => ({
   default: {
     generateEmbedding: jest.fn(),
   },
@@ -24,7 +24,7 @@ const {
   formatCurrency,
   formatPercent,
   pruneSemanticEntries,
-} = await import('../src/ai/openai.service.js');
+} = await import('../src/ai/services/openai.service.js');
 
 const createLogger = () => ({
   info: jest.fn(),

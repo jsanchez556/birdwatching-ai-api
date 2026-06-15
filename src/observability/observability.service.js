@@ -132,6 +132,7 @@ class ObservabilityService {
       tool_execution: 'tool',
       agent_orchestration: 'chain',
       agent_planning: 'chain',
+      background_job: 'chain',
       tool_sequence: 'chain',
     };
 

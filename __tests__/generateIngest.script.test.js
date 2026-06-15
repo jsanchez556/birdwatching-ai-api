@@ -4,12 +4,12 @@ import os from 'os';
 import path from 'path';
 import {
   generateBirdIngestData,
-} from '../src/ai/enrichment/services/birds.enrichment.service.js';
+} from '../src/ingestion/services/birdsIngest.service.js';
 import {
   buildBirdDocuments,
   buildMedia,
   selectLatestObservation,
-} from '../src/ai/enrichment/utils/birds.utils.js';
+} from '../src/ingestion/utils/birdsIngest.utils.js';
 
 describe('bird ingest data generation helpers', () => {
   test('buildMedia keeps stable empty song fields when no song matched', () => {

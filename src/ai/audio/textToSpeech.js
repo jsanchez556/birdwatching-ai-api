@@ -1,15 +1,11 @@
-import openaiClient from '../openai.client.js';
+import openaiClient from '../clients/openai.client.js';
 import { traceLlmCall } from '../../tracing/aiTracing.middleware.js';
 import { asyncRetry } from '../../utils/async.utils.js';
 import logger from '../../utils/logger.js';
+import { isRetryableOpenAIError } from '../utils/openaiRetry.utils.js';
 
 const SPEECH_MODEL = 'gpt-4o-mini-tts';
 const SPEECH_VOICE = 'alloy';
-const RETRYABLE_STATUSES = new Set([408, 409, 429, 500, 502, 503, 504]);
-
-function isRetryableOpenAIError(error) {
-  return RETRYABLE_STATUSES.has(error?.status) || error?.code === 'ETIMEDOUT';
-}
 
 async function responseToBuffer(response) {
   if (Buffer.isBuffer(response)) {

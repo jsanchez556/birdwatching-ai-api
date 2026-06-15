@@ -1,4 +1,4 @@
-import openaiClient from '../openai.client.js';
+import openaiClient from '../clients/openai.client.js';
 import birdwatchingAgent from '../agents/birdwatching.agent.js';
 import logger from '../../utils/logger.js';
 import {

@@ -192,8 +192,12 @@ When LangSmith tracing is enabled, voice chat creates one `voice_chat` parent tr
 
 ## Scripts
 ```bash
-npm start      # node src/server.js
-npm run dev    # nodemon src/server.js
+npm start      # npm run start:api
+npm run dev    # npm run dev:api
+npm run dev:api
+npm run dev:worker
+npm run start:api
+npm run start:worker
 npm run enrich -- birds # refresh bird data, generate birds.json, and ingest pgvector documents
 npm test       # Jest ESM test runner
 ```

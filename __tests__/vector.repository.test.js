@@ -80,6 +80,48 @@ describe('VectorRepository helpers', () => {
     ]);
   });
 
+  it('persists normalized document content when upserting knowledge documents', async () => {
+    pool.query.mockResolvedValueOnce({
+      rows: [{
+        id: 7,
+        external_id: 'bird-quetza1',
+      }],
+    });
+
+    await expect(vectorRepository.upsertDocument({
+      externalId: 'bird-quetza1',
+      title: 'Resplendent Quetzal',
+      content: 'Name: Resplendent Quetzal',
+      documentType: 'bird_profile',
+      metadata: {
+        family: 'Trogonidae',
+      },
+      contentHash: 'hash-1',
+      active: true,
+    })).resolves.toEqual({
+      id: 7,
+      external_id: 'bird-quetza1',
+    });
+
+    const [query, values] = pool.query.mock.calls[0];
+
+    expect(query).toContain('content');
+    expect(query).toContain('content = EXCLUDED.content');
+    expect(values).toEqual([
+      'bird-quetza1',
+      'Resplendent Quetzal',
+      'Name: Resplendent Quetzal',
+      null,
+      'bird_profile',
+      null,
+      null,
+      [],
+      JSON.stringify({ family: 'Trogonidae' }),
+      'hash-1',
+      true,
+    ]);
+  });
+
   it('keeps search relevance cutoff and limit placeholders aligned', async () => {
     pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
 

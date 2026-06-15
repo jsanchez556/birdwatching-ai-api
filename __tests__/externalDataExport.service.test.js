@@ -14,7 +14,7 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
 
 const {
   default: BirdsExportService,
-} = await import('../src/ai/enrichment/services/birds.enrichment.service.js');
+} = await import('../src/ingestion/services/birdsIngest.service.js');
 const {
   DAY_MS,
 } = await import('../src/utils/constants.utils.js');
@@ -23,14 +23,14 @@ const {
   buildXenoCantoAudioAssetName,
   buildXenoCantoSonogramAssetName,
   normalizeXenoCantoSourceUrl,
-} = await import('../src/ai/enrichment/utils/birds.utils.js');
+} = await import('../src/ingestion/utils/birdsIngest.utils.js');
 const {
   normalizeLicense,
 } = await import('../src/utils/license.utils.js');
 const {
   parseArgs,
   runEnrichCli,
-} = await import('../src/ai/enrichment/scripts/enrich.js');
+} = await import('../scripts/enrich.js');
 const logger = (await import('../src/utils/logger.js')).default;
 
 function createEBirdClientMock(overrides = {}) {

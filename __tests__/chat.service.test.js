@@ -15,7 +15,7 @@ await jest.unstable_mockModule('../src/services/conversation.service.js', () => 
   },
 }));
 
-await jest.unstable_mockModule('../src/ai/openai.service.js', () => ({
+await jest.unstable_mockModule('../src/ai/services/openai.service.js', () => ({
   default: {
     streamResponseWithTools: mockStreamResponseWithTools,
   },

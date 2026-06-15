@@ -33,7 +33,7 @@ const {
   default: openaiClient,
   OpenAIClient,
   buildEmbeddingCacheKey,
-} = await import('../src/ai/openai.client.js');
+} = await import('../src/ai/clients/openai.client.js');
 const { default: logger } = await import('../src/utils/logger.js');
 
 describe('OpenAIClient tool calling', () => {

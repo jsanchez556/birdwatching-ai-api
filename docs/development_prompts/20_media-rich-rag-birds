@@ -8,7 +8,7 @@ Backend repo:
 - `/home/jose/Documents/projects/birdwatching-ai-api/src/ai/enrichment/services/retrieval.service.js`
 - `/home/jose/Documents/projects/birdwatching-ai-api/src/ai/prompts/rag.context.js`
 - `/home/jose/Documents/projects/birdwatching-ai-api/src/services/rag.service.js`
-- `/home/jose/Documents/projects/birdwatching-ai-api/src/controllers/chat.controller.js`
+- `/home/jose/Documents/projects/birdwatching-ai-api/src/api/controllers/chat.controller.js`
 - `/home/jose/Documents/projects/birdwatching-ai-api/src/db/vector/`
 
 Frontend repo:
