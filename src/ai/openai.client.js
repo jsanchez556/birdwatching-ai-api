@@ -2,10 +2,14 @@ import OpenAI from 'openai';
 import env from '../config/env.js';
 import { asyncRetry } from '../utils/async.utils.js';
 import logger from '../utils/logger.js';
+import { buildHashKey } from '../utils/hash.utils.js';
+import { normalizeWhitespace } from '../utils/text.utils.js';
 import { availableTools, executeToolCall } from './tools/index.js';
 import { addCompletionUsage } from './evaluations/token.usage.js';
 import { traceLlmCall } from '../tracing/aiTracing.middleware.js';
 import aiTelemetry from '../monitoring/aiTelemetry.js';
+import createResponseCache from '../cache/responseCache.js';
+import { getRedisConfig } from '../cache/redisClient.js';
 
 const retryableStatuses = new Set([408, 409, 429, 500, 502, 503, 504]);
 
@@ -40,13 +44,36 @@ function appendToolMetadata(metadata, toolName, result) {
   }
 }
 
+function normalizeEmbeddingInput(value) {
+  return normalizeWhitespace(value);
+}
+
+function buildEmbeddingCacheKey(input, {
+  model,
+  inputKind = 'single',
+} = {}) {
+  const payload = {
+    input: normalizeEmbeddingInput(input),
+    inputKind,
+    model,
+  };
+  return buildHashKey('embedding', payload);
+}
+
 class OpenAIClient {
-  constructor() {
+  constructor({
+    embeddingCache = createResponseCache({ namespace: 'embeddings' }),
+    redisConfig = getRedisConfig(),
+    log = logger,
+  } = {}) {
     this.client = new OpenAI({
       apiKey: env.openAiApiKey,
     });
     this.model = env.openAiModel;
     this.embeddingModel = env.openAiEmbeddingModel;
+    this.embeddingCache = embeddingCache;
+    this.redisConfig = redisConfig;
+    this.logger = log;
   }
 
   async resolveChatToolCalls(messages, options = {}) {
@@ -191,13 +218,41 @@ class OpenAIClient {
   }
 
   async generateEmbedding(input) {
-    const inputCount = Array.isArray(input) ? input.length : 1;
+    const inputs = Array.isArray(input) ? input : [input];
+    const inputCount = inputs.length;
+    const inputKind = Array.isArray(input) ? 'array' : 'single';
+    const cachedEmbeddings = await this.getCachedEmbeddings(inputs, { inputKind });
+
+    if (cachedEmbeddings.every((embedding) => Array.isArray(embedding))) {
+      this.logger.info('Embedding cache hit', {
+        inputCount,
+        model: this.embeddingModel,
+      });
+      return cachedEmbeddings;
+    }
+
+    const missingInputs = [];
+    const missingIndexes = [];
+
+    cachedEmbeddings.forEach((embedding, index) => {
+      if (!Array.isArray(embedding)) {
+        missingInputs.push(inputs[index]);
+        missingIndexes.push(index);
+      }
+    });
+
+    this.logger.info('Embedding cache miss', {
+      inputCount,
+      missCount: missingInputs.length,
+      model: this.embeddingModel,
+    });
+
     const embeddingResponse = await traceLlmCall('embedding_generation', {
       model: this.embeddingModel,
-      inputCount,
+      inputCount: missingInputs.length,
     }, () => asyncRetry(() => this.client.embeddings.create({
       model: this.embeddingModel,
-      input,
+      input: missingInputs,
     }), {
       retries: 2,
       shouldRetry: isRetryableOpenAIError,
@@ -205,7 +260,7 @@ class OpenAIClient {
       outputMetadata: (result) => ({
         requestId: result.id,
         model: result.model || this.embeddingModel,
-        inputCount,
+        inputCount: missingInputs.length,
       }),
     });
 
@@ -215,18 +270,83 @@ class OpenAIClient {
       requestId: embeddingResponse.id,
       promptTokens: embeddingResponse.usage?.prompt_tokens,
       totalTokens: embeddingResponse.usage?.total_tokens,
-      inputCount,
+      inputCount: missingInputs.length,
     });
 
-    const embeddings = [...embeddingResponse.data]
+    const generatedEmbeddings = [...embeddingResponse.data]
       .sort((left, right) => left.index - right.index)
       .map((item) => item.embedding);
 
-    if (embeddings.length !== inputCount) {
+    if (generatedEmbeddings.length !== missingInputs.length) {
       throw new Error('OpenAI returned an unexpected number of embeddings');
     }
 
+    const embeddings = [...cachedEmbeddings];
+
+    generatedEmbeddings.forEach((embedding, index) => {
+      embeddings[missingIndexes[index]] = embedding;
+    });
+
+    await this.setCachedEmbeddings(missingInputs, generatedEmbeddings, { inputKind });
+
     return embeddings;
+  }
+
+  async getCachedEmbeddings(inputs, { inputKind } = {}) {
+    return Promise.all(inputs.map(async (value) => {
+      const cacheKey = buildEmbeddingCacheKey(value, {
+        model: this.embeddingModel,
+        inputKind,
+      });
+
+      try {
+        const cached = await this.embeddingCache.get(cacheKey);
+
+        if (Array.isArray(cached?.embedding)) {
+          return cached.embedding;
+        }
+      } catch (error) {
+        this.logger.warn('Embedding cache lookup failed', {
+          error: error.message,
+          model: this.embeddingModel,
+        });
+      }
+
+      return null;
+    }));
+  }
+
+  async setCachedEmbeddings(inputs, embeddings, { inputKind } = {}) {
+    await Promise.all(inputs.map(async (value, index) => {
+      const embedding = embeddings[index];
+
+      if (!Array.isArray(embedding)) {
+        this.logger.info('Embedding cache skipped', {
+          reason: 'invalid_embedding',
+          model: this.embeddingModel,
+        });
+        return;
+      }
+
+      const cacheKey = buildEmbeddingCacheKey(value, {
+        model: this.embeddingModel,
+        inputKind,
+      });
+
+      try {
+        await this.embeddingCache.set(cacheKey, {
+          embedding,
+          model: this.embeddingModel,
+        }, {
+          ttlSeconds: this.redisConfig.embeddingCacheTtlSeconds,
+        });
+      } catch (error) {
+        this.logger.warn('Embedding cache write failed', {
+          error: error.message,
+          model: this.embeddingModel,
+        });
+      }
+    }));
   }
 
   parseToolArguments(toolCall) {
@@ -269,3 +389,9 @@ class OpenAIClient {
 }
 
 export default new OpenAIClient();
+
+export {
+  OpenAIClient,
+  buildEmbeddingCacheKey,
+  normalizeEmbeddingInput,
+};

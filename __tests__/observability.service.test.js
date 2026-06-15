@@ -201,6 +201,15 @@ describe('AI observability service', () => {
     });
   });
 
+  it('maps cache traces to LangSmith tool runs', () => {
+    const service = new ObservabilityService({
+      config: {},
+      langSmithClient: null,
+    });
+
+    expect(service.toLangSmithRunType('cache')).toBe('tool');
+  });
+
   it('keeps LangSmith export failures non-fatal', async () => {
     const telemetry = new AiTelemetry({ log: mockLogger });
     const service = new ObservabilityService({

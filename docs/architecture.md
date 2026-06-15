@@ -10,6 +10,7 @@ src/
   app.js                 Express app, CORS, JSON parsing, rate limit, routes, errors
   server.js              process entrypoint
   ai/                    OpenAI client/service, agents, orchestrators, prompts, evaluations, guardrails, schemas, chat tools
+  cache/                 Redis client and reusable response/retrieval cache abstractions
   config/                environment parsing and validation
   controllers/           thin HTTP handlers
   db/                    pg pool, migrations, query modules
@@ -30,6 +31,7 @@ src/
 - Services own application behavior and call AI or query modules.
 - Query modules own SQL and should use parameterized queries.
 - AI modules own prompt text, prompt versions, schemas, provider calls, retry, and token usage logging.
+- Cache modules own Redis connection details and generic get/set behavior; callers decide cache eligibility and fallback behavior.
 - Middleware owns cross-cutting request behavior before and after controllers.
 
 ## Request Lifecycle
@@ -55,9 +57,11 @@ Chat context is assembled from:
 
 RAG uses:
 1. `npm run enrich -- birds` to refresh bird provider data, generate `birds.json`, chunk it, generate embeddings, and persist documents plus vectors in PostgreSQL
-2. `src/ai/enrichment/services/retrieval.service.js` to embed the user question and retrieve ranked chunks through `src/db/vector/vector.repository.js`
-3. `rag.service.js` to inject a compact system context message and return frontend-safe `sources`
-4. `rag.service.js` to derive compact `birdMatches` metadata from top `bird_profile` documents, including optional media references stored in document metadata
+2. `rag.service.js` to check Redis for an equivalent retrieval query and relevant retrieval options
+3. `src/ai/enrichment/services/retrieval.service.js` to embed the user question and retrieve ranked chunks through `src/db/vector/vector.repository.js` on cache miss
+4. `rag.service.js` to write successful retrieval results back to Redis using the configured retrieval TTL
+5. `rag.service.js` to inject a compact system context message and return frontend-safe `sources`
+6. `rag.service.js` to derive compact `birdMatches` metadata from top `bird_profile` documents, including optional media references stored in document metadata
 
 Bird identification uses:
 1. authenticated `POST /birds/identify` requests with either a JSON `imageUrl` or raw JPEG, PNG, WebP, or GIF bytes
@@ -178,7 +182,7 @@ matching handlers.
 
 ## AI Layer
 The `src/ai/` layer is split by responsibility:
-- `openai.client.js` and `openai.service.js` own provider calls, retry use, tool-call loops, and chat response handling.
+- `openai.client.js` and `openai.service.js` own provider calls, retry use, tool-call loops, chat response handling, embedding caching, exact response caching, semantic response caching, and cache metrics.
 - `prompts/` owns versioned system prompts, RAG context formatting, and prompt message construction.
 - `schemas/` owns OpenAI tool schemas.
 - `tools/` owns thin tool adapters and registry validation for model-callable functions.
@@ -187,13 +191,34 @@ The `src/ai/` layer is split by responsibility:
 - `evaluations/` owns AI observability and evaluation helpers such as token usage and estimated cost accounting.
 - `guardrails/` owns AI safety checks such as prompt-extraction blocking and sensitive-output fallbacks.
 
+## Cache Layer
+`src/cache/redisClient.js` reads Redis URL, key prefix, TTL, semantic threshold,
+semantic index size, and embedding TTL configuration from the environment.
+`src/cache/responseCache.js` provides JSON-safe `get`, `set`, `delete`, and
+`disconnect` methods over Redis, and `src/cache/retrievalCache.js` specializes
+that abstraction for retrieval entries.
+
+AI response caching checks an exact hashed prompt key before OpenAI, then checks
+semantic response candidates by embedding the latest user question and comparing
+cosine similarity within the same prompt/role/response-mode scope. Cache writes
+happen only after a successful provider response and only when metadata is safe
+to reuse. RAG retrieval caching checks Redis before pgvector and writes retrieved
+chunks after a successful retrieval. Embedding caching stores provider embedding
+results under deterministic hashed keys for normalized single or array inputs.
+
+Redis is best effort. Lookup or write failures are logged, then the request
+continues through OpenAI or PostgreSQL. Cache helpers reuse shared utilities from
+`src/utils/hash.utils.js`, `src/utils/number.utils.js`, and
+`src/utils/text.utils.js` for deterministic keys, TTL/threshold parsing, metric
+formatting, and normalized prompt hashing.
+
 ## AI Observability
 The observability layer is split into three small modules:
 - `src/observability/observability.service.js` reads LangSmith/LangChain tracing configuration from environment variables, exposes trace lifecycle helpers, configures the standard `LANGCHAIN_*` process variables when available, and creates/updates sanitized LangSmith runs through the `langsmith` SDK.
 - `src/tracing/aiTracing.middleware.js` provides wrappers for the end-to-end AI execution flow, conversation context assembly, LLM calls, RAG retrieval, RAG grounding, tool execution, and agent orchestration so instrumentation stays out of controllers and response formatting.
 - `src/monitoring/aiTelemetry.js` records centralized latency, token usage, and error telemetry with prompt, response, customer, and secret fields redacted.
 
-Chat currently emits a root AI execution trace for each streamed request, with child spans for conversation context assembly, OpenAI tool-resolution completions, final streaming completions, embedding generation, RAG retrieval, the RAG grounding pipeline, tour tool execution, and the birdwatching agent orchestration run. The root trace records response length, source count, prompt versions, reservation presence, and tool names; the conversation context span records message counts by role. RAG pipeline telemetry includes retrieved chunk IDs, similarity scores, retrieval latency, grounding context size, and prompt-construction metadata; the final answer LLM trace also carries the compact grounding summary. Multi-tool agent telemetry follows the user request through planner output, ordered tool sequence, individual tool spans, failures, skipped steps, retry counts, retry scheduling events, prompt assembly, and the final response. AI error monitoring records stable log events for retrieval failures, tool timeouts, tool failures, malformed JSON tool-call arguments, invalid assistant outputs, and guardrail-detected hallucination events. Prompt evaluation tracking compares prompt versions by retrieval quality, token usage, and latency without storing prompt text. LangSmith evaluation tracking can submit `grounding_quality`, `answer_relevance`, and `tool_correctness` feedback for run IDs while keeping local numeric results available when export is disabled. LangSmith export is enabled when `LANGCHAIN_TRACING=true`, `LANGCHAIN_PROJECT` is set, and `LANGCHAIN_API_KEY` is present; otherwise the same code path continues to run with local telemetry only.
+Chat currently emits a root AI execution trace for each streamed request, with child spans for conversation context assembly, OpenAI tool-resolution completions, final streaming completions, embedding generation, RAG retrieval, RAG/response cache operations, the RAG grounding pipeline, tour tool execution, and the birdwatching agent orchestration run. The root trace records response length, source count, prompt versions, reservation presence, and tool names; the conversation context span records message counts by role. Cache spans record hit, miss, skipped, write status, avoided LLM calls, cache hit rate, and estimated savings without logging raw prompts, embeddings, answers, or secrets. RAG pipeline telemetry includes retrieved chunk IDs, similarity scores, retrieval latency, grounding context size, and prompt-construction metadata; the final answer LLM trace also carries the compact grounding summary. Multi-tool agent telemetry follows the user request through planner output, ordered tool sequence, individual tool spans, failures, skipped steps, retry counts, retry scheduling events, prompt assembly, and the final response. AI error monitoring records stable log events for retrieval failures, tool timeouts, tool failures, malformed JSON tool-call arguments, invalid assistant outputs, and guardrail-detected hallucination events. Prompt evaluation tracking compares prompt versions by retrieval quality, token usage, and latency without storing prompt text. LangSmith evaluation tracking can submit `grounding_quality`, `answer_relevance`, and `tool_correctness` feedback for run IDs while keeping local numeric results available when export is disabled. LangSmith export is enabled when `LANGCHAIN_TRACING=true`, `LANGCHAIN_PROJECT` is set, and `LANGCHAIN_API_KEY` is present; otherwise the same code path continues to run with local telemetry only.
 
 Voice chat creates a parent `voice_chat` AI execution trace and nests the
 workflow spans under it: OpenAI audio transcription, conversation context,

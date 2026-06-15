@@ -41,8 +41,16 @@ function normalizeTextExtract(value) {
   return normalized || null;
 }
 
+function normalizeWhitespace(value) {
+  return String(value || '')
+    .normalize('NFC')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export {
   areTextsSimilar,
   cleanComparableText,
   normalizeTextExtract,
+  normalizeWhitespace,
 };

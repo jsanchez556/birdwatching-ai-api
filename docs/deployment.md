@@ -26,6 +26,15 @@ Optional:
 - `NODE_ENV`, defaults to `development`; allowed values are `development`, `test`, `production`
 - `OPENAI_MODEL`, defaults to `gpt-4o`
 - `OPENAI_EMBEDDING_MODEL`, defaults to `text-embedding-3-small`
+- `REDIS_URL`, defaults to `redis://localhost:6379`
+- `REDIS_KEY_PREFIX`, defaults to `birdwatching-ai:`
+- `REDIS_CACHE_TTL_SECONDS`, defaults to `300`
+- `AI_RESPONSE_CACHE_TTL_SECONDS`, defaults to `300`
+- `RETRIEVAL_CACHE_TTL_SECONDS`, defaults to `300`
+- `SEMANTIC_CACHE_TTL_SECONDS`, defaults to `300`
+- `SEMANTIC_CACHE_SIMILARITY_THRESHOLD`, defaults to `0.92`
+- `SEMANTIC_CACHE_MAX_ENTRIES`, defaults to `100`
+- `EMBEDDING_CACHE_TTL_SECONDS`, defaults to `86400`
 - `LANGCHAIN_API_KEY`, enables LangSmith trace export when set with `LANGCHAIN_TRACING=true`
 - `LANGCHAIN_TRACING`, set to `true` to enable LangSmith-compatible tracing
 - `LANGCHAIN_PROJECT`, defaults to `birdwatching-ai`
@@ -73,6 +82,7 @@ Production database connections use SSL with `rejectUnauthorized: false`.
 - External bird data clients for eBird, iNaturalist, and Xeno-canto live under `src/ai/enrichment/`. They are reusable building blocks for ingestion jobs and are rate-limited to no more than 40 requests per minute before data is normalized for the vector store.
 - External provider JSON exports are written to `src/ai/enrichment/data` by `npm run enrich -- birds`. The eBird taxonomy export is incremental from the refreshed species list, eBird recent observations are fetched per species code from that list and written incrementally as a keyed `{ locations, lstDt }` summary. The enrich pipeline refreshes the species list monthly, taxonomy and Xeno-canto songs every six months, recent observations weekly, and iNaturalist images monthly.
 - RAG retrieval reads PostgreSQL `knowledge_documents` and `knowledge_chunks`; chat requests do not ingest files or write vectors.
+- Redis caches AI responses, semantic response candidates, embedding results, and RAG retrieval results when reachable. Cache misses or Redis errors fall back to OpenAI or pgvector, and PostgreSQL remains the source of truth for RAG.
 - Tour seed data begins in `003_create_tour_reservations.sql`; `011_tours_refactor.sql` adds tour `node_id`, coordinates, start/end dates, and the `country`/`zone`/`node`/`birds`/`birds_by_node` reference tables for Costa Rica birding geography and target species.
 - Tour reservation availability is durable PostgreSQL state and is updated transactionally by PostgreSQL functions.
 - Voice-chat generated speech responses are stored as MP3 objects under the S3 `voice-chat/` prefix. `POST /voice-chat` returns a relative `/files/voice-chat/...` URL, and `GET /files/:folderName/:filename` turns that relative key into a CloudFront URL using `CLOUDFRONT_BASE_URL`.
@@ -97,6 +107,7 @@ Current AI trace boundaries:
 - LLM chat completions for tool resolution and final streaming responses
 - OpenAI embedding generation used by RAG retrieval
 - RAG pipeline calls, including retrieval latency, retrieved chunk summaries, similarity scores, grounding context, and prompt construction metadata
+- Cache operations for exact AI responses, semantic responses, embeddings, and RAG retrieval, including hit/miss/skipped status, avoided LLM calls, hit rate, and estimated savings when available
 - Agent orchestration, including user request metadata, planning, tool sequence, prompt assembly, and final response generation
 - Multi-tool execution flows, including planner output, ordered tool steps, failures, skipped steps, retry counts, and retry scheduling events
 - Tour tool execution through the registry and agent executor
@@ -162,6 +173,7 @@ Also verify:
 - `CORS_ORIGINS` matches the frontend origin
 - OpenAI model access is available for `OPENAI_MODEL`
 - OpenAI embedding model access is available for `OPENAI_EMBEDDING_MODEL`
+- Redis is reachable from the host when cache optimization is expected; verify with `redis-cli` against `REDIS_URL`
 - `JWT_SECRET` is set to a strong secret and not exposed to the frontend
 - all database migrations have run
 - `npm run enrich -- birds` has been run after bird RAG source file changes

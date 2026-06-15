@@ -1,0 +1,241 @@
+Before starting, read and follow `/home/jose/Documents/projects/birdwatching-ai-api/AGENTS.md` completely.
+
+Treat `AGENTS.md` as the source of truth for architecture, coding style, testing expectations, and response format. Do not make changes that conflict with it unless I explicitly override those instructions.
+
+## Task
+
+Integrate Redis into the AI platform with a reusable, dependency-injection-friendly caching layer.
+
+## Requirements
+
+Add Redis support with:
+
+- A reusable Redis client
+- Environment-based Redis configuration
+- A cache service abstraction with simple `get` and `set` methods
+- Separate cache modules for response caching and retrieval caching
+- Tests or validation appropriate to the existing project conventions
+
+## Target Architecture
+
+Create or update files under:
+
+```text
+src/
+  cache/
+    redisClient.js
+    responseCache.js
+    retrievalCache.js
+```
+---
+
+
+## Iteration 2, RESPONSE CACHE:
+Implement AI response caching.
+
+Requirements:
+
+- cache AI responses
+- configurable TTL
+- cache lookup before OpenAI call
+- cache write after response
+
+Log:
+- cache hit
+- cache miss
+
+Expected result: 
+Logs: CACHE HIT, CACHE MISS
+---
+
+## Iteration 3, RETRIEVAL CACHE:
+
+## Task
+
+Add Redis caching for RAG retrieval results so repeated equivalent questions do not repeatedly hit pgvector.
+
+## Requirements
+
+Implement retrieval caching with:
+
+- Redis-backed caching for retrieved RAG chunks
+- Redis-backed caching for vector similarity search results, where appropriate
+- A configurable expiration/TTL for retrieval cache entries
+- Stable cache keys based on the normalized retrieval query and relevant retrieval parameters
+- Cache lookup before pgvector similarity queries
+- Cache write after successful retrieval
+- Logs for cache hit and cache miss behavior
+- Tests covering hit, miss, expiration config, and fallback behavior when Redis is unavailable
+
+## Expected Behavior
+
+For repeated equivalent questions, avoid this pattern:
+
+```text
+pgvector query
+pgvector query
+pgvector query
+```
+
+Instead:
+
+```text
+CACHE MISS
+pgvector query
+CACHE HIT
+CACHE HIT
+```
+
+## Design Expectations
+
+- Use the existing Redis client/cache abstraction under `src/cache/`
+- Keep cache behavior dependency-injection friendly
+- Do not cache user-sensitive or conversation-specific data unless the cache key safely includes all required scoping
+- Do not let Redis failures break RAG retrieval; fall back to pgvector and log a warning
+- Keep pgvector/PostgreSQL as the source of truth
+- Preserve existing RAG response shape
+
+---
+
+## Iteration 4, SEMANTIC CACHE:
+
+## Task
+
+Implement semantic caching for AI chat responses so semantically equivalent user questions can reuse the same cached answer.
+
+## Requirements
+
+Add semantic cache behavior with:
+
+- Embedding generation for cacheable user questions
+- Storage of cached answers with their question embedding
+- Similarity comparison before calling OpenAI
+- Reuse of cached answers when similarity is above a configurable threshold
+- Configurable TTL for semantic cache entries
+- Configurable similarity threshold
+- Logs for semantic cache hit, miss, and skipped cases
+- Tests for exact miss/write, semantic hit, below-threshold miss, expiration/config, and Redis failure fallback
+
+## Example
+
+These should resolve to the same semantic cache entry when similarity is high enough:
+
+```text
+User A: Where can I see quetzals?
+User B: Best place to watch quetzals?
+```
+
+Expected behavior:
+
+```text
+CACHE MISS
+OpenAI call
+Semantic cache write
+
+CACHE HIT
+No OpenAI call
+Reuse cached answer
+```
+
+## Design Expectations
+
+- Use the existing Redis cache abstraction where possible
+- Keep the implementation dependency-injection friendly
+- Do not cache responses that include user-sensitive, authenticated, reservation, tool, or conversation-specific context
+- Preserve the existing exact AI response cache behavior unless it is intentionally folded into semantic cache
+- Keep cache keys stable and avoid logging raw prompt contents, user messages, embeddings, or cached answers
+- Redis failures must not break chat; fall back to the normal OpenAI path and log a warning
+- Keep OpenAI/provider calls centralized in the existing AI service layer
+
+## Iteration 4, COST SAVINGS DASHBOARD:
+
+Create cost optimization metrics.
+
+Track:
+
+- cache hits
+- cache misses
+- estimated OpenAI savings
+
+Expected Result: 
+{
+  "cacheHitRate": "74%",
+  "estimatedSavings": "$23.42"
+}
+
+## Iteration 5, EMBEDDING CACHE and PROMPT HASHING
+
+
+Add Redis-backed embedding caching to avoid generating duplicate embeddings for repeated equivalent prompts.
+
+## Requirements
+
+Implement embedding caching with:
+
+- Cache lookup before calling the OpenAI embeddings API
+- Cache write after successful embedding generation
+- Deterministic cache keys generated from normalized prompt/input hashing
+- Configurable TTL for cached embeddings
+- Logs for embedding cache hit, miss, skipped, and fallback behavior
+- Tests for cache hit, miss/write, deterministic key generation, TTL config, and Redis failure fallback
+
+## Design Expectations
+
+- Use the existing Redis cache abstraction where possible
+- Keep embedding provider calls centralized in the existing AI client/service layer
+- Support both single-string and array input without changing the public return shape
+- Do not log raw prompt/input text, embeddings, secrets, or provider internals
+- Redis failures must not block embedding generation; fall back to the normal provider call and log a warning
+- Keep cache keys stable across equivalent prompt formatting where safe, while avoiding collisions between single-input and multi-input calls
+
+---
+
+## ITERATION 6, LANGSMITH INTEGRATION
+
+Trace cache performance in LangSmith.
+
+Track:
+
+- cache hit rate
+- cache misses
+- avoided LLM calls
+
+LangSmith expected result:
+
+Request
+→ Cache Hit
+→ No OpenAI Call
+
+or
+
+Request
+→ Cache Miss
+→ Retrieval
+→ OpenAI
+→ Cache Write
+
+---
+
+## Implementation Notes
+
+Redis cache support now lives under `src/cache/`:
+
+- `redisClient.js` reads Redis URL, key prefix, TTL, semantic threshold, semantic index size, and embedding TTL configuration from the environment.
+- `responseCache.js` provides reusable JSON `get` and `set` behavior.
+- `retrievalCache.js` specializes the response cache abstraction for RAG retrieval results.
+
+Current cache flows:
+
+- Exact AI response cache: lookup before OpenAI, write after a successful response when metadata is safe to reuse.
+- Semantic response cache: embed cacheable questions, compare cosine similarity against cached answer embeddings, and reuse above the configured threshold.
+- RAG retrieval cache: lookup before pgvector similarity retrieval and write retrieved chunks after a successful miss path.
+- Embedding cache: lookup before OpenAI embeddings and write generated embeddings with deterministic hashed keys.
+
+Operational notes:
+
+- Redis is optional optimization. Lookup and write failures log warnings and fall back to OpenAI or pgvector.
+- PostgreSQL remains the RAG source of truth.
+- Cache keys use deterministic hashing helpers from `src/utils/hash.utils.js`; repeated whitespace normalization uses `src/utils/text.utils.js`; TTL, threshold, and cache metric formatting use `src/utils/number.utils.js`.
+- Response caching skips user-sensitive, authenticated, reservation, tool, and conversation-specific metadata.
+- Logs include `CACHE HIT`, `CACHE MISS`, semantic cache skipped/miss/write, embedding cache hit/miss/skipped, and Redis fallback warnings.
+- LangSmith-compatible cache spans include hit/miss/skipped status, write status, avoided LLM calls, cache hit rate, and estimated savings without logging raw prompts, embeddings, answers, or secrets.

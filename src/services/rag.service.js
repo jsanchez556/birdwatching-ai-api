@@ -1,10 +1,13 @@
 import logger from '../utils/logger.js';
+import { buildHashKey } from '../utils/hash.utils.js';
 import retrievalService from '../ai/enrichment/services/retrieval.service.js';
 import vectorRepository from '../db/vector/vector.repository.js';
 import { injectRagContextMessage } from '../ai/prompts/prompt.builder.js';
 import { toKnowledgeSource } from '../ai/prompts/rag.context.js';
-import { traceRagPipeline, traceRagRetrieval } from '../tracing/aiTracing.middleware.js';
+import { traceCacheOperation, traceRagPipeline, traceRagRetrieval } from '../tracing/aiTracing.middleware.js';
 import aiTelemetry from '../monitoring/aiTelemetry.js';
+import createRetrievalCache from '../cache/retrievalCache.js';
+import { getRedisConfig } from '../cache/redisClient.js';
 
 const DEFAULT_TOP_K = 3;
 const DEFAULT_BIRD_MATCH_LIMIT = 6;
@@ -123,6 +126,19 @@ function normalizeSearchText(value) {
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function buildRetrievalCacheKey(question, options = {}) {
+  const payload = {
+    query: normalizeSearchText(question),
+    topK: options.topK || DEFAULT_TOP_K,
+    filters: options.filters || {},
+    minScore: options.minScore,
+    minSemanticScore: options.minSemanticScore,
+    maxChunksPerDocument: options.maxChunksPerDocument,
+  };
+
+  return buildHashKey('rag-retrieval', payload);
 }
 
 function singularizeToken(token) {
@@ -399,6 +415,18 @@ function buildBirdMatches(documents = [], question = '', limit = DEFAULT_BIRD_MA
 }
 
 class RagService {
+  constructor({
+    retriever = retrievalService,
+    retrievalCache = createRetrievalCache(),
+    redisConfig = getRedisConfig(),
+    log = logger,
+  } = {}) {
+    this.retriever = retriever;
+    this.retrievalCache = retrievalCache;
+    this.redisConfig = redisConfig;
+    this.logger = log;
+  }
+
   async getBirdProfile({ speciesCode, name } = {}) {
     const document = await vectorRepository.findBirdProfile({ speciesCode, name });
 
@@ -413,20 +441,100 @@ class RagService {
       ...(options.location ? { location: options.location } : {}),
       ...(options.title ? { title: options.title } : {}),
     };
-
-    return traceRagRetrieval('chat_rag_retrieval', {
-      parentTraceId: options.parentTraceId,
-      conversationId: options.conversationId,
-      queryLength: question?.length || 0,
-      topK,
-      filters,
-    }, () => retrievalService.retrieve(question, {
+    const retrievalOptions = {
       topK,
       filters,
       minScore: options.minScore,
       minSemanticScore: options.minSemanticScore,
       maxChunksPerDocument: options.maxChunksPerDocument,
-    }));
+    };
+    const cacheKey = buildRetrievalCacheKey(question, retrievalOptions);
+    const cacheLookup = await traceCacheOperation('rag_retrieval_cache_lookup', {
+      parentTraceId: options.parentTraceId,
+      conversationId: options.conversationId,
+      cacheName: 'rag_retrieval',
+      topK,
+    }, async () => {
+      const cachedDocuments = await this.getCachedRetrieval(cacheKey, options);
+
+      return {
+        cacheName: 'rag_retrieval',
+        status: cachedDocuments ? 'hit' : 'miss',
+        cachedDocuments,
+        avoidedLlmCall: Boolean(cachedDocuments),
+      };
+    });
+    const cachedDocuments = cacheLookup.cachedDocuments;
+
+    if (cachedDocuments) {
+      this.logger.info('CACHE HIT', {
+        cache: 'rag_retrieval',
+        conversationId: options.conversationId,
+      });
+      return cachedDocuments;
+    }
+
+    this.logger.info('CACHE MISS', {
+      cache: 'rag_retrieval',
+      conversationId: options.conversationId,
+    });
+
+    const documents = await traceRagRetrieval('chat_rag_retrieval', {
+      parentTraceId: options.parentTraceId,
+      conversationId: options.conversationId,
+      queryLength: question?.length || 0,
+      topK,
+      filters,
+    }, () => this.retriever.retrieve(question, retrievalOptions));
+
+    await traceCacheOperation('rag_retrieval_cache_write', {
+      parentTraceId: options.parentTraceId,
+      conversationId: options.conversationId,
+      cacheName: 'rag_retrieval',
+      topK,
+    }, async () => {
+      const status = await this.setCachedRetrieval(cacheKey, documents, options);
+
+      return {
+        cacheName: 'rag_retrieval',
+        status,
+        writeSucceeded: status === 'write',
+      };
+    });
+
+    return documents;
+  }
+
+  async getCachedRetrieval(cacheKey, metadata = {}) {
+    try {
+      const cached = await this.retrievalCache.get(cacheKey);
+
+      if (Array.isArray(cached)) {
+        return cached;
+      }
+    } catch (error) {
+      this.logger.warn('RAG retrieval cache lookup failed', {
+        conversationId: metadata.conversationId,
+        error: error.message,
+      });
+    }
+
+    return null;
+  }
+
+  async setCachedRetrieval(cacheKey, documents, metadata = {}) {
+    try {
+      await this.retrievalCache.set(cacheKey, documents, {
+        ttlSeconds: this.redisConfig.retrievalCacheTtlSeconds,
+      });
+      return 'write';
+    } catch (error) {
+      this.logger.warn('RAG retrieval cache write failed', {
+        conversationId: metadata.conversationId,
+        error: error.message,
+      });
+      return 'skipped';
+    }
   }
 
   async buildContext(messages, question, metadata = {}) {
@@ -462,7 +570,7 @@ class RagService {
 
       const retrievedChunks = summarizeRetrievedChunks(documents);
 
-      logger.info('RAG retrieved chunks for chat', {
+      this.logger.info('RAG retrieved chunks for chat', {
         event: 'rag_retrieved_chunks',
         conversationId: metadata.conversationId,
         chunkCount: documents.length,
@@ -470,7 +578,7 @@ class RagService {
       });
 
       if (documents.length === 0) {
-        logger.info('No RAG documents retrieved for chat', {
+        this.logger.info('No RAG documents retrieved for chat', {
           conversationId: metadata.conversationId,
           topK: metadata.topK || DEFAULT_TOP_K,
         });
@@ -497,7 +605,7 @@ class RagService {
         originalMessageCount: messages.length,
       });
 
-      logger.info('RAG context retrieved for chat', {
+      this.logger.info('RAG context retrieved for chat', {
         conversationId: metadata.conversationId,
         documentCount: documents.length,
         topK: metadata.topK || DEFAULT_TOP_K,
@@ -508,7 +616,7 @@ class RagService {
         })),
       });
 
-      logger.info('RAG grounding context assembled for chat', {
+      this.logger.info('RAG grounding context assembled for chat', {
         event: 'rag_grounding_context_assembled',
         conversationId: metadata.conversationId,
         retrievedChunkCount: ragTrace.retrievedChunkCount,
@@ -535,7 +643,7 @@ class RagService {
           message: error.message,
         },
       });
-      logger.warn('Failed to retrieve RAG context; continuing without it', {
+      this.logger.warn('Failed to retrieve RAG context; continuing without it', {
         conversationId: metadata.conversationId,
         error: error.message,
       });
@@ -556,6 +664,8 @@ class RagService {
 }
 
 export {
+  buildRetrievalCacheKey,
+  RagService,
   buildGroundingTrace,
   summarizeRetrievedChunk,
   summarizeRetrievedChunks,

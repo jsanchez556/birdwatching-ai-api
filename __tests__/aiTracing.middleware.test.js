@@ -16,6 +16,7 @@ const {
   traceBirdIdentificationFinalResponse,
   traceBirdIdentificationPipeline,
   traceBirdIdentificationRagRetrieval,
+  traceCacheOperation,
   traceConversationContext,
   traceImageInput,
   traceLlmCall,
@@ -80,6 +81,56 @@ describe('AI tracing middleware', () => {
     });
     expect(traceOptions.outputMetadata([{ id: 'doc-1' }])).toEqual({
       resultCount: 1,
+    });
+  });
+
+  it('wraps cache operations with hit-rate and avoided-call metadata', async () => {
+    await traceCacheOperation('ai_response_cache_lookup', {
+      parentTraceId: 'root-trace-1',
+      conversationId: 'conversation-1',
+      cacheName: 'ai_response',
+    }, async () => ({
+      cacheName: 'ai_response',
+      status: 'hit',
+      avoidedLlmCall: true,
+      cacheHits: 3,
+      cacheMisses: 1,
+      cacheHitRate: '75%',
+      estimatedSavings: '$1.23',
+    }));
+
+    const traceOptions = mockTrace.mock.calls[0][0];
+
+    expect(traceOptions).toMatchObject({
+      type: 'cache',
+      name: 'ai_response_cache_lookup',
+      parentTraceId: 'root-trace-1',
+      metadata: expect.objectContaining({
+        conversationId: 'conversation-1',
+        cacheName: 'ai_response',
+      }),
+    });
+    expect(traceOptions.outputMetadata({
+      cacheName: 'ai_response',
+      status: 'hit',
+      avoidedLlmCall: true,
+      cacheHits: 3,
+      cacheMisses: 1,
+      cacheHitRate: '75%',
+      estimatedSavings: '$1.23',
+    })).toEqual({
+      cacheName: 'ai_response',
+      cacheStatus: 'hit',
+      cacheHit: true,
+      cacheMiss: false,
+      cacheSkipped: false,
+      avoidedLlmCall: true,
+      cacheHits: 3,
+      cacheMisses: 1,
+      cacheHitRate: '75%',
+      estimatedSavings: '$1.23',
+      writeSucceeded: undefined,
+      errorCode: undefined,
     });
   });
 

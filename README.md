@@ -34,6 +34,10 @@ Common optional variables:
 - `NODE_ENV` defaults to `development`
 - `OPENAI_MODEL` defaults to `gpt-4o`
 - `OPENAI_EMBEDDING_MODEL` defaults to `text-embedding-3-small`
+- `REDIS_URL` defaults to `redis://localhost:6379`
+- `REDIS_KEY_PREFIX` defaults to `birdwatching-ai:`
+- `REDIS_CACHE_TTL_SECONDS`, `AI_RESPONSE_CACHE_TTL_SECONDS`, `RETRIEVAL_CACHE_TTL_SECONDS`, `SEMANTIC_CACHE_TTL_SECONDS`, and `EMBEDDING_CACHE_TTL_SECONDS` tune cache expiration
+- `SEMANTIC_CACHE_SIMILARITY_THRESHOLD` defaults to `0.92`, and `SEMANTIC_CACHE_MAX_ENTRIES` defaults to `100`
 - `CORS_ORIGINS` accepts a comma-separated allowlist
 - `CORS_ALLOWED_HEADERS` accepts a comma-separated allowlist for request headers
 - `LOG_FILES_ENABLED` accepts `true` or `false`
@@ -133,6 +137,22 @@ PostgreSQL or `pgvector` is unavailable, chat continues without RAG context.
 Chat requests do not run ingestion, generate embeddings for source documents, or
 write vectors.
 
+When Redis is available, RAG retrieval results are cached before repeating the
+same pgvector search. Redis is an optimization only: PostgreSQL stays the source
+of truth, and cache failures are logged before falling back to retrieval.
+
+## AI Caching
+`src/cache/` provides the Redis client and reusable cache service abstraction.
+The AI layer uses it for exact response caching, semantic response reuse,
+embedding caching, and RAG retrieval caching. Exact response cache keys use
+stable hashed prompt metadata; semantic caching stores embeddings for cacheable
+questions and reuses answers only above the configured similarity threshold.
+
+Response caches skip user-sensitive, authenticated, reservation, tool, and
+conversation-specific metadata. Cache hits and misses are logged as `CACHE HIT`
+and `CACHE MISS`, and cache metrics expose hit rate plus estimated OpenAI
+savings. Redis lookup/write failures do not block chat or embedding generation.
+
 ## Tour Tools
 Chat can use agent-orchestrated tool calls for tour search and recommendations,
 availability checks, transportation estimates, price calculations, discounts,
@@ -168,7 +188,7 @@ Supported request content types are `audio/mpeg`, `audio/mp3`, `audio/wav`, and 
 
 The returned `audioResponseUrl` is a relative `/files/voice-chat/...` media reference. Clients should resolve it through the CloudFront-backed `GET /files/:folderName/:filename` endpoint or their own configured CDN base. The internal speech-to-text and text-to-speech services are reusable from backend services, but standalone public transcribe/speak endpoints are not exposed.
 
-When LangSmith tracing is enabled, voice chat creates one `voice_chat` parent trace with child spans for transcription, conversation context/RAG retrieval, agent execution/tool work, final chat response generation, and speech generation.
+When LangSmith tracing is enabled, voice chat creates one `voice_chat` parent trace with child spans for transcription, conversation context/RAG retrieval, agent execution/tool work, final chat response generation, and speech generation. Cache lookups and writes are also traced with hit, miss, skipped, avoided-LLM-call, hit-rate, and estimated-savings metadata.
 
 ## Scripts
 ```bash

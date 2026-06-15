@@ -146,6 +146,28 @@ function traceRagPipeline(name, metadata, operation, options = {}) {
   }, operation);
 }
 
+function traceCacheOperation(name, metadata, operation) {
+  return withAiTrace({
+    type: 'cache',
+    name,
+    metadata,
+    outputMetadata: (result = {}) => ({
+      cacheName: result.cacheName || metadata.cacheName,
+      cacheStatus: result.status,
+      cacheHit: result.status === 'hit',
+      cacheMiss: result.status === 'miss',
+      cacheSkipped: result.status === 'skipped',
+      avoidedLlmCall: Boolean(result.avoidedLlmCall),
+      cacheHits: result.cacheHits,
+      cacheMisses: result.cacheMisses,
+      cacheHitRate: result.cacheHitRate,
+      estimatedSavings: result.estimatedSavings,
+      writeSucceeded: result.writeSucceeded,
+      errorCode: result.errorCode,
+    }),
+  }, operation);
+}
+
 function traceToolExecution(name, metadata, operation) {
   return withAiTrace({
     type: 'tool_execution',
@@ -224,6 +246,7 @@ export {
   traceBirdIdentificationFinalResponse,
   traceBirdIdentificationPipeline,
   traceBirdIdentificationRagRetrieval,
+  traceCacheOperation,
   traceConversationContext,
   traceImageInput,
   traceLlmCall,

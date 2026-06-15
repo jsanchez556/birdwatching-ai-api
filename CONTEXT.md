@@ -12,6 +12,7 @@ This repository is a single Express API for Costa Rica birdwatching assistance. 
 - authenticated bird identification through `POST /birds/identify`, accepting image URLs or validated image uploads before running rich visual evidence extraction, direct-image-aware candidate generation, bird-profile RAG verification/reranking, and final response assembly
 - voice chat through `POST /voice-chat`, combining speech-to-text, chat orchestration, text-to-speech, S3 storage, and CloudFront-relative audio URLs
 - OpenAI/agent tool calling for tour search, availability, transportation, pricing, discounts, and durable reservations
+- Redis-backed caches for AI responses, semantic response reuse, RAG retrieval results, and embedding generation
 - normalized JSON responses and centralized error handling
 - email/password authentication with bcrypt password hashes and JWT-protected AI routes
 - Railway-oriented deployment with environment-driven configuration
@@ -33,6 +34,7 @@ The app uses a controller-service-query split:
 - `src/services/*` owns orchestration, AI calls, memory construction, and persistence decisions.
 - `src/db/queries/*` owns parameterized calls to PostgreSQL functions through `src/db/pool.js`.
 - `src/db/vector` and `src/ai/enrichment` own durable RAG storage, search, enrichment, and chunking.
+- `src/cache/` owns Redis client creation and cache abstractions used by AI response, retrieval, and embedding flows.
 - `src/ai/enrichment/` owns provider HTTP clients, export orchestration, normalized enrichment data, and chunking for bird data ingestion.
 - `src/routes/media.routes.js` owns CloudFront media URL creation for relative media keys; `src/storage/` remains for S3 uploads and object checks used by ingestion jobs.
 - `src/ai/*` owns OpenAI client calls, prompt assets, structured schemas, and chat tool adapters.
@@ -52,10 +54,13 @@ POST /chat
   -> conversation.service.assertCanAccess
   -> conversation.service.buildConversationContext
   -> rag.service.buildContext
+  -> Redis retrieval cache lookup
   -> PostgreSQL pgvector retrieval
   -> frontend-safe sources and media-rich birdMatches metadata when matching bird profiles are retrieved
   -> agent orchestrator plans and executes required chat tools
+  -> Redis exact/semantic response cache lookup
   -> OpenAI streams final assistant text through SSE chunk events with client-disconnect abort support
+  -> Redis response cache write when safe
   -> conversation.service.saveExchange
   -> SSE start/chunk/replace/done/error events
 ```
@@ -82,9 +87,12 @@ GET /chat/latest
 - Visitor chat is limited to bird-related questions, cannot execute tour/reservation tools, and uses a stricter in-memory IP limit.
 - `NODE_ENV=test` bypasses required `OPENAI_API_KEY`, `DATABASE_URL`, and `JWT_SECRET` validation.
 - OpenAI retry behavior lives in `src/utils/async.utils.js` and is used for transient OpenAI statuses.
+- Redis cache configuration is optional and environment-driven through `REDIS_URL`, `REDIS_KEY_PREFIX`, `REDIS_CACHE_TTL_SECONDS`, `AI_RESPONSE_CACHE_TTL_SECONDS`, `RETRIEVAL_CACHE_TTL_SECONDS`, `SEMANTIC_CACHE_TTL_SECONDS`, `SEMANTIC_CACHE_SIMILARITY_THRESHOLD`, `SEMANTIC_CACHE_MAX_ENTRIES`, and `EMBEDDING_CACHE_TTL_SECONDS`. Redis failures are logged and fall back to the normal OpenAI or pgvector path.
+- Cache key hashing, positive numeric parsing/formatting, and whitespace normalization live in `src/utils/hash.utils.js`, `src/utils/number.utils.js`, and `src/utils/text.utils.js`; reuse those helpers for new cache-safe deterministic keys or metric formatting.
 - Shared filesystem and media path helpers live in `src/utils/fs.utils.js` and `src/utils/file.utils.js`; use them instead of duplicating JSON file IO, freshness checks, or media URL/path normalization.
 - Streaming chat passes an `AbortSignal` to OpenAI and skips saving a completed exchange when the client disconnects before completion.
 - RAG reads only from PostgreSQL pgvector during chat. Use `npm run enrich -- birds` to refresh bird source data, generate `birds.json`, and ingest normalized bird documents before relying on bird RAG context; chat does not chunk documents, generate source embeddings, or write vectors.
+- RAG retrieval can read/write Redis cache entries before hitting pgvector. PostgreSQL remains the source of truth, and failed cache operations do not fail chat.
 - Bird RAG metadata may include `meta.birdMatches[].media` with absolute URLs or relative object keys such as `/photos/123_medium.jpg`, `songs/123.mp3`, or `sonograms/123_grey-small.png`. Relative keys are intentionally not public static paths; the UI resolves them through CloudFront when configured or through `GET /files/:folderName/:filename`, which returns a normalized envelope containing `data.url`.
 - `GET /files/:folderName/:filename` normalizes and validates path segments, then returns a CloudFront URL from `CLOUDFRONT_BASE_URL`; it no longer creates S3 presigned URLs.
 - External bird data clients live under `src/ai/enrichment/clients/` and export orchestration lives in `src/ai/enrichment/services/birds.enrichment.service.js`. They are intended for ingestion jobs, not request handlers, and share a configurable rate limiter capped at 40 requests per minute.
@@ -96,11 +104,13 @@ GET /chat/latest
 - Reservation creation can include optional `customerEmail`, `discountCode`, itinerary dates, and selected transportation metadata; discounts are calculated in `reservation.service.js` and the tour total is computed inside the PostgreSQL function.
 - Database writes for chat memory are best-effort; save failures are logged but do not fail the chat response.
 - Authenticated chat requests persist OpenAI prompt tokens, completion tokens, and estimated cost to `usage_logs` on a best-effort basis after the streamed response completes.
+- AI response caching records `CACHE HIT` and `CACHE MISS` logs, tracks cache hit/miss metrics and estimated OpenAI savings, and skips response reuse when metadata contains user-specific, reservation, tool, or conversation-scoped state.
 - Chat persistence uses the `conversations` and `messages` tables plus SQL helper functions from `src/db/migrations/002_create_functions.sql`; later migrations make those helpers owner-aware and merge safe JSONB booking metadata into `conversations.metadata`.
 - Voice chat uses the same chat orchestration and conversation memory as `POST /chat`. `src/ai/audio/speechToText.js` and `src/ai/audio/textToSpeech.js` are internal services; standalone transcribe/speak routes are not exposed publicly.
 - `POST /voice-chat` accepts raw MP3/WAV audio only, including `audio/mpeg`, `audio/mp3`, `audio/wav`, and `audio/x-wav`. Browser clients that record `audio/webm` should convert to WAV before upload or the backend validation will reject the request.
 - Generated voice-chat MP3 responses are uploaded to S3 under `voice-chat/<uuid>.mp3`; the API returns a relative `/files/voice-chat/...` URL that clients resolve through CloudFront-backed media delivery.
 - Voice chat creates one LangSmith-compatible parent trace with child spans for transcription, conversation context/RAG retrieval, agent execution/tool work, final chat response, and speech generation when tracing is enabled.
+- Cache lookups and writes are traced as LangSmith-compatible cache/tool spans with hit, miss, skipped, avoided-LLM-call, hit-rate, and savings metadata when tracing is enabled.
 - User authentication uses `users`, DB-backed refresh sessions use `refresh_tokens`, and authenticated token/cost accounting uses `usage_logs`.
 - Reservation persistence uses `tours` and `reservations` plus PostgreSQL functions from `003_create_tour_reservations.sql`; transaction, row locking, derived tour location metadata, and authenticated `user_id` persistence live in database functions after ownership migration. Chat-level booking metadata such as transportation selections is stored in `conversations.metadata`.
 
