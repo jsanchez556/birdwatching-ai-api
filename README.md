@@ -47,6 +47,8 @@ Common optional variables:
 - `EXTERNAL_API_RATE_LIMIT_MAX_REQUESTS` defaults to `40` and cannot exceed `40`
 - `CLOUDFRONT_BASE_URL` enables public CDN media URLs for relative object keys
 - `S3_REGION`, `S3_BUCKET_NAME`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` enable media asset uploads to the S3 bucket
+- `BULLMQ_JOB_ATTEMPTS`, `BULLMQ_JOB_BACKOFF_DELAY_MS`, `BULLMQ_WORKER_CONCURRENCY`, and BullMQ cleanup variables tune background job retry and retention behavior
+- `LANGCHAIN_TRACING`, `LANGCHAIN_PROJECT`, and `LANGCHAIN_API_KEY` enable sanitized LangSmith trace export
 
 Run database migrations before using chat memory:
 ```bash
@@ -60,7 +62,13 @@ psql "$DATABASE_URL" -f src/db/migrations/007_save_conversation_metadata.sql
 psql "$DATABASE_URL" -f src/db/migrations/008_create_usage_logs.sql
 psql "$DATABASE_URL" -f src/db/migrations/009_add_user_roles.sql
 psql "$DATABASE_URL" -f src/db/migrations/010_create_refresh_tokens.sql
-psql "$DATABASE_URL" -f src/db/migrations/011_tours_refactor.sql
+psql "$DATABASE_URL" -f src/db/migrations/011_tours_seed_data.sql
+psql "$DATABASE_URL" -f src/db/migrations/012_accent_insensitive_tour_search.sql
+psql "$DATABASE_URL" -f src/db/migrations/013_expand_homepage_tours_response.sql
+psql "$DATABASE_URL" -f src/db/migrations/014_create_tour_cart.sql
+psql "$DATABASE_URL" -f src/db/migrations/015_reservations_refactor.sql
+psql "$DATABASE_URL" -f src/db/migrations/016_create_bird_identifications.sql
+psql "$DATABASE_URL" -f src/db/migrations/017_create_jobs.sql
 ```
 
 ## Bird Knowledge Base
@@ -199,6 +207,7 @@ npm run dev:worker
 npm run start:api
 npm run start:worker
 npm run enrich -- birds # refresh bird data, generate birds.json, and ingest pgvector documents
+npm run ai:evals       # run offline AI evaluation gates against the baseline
 npm test       # Jest ESM test runner
 ```
 
@@ -223,6 +232,11 @@ npm test       # Jest ESM test runner
 - `POST /voice-chat`
 - `GET /chat/latest`
 - `GET /chat/:conversationId`
+- `POST /birds/identify`
+- `POST /bird-identification`
+- `GET /jobs/:id`
+- `POST /ingestions`
+- `GET /ingestions/:id`
 - `GET /files/:folderName/:filename`
 
 Responses use the normalized envelope from `src/utils/apiResponse.js`.
@@ -237,9 +251,11 @@ stores best-effort token/cost records for authenticated chat turns.
 
 Tour reservations use PostgreSQL `tours` and `reservations` tables from
 `003_create_tour_reservations.sql`, including database functions for tour lookup
-and transactional reservation creation. `011_tours_refactor.sql` adds optional
-tour `node_id`, coordinates, and itinerary date columns, plus a Costa Rica
-birding reference graph:
+and transactional reservation creation. Later migrations add accent-insensitive
+tour search, expanded homepage tour fields, cart and reservation metadata,
+bird-identification records, and BullMQ job records. `011_tours_seed_data.sql`
+adds optional tour `node_id`, coordinates, and itinerary date columns, plus a
+Costa Rica birding reference graph:
 - `country` stores country records such as Costa Rica.
 - `zone` stores ranked birding regions within a country.
 - `node` stores ranked hierarchical birding areas and sub-sites within zones.
@@ -250,3 +266,16 @@ birding reference graph:
 RAG persistence uses `knowledge_documents` and `knowledge_chunks` from
 `004_create_vector_knowledge.sql`. The migration enables the `vector` extension
 and creates indexes for semantic search and metadata filtering.
+
+## AI Evaluations
+Offline evaluation infrastructure lives under `src/evaluations/`:
+- `datasets/golden-dataset.json` contains 100 representative birdwatching AI cases with questions, expected behaviors, criteria, and edge cases.
+- `datasets/ai-eval-baseline.json` stores the checked-in quality and retrieval baseline.
+- `scorers/` measures answer quality, relevance, grounding, correctness, completeness, retrieval precision/recall, and tool correctness.
+- `runners/` executes dataset evaluation, prompt regression comparison, and LangSmith-compatible evaluation reporting.
+- `dashboards/` prepares quality trend, regression detection, and retrieval performance summaries.
+
+Run `npm run ai:evals` before changing prompt behavior or evaluation logic. The
+GitHub Actions workflow `.github/workflows/ai-evals.yml` runs the same gate on
+pull requests to `main` and fails when score or retrieval quality drops below
+the baseline.

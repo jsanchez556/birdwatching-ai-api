@@ -680,7 +680,7 @@ Validation and behavior:
 - successful responses do not expose bucket credentials
 
 ## Current Protection
-`GET /chat/latest`, `GET /chat/:conversationId`, `POST /birds/identify`, and all `/cart` routes require JWT bearer authentication. `POST /chat` and `POST /voice-chat` accept authenticated customer/admin users or unauthenticated visitors; visitors can only ask bird-related questions, cannot execute tool-backed tour or reservation actions, and have a stricter 10-request-per-hour IP limit. Conversation and reservation `user_id` ownership is enforced server-side. `POST /auth/signup`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, homepage content endpoints, `GET /files/:folderName/:filename`, and `GET /health` remain public.
+`GET /chat/latest`, `GET /chat/:conversationId`, `POST /birds/identify`, `POST /bird-identification`, `GET /jobs/:id`, `POST /ingestions`, `GET /ingestions/:id`, and all `/cart` routes require JWT bearer authentication. `POST /chat` and `POST /voice-chat` accept authenticated customer/admin users or unauthenticated visitors; visitors can only ask bird-related questions, cannot execute tool-backed tour or reservation actions, and have a stricter 10-request-per-hour IP limit. Conversation, reservation, job, and ingestion ownership is enforced server-side. `POST /auth/signup`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, homepage content endpoints, `GET /files/:folderName/:filename`, and `GET /health` remain public.
 
 Request protection includes:
 - Helmet security headers through `security.middleware.js`.

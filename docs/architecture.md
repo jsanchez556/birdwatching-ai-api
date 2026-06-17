@@ -16,11 +16,12 @@ src/
     routes/              route modules
     streaming/           HTTP response streaming helpers
     validators/          request payload validators
-  ai/                    OpenAI client/service, agents, orchestrators, prompts, evaluations, guardrails, schemas, chat tools
+  ai/                    OpenAI client/service, agents, orchestrators, prompts, guardrails, schemas, chat tools
   cache/                 Redis client and reusable response/retrieval cache abstractions
   config/                environment parsing and validation
   db/                    pg pool, migrations, query modules
   events/                BullMQ queue and worker event wiring
+  evaluations/           offline AI datasets, scorers, runners, LangSmith-compatible reports, dashboard summaries
   jobs/                  shared background job names and default job options
   queues/                BullMQ queue configuration and queue manager
   workers/               BullMQ worker process entrypoint, manager, and job processors
@@ -38,6 +39,7 @@ src/
 - Services own application behavior and call AI or query modules.
 - Query modules own SQL and should use parameterized queries.
 - AI modules own prompt text, prompt versions, schemas, provider calls, retry, and token usage logging.
+- Evaluation modules own offline datasets, quality/retrieval/tool scorers, prompt regression runners, LangSmith-compatible reports, and dashboard summaries.
 - Cache modules own Redis connection details and generic get/set behavior; callers decide cache eligibility and fallback behavior.
 - Queue modules own BullMQ queue registration and enqueueing for async background jobs.
 - Worker modules own BullMQ worker startup and processors; processors call services instead of embedding business logic in queue plumbing.
@@ -294,7 +296,7 @@ The observability layer is split into three small modules:
 - `src/tracing/aiTracing.middleware.js` provides wrappers for the end-to-end AI execution flow, conversation context assembly, LLM calls, RAG retrieval, RAG grounding, tool execution, and agent orchestration so instrumentation stays out of controllers and response formatting.
 - `src/monitoring/aiTelemetry.js` records centralized latency, token usage, and error telemetry with prompt, response, customer, and secret fields redacted.
 
-Chat currently emits a root AI execution trace for each streamed request, with child spans for conversation context assembly, OpenAI tool-resolution completions, final streaming completions, embedding generation, RAG retrieval, RAG/response cache operations, the RAG grounding pipeline, tour tool execution, and the birdwatching agent orchestration run. The root trace records response length, source count, prompt versions, reservation presence, and tool names; the conversation context span records message counts by role. Cache spans record hit, miss, skipped, write status, avoided LLM calls, cache hit rate, and estimated savings without logging raw prompts, embeddings, answers, or secrets. RAG pipeline telemetry includes retrieved chunk IDs, similarity scores, retrieval latency, grounding context size, and prompt-construction metadata; the final answer LLM trace also carries the compact grounding summary. Multi-tool agent telemetry follows the user request through planner output, ordered tool sequence, individual tool spans, failures, skipped steps, retry counts, retry scheduling events, prompt assembly, and the final response. AI error monitoring records stable log events for retrieval failures, tool timeouts, tool failures, malformed JSON tool-call arguments, invalid assistant outputs, and guardrail-detected hallucination events. Prompt evaluation tracking compares prompt versions by retrieval quality, token usage, and latency without storing prompt text. LangSmith evaluation tracking can submit `grounding_quality`, `answer_relevance`, and `tool_correctness` feedback for run IDs while keeping local numeric results available when export is disabled. LangSmith export is enabled when `LANGCHAIN_TRACING=true`, `LANGCHAIN_PROJECT` is set, and `LANGCHAIN_API_KEY` is present; otherwise the same code path continues to run with local telemetry only.
+Chat currently emits a root AI execution trace for each streamed request, with child spans for conversation context assembly, OpenAI tool-resolution completions, final streaming completions, embedding generation, RAG retrieval, RAG/response cache operations, the RAG grounding pipeline, tour tool execution, and the birdwatching agent orchestration run. The root trace records response length, source count, prompt versions, reservation presence, and tool names; the conversation context span records message counts by role. Cache spans record hit, miss, skipped, write status, avoided LLM calls, cache hit rate, and estimated savings without logging raw prompts, embeddings, answers, or secrets. RAG pipeline telemetry includes retrieved chunk IDs, similarity scores, retrieval latency, grounding context size, and prompt-construction metadata; the final answer LLM trace also carries the compact grounding summary. Multi-tool agent telemetry follows the user request through planner output, ordered tool sequence, individual tool spans, failures, skipped steps, retry counts, retry scheduling events, prompt assembly, and the final response. AI error monitoring records stable log events for retrieval failures, tool timeouts, tool failures, malformed JSON tool-call arguments, invalid assistant outputs, and guardrail-detected hallucination events. Offline evaluation tracking compares prompt versions by answer quality, retrieval quality, token usage, latency, estimated cost, and quality-per-dollar without storing prompt text. LangSmith-compatible evaluation reporting models `Run -> Evaluation -> Score -> Comparison` for answer quality, grounding quality, retrieval quality, and tool correctness, while dashboard helpers summarize quality trends, regression detection, and retrieval performance. LangSmith export is enabled when `LANGCHAIN_TRACING=true`, `LANGCHAIN_PROJECT` is set, and `LANGCHAIN_API_KEY` is present; otherwise the same code path continues to run with local telemetry only.
 
 Voice chat creates a parent `voice_chat` AI execution trace and nests the
 workflow spans under it: OpenAI audio transcription, conversation context,
@@ -354,7 +356,7 @@ The `tours` and `reservations` tables store durable booking state:
 - each reservation records optional `user_id`, `conversation_id`, `customer_name`, optional `customer_email`, `tour_id`, `participants`, `confirmation_code`, `created_at`, and `total_price`
 - query modules call `get_tour_by_id(...)`, `get_available_tours(...)`, `select_tour(...)`, and `create_tour_reservation(...)` from `003_create_tour_reservations.sql`
 
-The birding reference graph from `011_tours_refactor.sql` stores geographic and
+The birding reference graph from `011_tours_seed_data.sql` stores geographic and
 species seed data:
 - `country` has unique `acr` values such as `CR`.
 - `zone` belongs to `country`, has `name`, required `des`, ranked ordering, and `is_active DEFAULT true`.

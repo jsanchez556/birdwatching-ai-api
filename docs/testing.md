@@ -8,7 +8,22 @@ Run the full suite with:
 npm test
 ```
 
+Run the offline AI evaluation gate with:
+
+```bash
+npm run ai:evals
+```
+
 AI evaluation helpers live under `src/evaluations/`. Prompt regression checks should compare prompt versions through the evaluation runners instead of hard-coding provider calls in tests. Use injected executors so prompt comparisons can run against mocks, fixtures, staging providers, or recorded responses without leaking prompts, responses, secrets, or PII into production logs.
+
+Focused AI tests belong under `__tests__/ai/`. Keep evaluation engine,
+retrieval-quality, prompt-regression, scoring-system, and dashboard tests grouped
+there so AI evaluation behavior is easy to run and review.
+
+The AI evaluation runner reads:
+- `src/evaluations/datasets/golden-dataset.json` for the 100-case golden dataset
+- `src/evaluations/datasets/ai-eval-baseline.json` for baseline score and retrieval quality
+- optional CLI/env overrides: `--dataset`, `--baseline`, `--output`, `--results`, `--write-baseline`, `AI_EVAL_DATASET_FILE`, `AI_EVAL_BASELINE_FILE`, `AI_EVAL_OUTPUT_FILE`, and `AI_EVAL_RESULTS_FILE`
 
 Prompt regression results should compare:
 
@@ -79,3 +94,8 @@ Keep LangSmith evaluation metadata safe: use case IDs, categories, prompt
 version IDs, score numbers, counts, latency, token usage, and cost. Do not
 export raw prompts, raw model responses, secrets, PII, or retrieved document
 contents as production trace metadata.
+
+`.github/workflows/ai-evals.yml` runs `npm run ai:evals` on pull requests to
+`main` and pushes to `develop`. The workflow fails when aggregate evaluation
+score or retrieval quality drops below the checked-in baseline and uploads
+`tmp/ai-eval-results.json` as an artifact for review.

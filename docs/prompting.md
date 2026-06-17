@@ -113,27 +113,38 @@ event `meta` object for debugging and prompt experiments:
 When a response mode is active, `done.meta.responseMode` is also returned.
 
 ## Prompt Evaluation Tracking
-Prompt version comparisons can be recorded with
-`src/ai/evaluations/promptEvaluation.tracker.js`. The tracker compares two
-prompt runs without storing prompt text:
-- prompt version labels, for example `1.0.0` and `2.0.0`
-- retrieval quality from result coverage and similarity scores
-- prompt, completion, and total token usage
-- latency in milliseconds
+Offline prompt and answer evaluation lives under `src/evaluations/`, separate
+from runtime prompt assets:
+- `datasets/golden-dataset.json` contains 100 representative bird
+  identification, tour recommendation, reservation, RAG retrieval, and edge-case
+  cases. Each case evaluates expected behavior rather than exact phrasing.
+- `scorers/evaluationEngine.scorer.js` returns `score`, `relevance`,
+  `grounding`, `correctness`, `completeness`, and `reasoning`.
+- `scorers/retrievalQuality.scorer.js` measures retrieved chunk relevance,
+  retrieval precision, retrieval recall, and grounding quality.
+- `scorers/toolCorrectness.scorer.js` checks required, unexpected, and failed
+  tool usage for tool-aware cases.
+- `runners/promptRegression.runner.js` compares prompt V1 and V2 by answer
+  quality, retrieval quality, latency, token usage, estimated cost, and
+  quality-per-dollar.
 
-The comparison emits a `prompt_version_comparison` log entry and records
-`prompt_evaluation_tracked` telemetry with deltas for retrieval quality, token
-usage, latency, and the winning prompt version.
+Prompt regression uses injected executors so tests and CI can run against
+mocks, fixtures, staging providers, or recorded responses. Do not store raw
+prompt text, raw assistant responses, secrets, PII, or retrieved document
+contents in evaluation output.
 
-LangSmith-compatible evaluators live in
-`src/ai/evaluations/langSmith.evaluators.js`:
-- `grounding_quality` scores answer grounding against retrieved context metadata
-- `answer_relevance` scores answer overlap with the user question and optional reference answer
-- `tool_correctness` scores expected tool sequence, executed tools, and failures
+LangSmith-compatible evaluation reporting lives in
+`runners/langSmithEvaluation.runner.js` and dashboard summaries live in
+`dashboards/langSmithEvaluation.dashboards.js`. The reporting flow is:
+```text
+Run
+-> Evaluation
+-> Score
+-> Comparison
+```
 
-Use `LangSmithEvaluationTracker.evaluateAndSubmit(...)` with a LangSmith run ID
-to submit these scores as feedback. Without a run ID or client, the tracker still
-returns local evaluation results and logs safe numeric telemetry.
+The dashboard helpers summarize quality trends, regression detection, and
+retrieval performance from safe numeric evaluation metadata.
 
 ## Change Rules
 - Do not place prompt text in controllers or route files.

@@ -45,6 +45,11 @@ Optional:
 - `BULLMQ_JOB_BACKOFF_DELAY_MS`, defaults to `5000`
 - `BULLMQ_DLQ_ENABLED`, `true` or `false`; defaults to `true`
 - `BULLMQ_DLQ_QUEUE_NAME`, defaults to `dead-letter`
+- `BULLMQ_REMOVE_ON_COMPLETE_AGE_SECONDS`, defaults to `86400`
+- `BULLMQ_REMOVE_ON_COMPLETE_COUNT`, defaults to `1000`
+- `BULLMQ_REMOVE_ON_FAIL_AGE_SECONDS`, defaults to `604800`
+- `BULLMQ_REMOVE_ON_FAIL_COUNT`, defaults to `5000`
+- `BULLMQ_WORKER_CONCURRENCY`, defaults to `2`
 - `REDIS_CACHE_TTL_SECONDS`, defaults to `300`
 - `AI_RESPONSE_CACHE_TTL_SECONDS`, defaults to `300`
 - `RETRIEVAL_CACHE_TTL_SECONDS`, defaults to `300`
@@ -57,15 +62,24 @@ Optional:
 - `LANGCHAIN_PROJECT`, defaults to `birdwatching-ai`
 - `CORS_ORIGINS`, comma-separated allowed origins; empty means no CORS allow-origin header is set
 - `CORS_ALLOWED_HEADERS`, comma-separated allowed request headers; defaults to `Content-Type, Authorization, X-Filename`
+- `RATE_LIMIT_WINDOW_MS`, defaults to `60000`
+- `RATE_LIMIT_MAX_REQUESTS`, defaults to `60`
+- `AI_RATE_LIMIT_WINDOW_MS`, defaults to `60000`
+- `AI_RATE_LIMIT_MAX_REQUESTS`, defaults to `12`
 - `LOG_FILES_ENABLED`, `true` or `false`; defaults to console-only logging
 - `JWT_EXPIRES_IN`, defaults to `7d`
+- `REFRESH_TOKEN_EXPIRES_IN_DAYS`, defaults to `30`
+- `ADMIN_EMAIL`, optional comma-separated admin bootstrap email list
 - `E_BIRD_API_BASE_URL`, required when using eBird ingestion clients
 - `E_BIRD_API_KEY`, required when using eBird ingestion clients
 - `INATURALIST_API_BASE_URL`, required when using iNaturalist ingestion clients
 - `XENO_CANTO_API_BASE_URL`, required when using Xeno-canto ingestion clients
 - `XENO_CANTO_API_KEY`, required when using Xeno-canto ingestion clients
+- `WIKI_API_BASE_URL`, optional wiki lookup base URL
 - `EXTERNAL_API_RATE_LIMIT_WINDOW_MS`, defaults to `60000`
 - `EXTERNAL_API_RATE_LIMIT_MAX_REQUESTS`, defaults to `40` and cannot exceed `40`
+- `HEAD_LINE_BIRDS` or `HOMEPAGE_BIRD_HIGHLIGHTS`, optional comma-separated homepage highlight bird names
+- `BIRD_IDENTIFICATION_JOB_STALL_TIMEOUT_MS`, defaults to `300000`
 - `CLOUDFRONT_BASE_URL`, required for `/files` media URL responses
 - `S3_REGION`, required when using media asset uploads or voice-chat speech storage
 - `S3_BUCKET_NAME`, required when using media asset uploads or voice-chat speech storage
@@ -87,10 +101,16 @@ src/db/migrations/007_save_conversation_metadata.sql
 src/db/migrations/008_create_usage_logs.sql
 src/db/migrations/009_add_user_roles.sql
 src/db/migrations/010_create_refresh_tokens.sql
-src/db/migrations/011_tours_refactor.sql
+src/db/migrations/011_tours_seed_data.sql
+src/db/migrations/012_accent_insensitive_tour_search.sql
+src/db/migrations/013_expand_homepage_tours_response.sql
+src/db/migrations/014_create_tour_cart.sql
+src/db/migrations/015_reservations_refactor.sql
+src/db/migrations/016_create_bird_identifications.sql
+src/db/migrations/017_create_jobs.sql
 ```
 
-Run migrations in order with `psql`, Railway shell, or your deployment platform's database tooling before using chat memory, reservations, users, refresh-token sessions, usage logging, tour-location metadata, or pgvector-backed RAG.
+Run migrations in order with `psql`, Railway shell, or your deployment platform's database tooling before using chat memory, reservations, users, refresh-token sessions, usage logging, tour-location metadata, cart/reservation entry flows, bird-identification records, job polling, or pgvector-backed RAG.
 
 Production database connections use SSL with `rejectUnauthorized: false`.
 
@@ -100,7 +120,7 @@ Production database connections use SSL with `rejectUnauthorized: false`.
 - External provider JSON exports are written to `src/ai/enrichment/data` by `npm run enrich -- birds`. The eBird taxonomy export is incremental from the refreshed species list, eBird recent observations are fetched per species code from that list and written incrementally as a keyed `{ locations, lstDt }` summary. The enrich pipeline refreshes the species list monthly, taxonomy and Xeno-canto songs every six months, recent observations weekly, and iNaturalist images monthly.
 - RAG retrieval reads PostgreSQL `knowledge_documents` and `knowledge_chunks`; chat requests do not ingest files or write vectors.
 - Redis caches AI responses, semantic response candidates, embedding results, and RAG retrieval results when reachable. Cache misses or Redis errors fall back to OpenAI or pgvector, and PostgreSQL remains the source of truth for RAG.
-- Tour seed data begins in `003_create_tour_reservations.sql`; `011_tours_refactor.sql` adds tour `node_id`, coordinates, start/end dates, and the `country`/`zone`/`node`/`birds`/`birds_by_node` reference tables for Costa Rica birding geography and target species.
+- Tour seed data begins in `003_create_tour_reservations.sql`; `011_tours_seed_data.sql` adds tour `node_id`, coordinates, start/end dates, and the `country`/`zone`/`node`/`birds`/`birds_by_node` reference tables for Costa Rica birding geography and target species.
 - Tour reservation availability is durable PostgreSQL state and is updated transactionally by PostgreSQL functions.
 - Voice-chat generated speech responses are stored as MP3 objects under the S3 `voice-chat/` prefix. `POST /voice-chat` returns a relative `/files/voice-chat/...` URL, and `GET /files/:folderName/:filename` turns that relative key into a CloudFront URL using `CLOUDFRONT_BASE_URL`.
 
@@ -143,12 +163,14 @@ AI error monitoring emits `AI error monitored` log entries with stable event nam
 - `invalid_json_output` for malformed model tool-call arguments
 - `invalid_output` for assistant output blocked by output guardrails
 - `hallucination_event` for guardrail-detected unsupported or unsafe assistant output
-- `prompt_evaluation_tracked` for prompt version comparison telemetry
+- `evaluation_run`, `evaluation`, `evaluation_score`, and `evaluation_comparison` for offline evaluation reporting
 
-LangSmith evaluation feedback keys:
-- `grounding_quality`
-- `answer_relevance`
-- `tool_correctness`
+AI evaluation reporting lives under `src/evaluations/`. Local runners compare
+answer quality, grounding, retrieval quality, tool correctness, latency, token
+usage, and estimated cost without exporting prompt text or raw model responses.
+LangSmith-compatible reporting uses the safe hierarchy
+`Run -> Evaluation -> Score -> Comparison`, and dashboard helpers summarize
+quality trends, regression detection, and retrieval performance.
 
 ## CORS
 `CORS_ORIGINS` is parsed as a comma-separated allowlist. If it includes `*`,
@@ -199,6 +221,7 @@ No `Dockerfile`, `docker-compose.yml`, or `vercel.json` exists in the current tr
 ## Pre-Deploy Checks
 ```bash
 npm test
+npm run ai:evals
 ```
 
 Also verify:
@@ -210,3 +233,4 @@ Also verify:
 - `JWT_SECRET` is set to a strong secret and not exposed to the frontend
 - all database migrations have run
 - `npm run enrich -- birds` has been run after bird RAG source file changes
+- AI evaluation score and retrieval quality meet or exceed the checked-in baseline
