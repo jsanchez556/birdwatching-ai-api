@@ -1,7 +1,10 @@
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { evaluateResponse, evaluateRetrievalQuality } from '../src/evaluations/index.js';
+import {
+  evaluateResponse,
+  evaluateRetrievalQuality,
+} from '../src/evaluations/scorers/index.js';
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_DATASET_PATH = 'src/evaluations/datasets/golden-dataset.json';

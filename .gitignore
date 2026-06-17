@@ -36,6 +36,7 @@ coverage/
 # Temporary files
 *.tmp
 *.temp
+tmp/
 
 package-lock.json
 yarn.lock
