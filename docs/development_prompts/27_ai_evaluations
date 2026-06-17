@@ -1,0 +1,224 @@
+Treat [AGENTS.md](/home/jose/Documents/projects/birdwatching-ai-api/AGENTS.md) as the source of truth for architecture, coding style, testing expectations, and response format. Do not make changes that conflict with it unless I explicitly override those instructions.
+
+## Task
+
+Implement an AI evaluation dataset for the birdwatching platform.
+
+The dataset should cover the platform’s main AI-assisted behaviors:
+
+- Bird identification
+- Tour recommendations
+- Reservations
+- RAG retrieval
+
+Create at least 50 evaluation cases.
+
+Each evaluation case must include:
+
+- `question`: the user-facing prompt or message
+- `expectedBehavior`: an array of behavioral expectations the AI response should satisfy
+- `evaluationCriteria`: an array of criteria that can be used later by scorers or tests
+
+Important: do not evaluate exact phrases. Evaluate expected behavior, intent, factual coverage, and safe handling instead.
+
+## Architecture
+
+Add the evaluation-related files under:
+
+```txt
+src/
+  evaluations/
+    datasets/
+    scorers/
+    runners/
+
+__tests__/
+  ai/
+```
+
+Group all future AI-related tests under `__tests__/ai/`.
+
+Do not create any tests yet. Only create the dataset and supporting structure needed for future evaluation work.
+
+## Dataset Requirements
+
+The dataset should include a balanced mix of cases across:
+
+- Bird identification from descriptions
+- Bird identification with ambiguous or incomplete details
+- Costa Rica birding location questions
+- Tour recommendation requests
+- Tour comparison requests
+- Reservation intent
+- Reservation modification or cancellation intent
+- Customer context use, such as name, email, dates, and group size
+- RAG-style retrieval questions that require grounding in available platform knowledge
+- Edge cases where the assistant should ask a clarifying question
+- Cases where the assistant should avoid inventing unavailable tour, pricing, discount, or reservation details
+
+## Expected Shape
+
+Use a structure similar to:
+
+```js
+{
+  question: "Where can I see quetzals?",
+  expectedBehavior: [
+    "mentions Monteverde",
+    "mentions San Gerardo de Dota",
+    "frames the answer as a birdwatching recommendation"
+  ],
+  evaluationCriteria: [
+    "Does not require an exact phrase match",
+    "Credits multiple suitable locations when appropriate",
+    "Does not invent unavailable tour inventory or reservation details"
+  ]
+}
+```
+
+## Important Constraints
+
+- Do not create automated tests yet.
+- Do not create brittle exact-string expectations.
+- Do not assume backend fields that do not exist.
+- Do not invent raw RAG source metadata, tool payloads, pricing, discounts, or reservation confirmations unless the dataset case explicitly describes them as expected inputs.
+- Keep the dataset easy to consume later by scorers and runners.
+- Prefer clear, behavior-focused expectations over implementation-specific assertions.
+
+## Expected Result
+
+A committed implementation-ready evaluation dataset with at least 50 cases, organized under `src/evaluations/datasets/`, plus any minimal index/export files needed to make the dataset reusable later.
+
+---
+
+## Iteration 2, RESPONSE SCORING
+
+Implement an evaluation engine.
+
+Requirements:
+
+Score:
+- relevance
+- grounding
+- correctness
+- completeness
+
+Return:
+- score
+- reasoning
+
+Expected result:
+```js
+{
+  "score": 0.91,
+  "grounding": 0.95,
+  "relevance": 0.89
+}
+```
+---
+
+## Iteration 3, RAG EVALUATION
+Evaluate retrieval quality.
+
+Requirements:
+
+Measure:
+- retrieved chunk relevance
+- retrieval precision
+- retrieval recall
+- grounding quality
+
+Logs expected results:
+Question:
+Where can I see toucans?
+
+Retrieved:
+Chunk A
+Chunk B
+
+Relevance:
+92%
+
+---
+
+## Iteration 4, LANGSMITH EVALUATIONS
+
+Integrate LangSmith evaluations.
+
+Requirements:
+
+Track:
+- answer quality
+- grounding quality
+- retrieval quality
+- tool correctness
+
+LangSmith expected result:
+
+Run
+↓
+Evaluation
+↓
+Score
+↓
+Comparison
+
+---
+
+## Iteration 5, GOLDEN DATASET
+
+Create a golden dataset for birdwatching AI.
+
+Include:
+
+- 100 representative queries
+- expected behaviors
+- edge cases
+
+Expected result: golden-dataset.json
+
+---
+
+## Iteration 6, GITHUB ACTIONS
+
+Create GitHub Actions workflow.
+
+Run AI evaluations on every pull request.
+
+Fail PR if:
+- evaluation score drops
+- retrieval quality drops
+
+Expected Result:
+
+.github/workflows/ai-evals.yml
+
+---
+
+## Iteration 7, COST EVALUATIONS
+
+Track evaluation cost and token usage.
+
+Compare:
+- prompt quality
+- prompt cost
+
+## Iteration 8, TESTS
+
+Generate tests for:
+
+- evaluation engine
+- prompt regression
+- retrieval evaluation
+- scoring system
+
+---
+
+## Iteration 8, LangSmith dashboards
+
+Create LangSmith evaluation dashboards.
+
+Track:
+- quality trends
+- regression detection
+- retrieval performance

@@ -1,0 +1,43 @@
+name: AI Evaluations
+
+on:
+  pull_request:
+    branches:
+      - main
+
+  push:
+    branches:
+      - develop
+
+permissions:
+  contents: read
+
+jobs:
+  ai-evals:
+    name: Run AI evaluations
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run AI evaluation gate
+        run: npm run ai:evals
+
+      - name: Upload AI evaluation results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-eval-results
+          path: tmp/ai-eval-results.json
+          if-no-files-found: ignore

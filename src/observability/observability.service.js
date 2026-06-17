@@ -133,6 +133,10 @@ class ObservabilityService {
       agent_orchestration: 'chain',
       agent_planning: 'chain',
       background_job: 'chain',
+      evaluation: 'chain',
+      evaluation_comparison: 'chain',
+      evaluation_run: 'chain',
+      evaluation_score: 'chain',
       tool_sequence: 'chain',
     };
 
