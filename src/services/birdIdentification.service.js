@@ -15,11 +15,54 @@ import {
 } from '../tracing/aiTracing.middleware.js';
 import HttpError from '../utils/httpError.js';
 import logger from '../utils/logger.js';
+import { getCompletionUsageSummary } from '../ai/evaluations/token.usage.js';
+import usageService, { buildModelUsageEntry } from './usage.service.js';
 
 const MAX_BIRD_CANDIDATES = 5;
 const RAG_TOP_K = MAX_BIRD_CANDIDATES;
 const AMBIGUOUS_ORANGE_BEAK_NOTE = 'orange/yellow ambiguity: consider yellow-billed species when other visible traits support them';
 const VALID_IDENTIFICATION_STATUSES = new Set(['identified', 'uncertain', 'unknown']);
+
+function addIdentificationUsage(metadata = {}, response) {
+  if (!metadata || typeof metadata !== 'object') {
+    return;
+  }
+
+  const usage = getCompletionUsageSummary(response);
+  const current = metadata.identificationUsage || {
+    totalTokens: 0,
+    estimatedCostUsd: 0,
+    hasEstimatedCost: false,
+    modelUsage: [],
+  };
+  const model = response?.model || env.openAiModel;
+  const modelUsage = [...(current.modelUsage || [])];
+  const existingModelUsage = modelUsage.find((entry) => entry.model === model);
+  const nextModelUsage = buildModelUsageEntry(model, {
+    promptTokens: usage.promptTokens,
+    completionTokens: usage.completionTokens,
+    totalTokens: usage.totalTokens,
+    estimatedCostUsd: usage.estimatedCostUsd,
+  });
+
+  if (existingModelUsage) {
+    existingModelUsage.promptTokens += nextModelUsage.promptTokens;
+    existingModelUsage.completionTokens += nextModelUsage.completionTokens;
+    existingModelUsage.totalTokens += nextModelUsage.totalTokens;
+    existingModelUsage.estimatedCostUsd = Number((
+      Number(existingModelUsage.estimatedCostUsd || 0) + Number(nextModelUsage.estimatedCostUsd || 0)
+    ).toFixed(6));
+  } else {
+    modelUsage.push(nextModelUsage);
+  }
+
+  metadata.identificationUsage = {
+    totalTokens: current.totalTokens + usage.totalTokens,
+    estimatedCostUsd: Number((current.estimatedCostUsd + (usage.estimatedCostUsd || 0)).toFixed(6)),
+    hasEstimatedCost: current.hasEstimatedCost || usage.estimatedCostUsd !== null,
+    modelUsage,
+  };
+}
 
 function normalizeText(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -861,6 +904,7 @@ class BirdIdentificationService {
       imageUrl,
       metadata,
     });
+    addIdentificationUsage(metadata, response);
     const identification = normalizeBirdIdentification({
       ...parseProviderJson(response),
       imageAnalysis,
@@ -892,6 +936,7 @@ class BirdIdentificationService {
         retrievedProfiles,
         metadata,
       });
+      addIdentificationUsage(metadata, response);
       const verification = normalizeBirdVerification(parseProviderJson(response), {
         imageAnalysis,
         fallbackCandidates: candidates,
@@ -943,6 +988,7 @@ class BirdIdentificationService {
       userId,
       metadata: {
         ...metadata,
+        userId,
         parentTraceId: trace.id,
       },
     }));
@@ -972,6 +1018,17 @@ class BirdIdentificationService {
       candidates: identification.candidates,
       retrievedProfiles: normalizedBirdKnowledge,
       metadata,
+    });
+
+    await usageService.updateReservedUsageEvent({
+      usageEventId: metadata.usageEventId,
+      userId,
+      tokens: metadata.identificationUsage?.totalTokens,
+      estimatedCost: metadata.identificationUsage?.hasEstimatedCost
+        ? metadata.identificationUsage.estimatedCostUsd
+        : null,
+      traceId: metadata.parentTraceId,
+      modelUsage: metadata.identificationUsage?.modelUsage,
     });
 
     return traceBirdIdentificationFinalResponse('bird_identification_final_response', {

@@ -11,6 +11,7 @@ class BirdIdentificationController {
       metadata: {
         clientIP: req.ip || req.connection.remoteAddress,
         parentTraceId: req.headers['x-ai-trace-id'],
+        usageEventId: req.usageQuota?.usageEventId,
         debug,
       },
     });

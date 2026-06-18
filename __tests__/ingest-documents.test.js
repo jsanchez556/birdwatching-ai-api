@@ -51,9 +51,9 @@ describe('enrichment ingestion helpers', () => {
     expect(normalizeFileName('birds.json')).toBe('birds.json');
   });
 
-  it('rejects paths outside src/ai/enrichment/data', () => {
+  it('rejects paths outside src/ingestion/data', () => {
     expect(() => assertSafeDataPath('../secrets.json', dataDir))
-      .toThrow('Refusing to read outside src/ai/enrichment/data');
+      .toThrow('Refusing to read outside src/ingestion/data');
   });
 
   it('rejects JSON shapes that are not normalized document arrays', () => {

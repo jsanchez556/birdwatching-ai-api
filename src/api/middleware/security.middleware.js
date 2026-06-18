@@ -56,6 +56,10 @@ export function sanitizeRequestValue(value) {
     return value.replace(/\0/g, '');
   }
 
+  if (Buffer.isBuffer(value)) {
+    return value;
+  }
+
   if (!value || typeof value !== 'object') {
     return value;
   }

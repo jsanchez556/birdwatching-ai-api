@@ -139,6 +139,7 @@ class BirdIdentificationJobService {
         userId: normalizedUserId,
         metadata: {
           parentTraceId: metadata.parentTraceId,
+          usageEventId: metadata.usageEventId,
           debug: Boolean(metadata.debug),
         },
       }, {

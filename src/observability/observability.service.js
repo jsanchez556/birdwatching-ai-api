@@ -59,10 +59,11 @@ class ObservabilityService {
 
     this.telemetry.recordTraceStarted(trace);
 
-    return {
+    const publicTrace = {
       ...trace,
       annotate: (details = {}) => {
         trace.metadata = { ...trace.metadata, ...details };
+        publicTrace.metadata = trace.metadata;
       },
       end: (details = {}) => {
         this.telemetry.recordLatency(trace, this.clock.now() - trace.startedAt, details);
@@ -78,6 +79,7 @@ class ObservabilityService {
           completionTokens: currentUsage.completionTokens + nextUsage.completionTokens,
           totalTokens: currentUsage.totalTokens + nextUsage.totalTokens,
         };
+        publicTrace.tokenUsage = trace.tokenUsage;
         this.telemetry.recordTokenUsage(trace, usage);
       },
       child: (childType, childName, childMetadata = {}) => this.startTrace({
@@ -87,6 +89,8 @@ class ObservabilityService {
         parentTraceId: trace.id,
       }),
     };
+
+    return publicTrace;
   }
 
   async trace({ type, name, metadata = {}, parentTraceId, tokenUsage, outputMetadata }, operation) {
@@ -174,6 +178,13 @@ class ObservabilityService {
     await this.sendLangSmithUpdate('complete', trace, async () => this.langSmithClient.updateRun(trace.id, {
       end_time: new Date(this.clock.now()).toISOString(),
       outputs: sanitizeTelemetryValue(details),
+      extra: {
+        metadata: {
+          traceType: trace.type,
+          langSmithEnabled: trace.langSmithEnabled,
+          ...sanitizeTelemetryValue(trace.metadata || {}),
+        },
+      },
       ...(tokenUsage ? {
         prompt_tokens: tokenUsage.promptTokens,
         completion_tokens: tokenUsage.completionTokens,

@@ -81,12 +81,13 @@ Persistence & Migrations
 Stop conditions: migrations applied successfully, startup hooks completed, no schema drift detected.
 
 Ingestion & RAG
-1. Runtime knowledge source files live under `src/ai/enrichment/data`.
+1. Runtime knowledge source files live under `src/ingestion/data`.
 2. Ingestion datasets are normalized JSON arrays; `birds.json` is the reference shape.
 3. During ingestion, validate each document: if `externalId` or `name` is missing, reject the document and log an ingestion error; if `externalId` duplicates an existing record, skip or upsert based on a flag and emit a warning with counts.
 4. Keep normalized document fields explicit enough for embedding text: required `externalId` and `name`, plus optional `description`, `locations`, `documentType`, `category`, `tags`, and `metadata`.
 5. Store embedded vectors in PostgreSQL through pgvector; do not write generated embeddings into source files.
-6. Run bird enrichment with `npm run enrich -- birds`; chat requests should only retrieve already-ingested knowledge.
+6. External bird data clients live under `src/ingestion/clients/`; bird export/normalization orchestration lives under `src/ingestion/services/` and `src/ingestion/utils/`.
+7. Run bird enrichment with `npm run enrich -- birds`; chat requests should only retrieve already-ingested knowledge through `src/ai/services/retrieval.service.js`.
 
 Stop conditions: ingestion completes with validated counts and no critical validation errors.
 

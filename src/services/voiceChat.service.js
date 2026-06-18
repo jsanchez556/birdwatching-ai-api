@@ -35,6 +35,7 @@ class VoiceChatService {
     }, async (trace) => {
       const { transcript } = await audioService.transcribe(audioUpload, {
         parentTraceId: trace.id,
+        userId: context.authUser?.id,
       });
       const normalizedTranscript = assertNonEmptyText(
         transcript,
@@ -68,6 +69,7 @@ class VoiceChatService {
       );
       const speech = await audioService.synthesizeSpeech({ text: answer }, {
         parentTraceId: trace.id,
+        userId: context.authUser?.id,
       });
       const storedAudio = await voiceChatAudioStorage.uploadSpeechResponse(speech);
 

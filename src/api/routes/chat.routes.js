@@ -5,6 +5,7 @@ import { aiRateLimit, visitorAiRateLimit } from '../middleware/rateLimit.middlew
 import validate from '../middleware/validate.middleware.js';
 import { asyncHandler } from '../../utils/async.utils.js';
 import { validateChatBody } from '../validators/chat.validator.js';
+import { validateChatQuota } from '../validators/usage.validator.js';
 
 const router = express.Router();
 const roleAwareAiRateLimit = (req, res, next) => (
@@ -16,6 +17,7 @@ router.post(
   optionalAuth,
   roleAwareAiRateLimit,
   validate(validateChatBody),
+  validateChatQuota,
   chatController.handleStreamChat.bind(chatController)
 );
 router.get('/latest', requireAuth, asyncHandler(chatController.handleGetLatestConversation.bind(chatController)));

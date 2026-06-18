@@ -5,7 +5,7 @@ AI-agent entry point for the Birdwatching AI API. Read this file first, then fol
 ## What This Is
 This repository is a Node.js backend for Costa Rica birdwatching assistance, split into separate HTTP API and BullMQ worker entrypoints. It supports:
 - conversational chat with short-term PostgreSQL memory
-- PostgreSQL-backed RAG over ingested `src/ai/enrichment/data` documents using pgvector
+- PostgreSQL-backed RAG over ingested `src/ingestion/data` documents using pgvector
 - reusable external bird data clients for eBird, iNaturalist, and Xeno-canto ingestion jobs
 - media file lookup for relative bird media keys through CloudFront or `GET /files/:folderName/:filename`
 - public homepage content for hero media, featured tours, bird highlights, and transportation add-ons
@@ -17,6 +17,8 @@ This repository is a Node.js backend for Costa Rica birdwatching assistance, spl
 - AI evaluation datasets, scorers, runners, prompt regression comparison, LangSmith-compatible evaluation reporting, and dashboard summaries
 - normalized JSON responses and centralized error handling
 - email/password authentication with bcrypt password hashes and JWT-protected AI routes
+- authenticated display-name updates and S3-backed user profile image uploads
+- provider-agnostic subscription billing with Stripe as the first hosted checkout, webhook, and billing management adapter for testing/development
 - Railway-oriented deployment with environment-driven configuration for separate API and worker services
 
 ## Source Of Truth Map
@@ -38,10 +40,10 @@ The app uses a controller-service-query split:
 - `src/api/controllers/*` extracts request data, logs request metadata, and returns response envelopes.
 - `src/services/*` owns orchestration, AI calls, memory construction, and persistence decisions.
 - `src/db/queries/*` owns parameterized calls to PostgreSQL functions through `src/db/pool.js`.
-- `src/db/vector` and `src/ai/enrichment` own durable RAG storage, search, enrichment, and chunking.
+- `src/db/vector` owns pgvector storage, `src/ai/services` owns retrieval/chunking/embedding orchestration, and `src/ingestion` owns source exports and normalized bird data.
 - `src/cache/` owns Redis client creation and cache abstractions used by AI response, retrieval, and embedding flows.
 - `src/queues/` owns BullMQ queue registration, producers, and shared queue configuration used by the API and workers.
-- `src/ai/enrichment/` owns provider HTTP clients, export orchestration, normalized enrichment data, and chunking for bird data ingestion.
+- `src/ingestion/` owns provider HTTP clients, export orchestration, normalized bird data, and ingestion source preparation.
 - `src/api/routes/media.routes.js` owns CloudFront media URL creation for relative media keys; `src/storage/` remains for S3 uploads and object checks used by ingestion jobs.
 - `src/ai/*` owns OpenAI client calls, prompt assets, structured schemas, and chat tool adapters.
 - `src/evaluations/` owns AI evaluation datasets, scoring utilities, runners, LangSmith-compatible reporting, and dashboard summaries. It is offline evaluation infrastructure, not runtime prompt logic.
@@ -89,6 +91,8 @@ GET /chat/latest
 - Security headers, CORS protection, and request sanitization are applied through `src/api/middleware/security.middleware.js`; CORS uses `CORS_ORIGINS`.
 - Rate limiting is an in-memory per-IP bucket: 60 requests per minute.
 - `POST /auth/signup`, `POST /auth/login`, `POST /auth/refresh`, and `POST /auth/logout` are public; login/signup issue access tokens plus DB-backed rotating refresh tokens, refresh rotates sessions, and logout revokes the supplied refresh token.
+- `PATCH /auth/profile` and `POST /auth/profile-image` require JWT bearer auth and update only the current user. Profile image uploads accept raw JPEG, PNG, or WebP bytes up to 5 MB, store S3 objects under `user-profile-images/`, and return a safe `imageUrl`.
+- `POST /billing/checkout`, `POST /billing/portal`, and `GET /billing/usage` require JWT bearer auth. Billing endpoints accept an optional provider name, default to `BILLING_DEFAULT_PROVIDER`, and return provider-neutral payment or management URLs. Provider customer/subscription IDs are resolved from the authenticated user's stored subscription and are never accepted from the client.
 - `POST /chat` accepts JWT-authenticated customer/admin users or unauthenticated visitor requests, while `GET /chat/latest` requires JWT bearer auth through `requireAuth`.
 - `POST /birds/identify` requires JWT bearer auth. JSON URL requests preserve the existing `{ imageUrl }` flow; raw JPEG, PNG, WebP, or GIF uploads are capped at 10 MB, uploaded to S3 under `bird-identification/`, converted to a CloudFront URL, and passed into the same image-analysis pipeline. The multimodal bird identification pipeline now returns `status`, `bestMatch`, `candidates`, rich `imageAnalysis`, compatibility `imageObservations`, and conservative `notes`; confidence below `0.55` is `uncertain`, and below `0.40` is `unknown`.
 - Visitor chat is limited to bird-related questions, cannot execute tour/reservation tools, and uses a stricter in-memory IP limit.
@@ -102,8 +106,8 @@ GET /chat/latest
 - RAG retrieval can read/write Redis cache entries before hitting pgvector. PostgreSQL remains the source of truth, and failed cache operations do not fail chat.
 - Bird RAG metadata may include `meta.birdMatches[].media` with absolute URLs or relative object keys such as `/photos/123_medium.jpg`, `songs/123.mp3`, or `sonograms/123_grey-small.png`. Relative keys are intentionally not public static paths; the UI resolves them through CloudFront when configured or through `GET /files/:folderName/:filename`, which returns a normalized envelope containing `data.url`.
 - `GET /files/:folderName/:filename` normalizes and validates path segments, then returns a CloudFront URL from `CLOUDFRONT_BASE_URL`; it no longer creates S3 presigned URLs.
-- External bird data clients live under `src/ai/enrichment/clients/` and export orchestration lives in `src/ai/enrichment/services/birds.enrichment.service.js`. They are intended for ingestion jobs, not request handlers, and share a configurable rate limiter capped at 40 requests per minute.
-- `npm run enrich -- birds` exports provider JSON into `src/ai/enrichment/data`, applies per-resource freshness windows, regenerates `birds.json`, persists normalized documents, and queues BullMQ embedding jobs. The embedding worker chunks stored document content, generates embeddings, and writes pgvector chunks idempotently. eBird recent observations are fetched per species code from the Costa Rica species list and written incrementally as keyed `{ locations, lstDt }` summaries.
+- External bird data clients live under `src/ingestion/clients/` and export orchestration lives in `src/ingestion/services/birdsIngest.service.js`. They are intended for ingestion jobs, not request handlers, and share a configurable rate limiter capped at 40 requests per minute.
+- `npm run enrich -- birds` exports provider JSON into `src/ingestion/data`, applies per-resource freshness windows, regenerates `birds.json`, persists normalized documents, and queues BullMQ embedding jobs. The embedding worker chunks stored document content, generates embeddings, and writes pgvector chunks idempotently. eBird recent observations are fetched per species code from the Costa Rica species list and written incrementally as keyed `{ locations, lstDt }` summaries.
 - `POST /ingestions` accepts authenticated normalized JSON documents or raw text uploads, persists the source payload, queues an ingestion job, and returns processing status. The ingestion worker loads the stored payload, runs the existing ingestion service, and queues embedding jobs; `GET /ingestions/:id` returns status metadata without source document contents.
 - BullMQ AI jobs use configurable exponential backoff through `BULLMQ_JOB_ATTEMPTS` and `BULLMQ_JOB_BACKOFF_DELAY_MS`. Exhausted jobs are copied to a sanitized dead-letter queue when `BULLMQ_DLQ_ENABLED` is not `false`; DLQ payloads must not include raw documents, prompts, image URLs, provider responses, secrets, or PII. Malformed job payloads should use `src/jobs/jobErrors.js` so BullMQ does not retry non-retryable validation failures.
 - BullMQ queue registration, enqueueing, worker execution, retry scheduling, failures, and DLQ handoff are traced through the LangSmith-compatible background job tracing adapter without exporting raw payloads or retryable provider error details.
@@ -113,7 +117,7 @@ GET /chat/latest
 - `GET /chat/latest` loads the most recent conversation for `req.user.id` before the frontend creates a new conversation ID. If that conversation has a reservation, the response includes frontend-safe `meta.reservation` details plus chat-level booking state such as `meta.participants` and `meta.selectedTransportation`. Chat requests can include `customerContext` with name, email, and itinerary dates plus `conversationContext.recentAssistantMetadata` for continuing guided booking flows. For authenticated requests, the JWT user email is authoritative and the JWT user name is preferred when available.
 - Reservation creation can include optional `customerEmail`, `discountCode`, itinerary dates, and selected transportation metadata; discounts are calculated in `reservation.service.js` and the tour total is computed inside the PostgreSQL function.
 - Database writes for chat memory are best-effort; save failures are logged but do not fail the chat response.
-- Authenticated chat requests persist OpenAI prompt tokens, completion tokens, and estimated cost to `usage_logs` on a best-effort basis after the streamed response completes.
+- Authenticated chat requests persist OpenAI prompt tokens, completion tokens, estimated cost, compact model usage, and LangSmith-compatible trace correlation to provider-neutral `usage_events`, plus the legacy `usage_logs` row on a best-effort basis after the streamed response completes.
 - AI evaluation data lives under `src/evaluations/datasets/`. `golden-dataset.json` contains 100 representative bird identification, tour recommendation, reservation, RAG, and edge-case queries with expected behaviors and criteria; `ai-eval-baseline.json` stores the baseline used by CI.
 - Evaluation scorers measure response relevance, grounding, correctness, completeness, retrieval chunk relevance, retrieval precision/recall, grounding quality, and tool correctness. Prompt regression runners compare prompt quality, latency, token usage, estimated cost, retrieval quality, and quality-per-dollar without storing raw prompt text.
 - LangSmith-compatible evaluation helpers model the flow as `Run -> Evaluation -> Score -> Comparison`; dashboard helpers summarize quality trends, regression detection, and retrieval performance using safe numeric metadata.
@@ -125,7 +129,7 @@ GET /chat/latest
 - Generated voice-chat MP3 responses are uploaded to S3 under `voice-chat/<uuid>.mp3`; the API returns a relative `/files/voice-chat/...` URL that clients resolve through CloudFront-backed media delivery.
 - Voice chat creates one LangSmith-compatible parent trace with child spans for transcription, conversation context/RAG retrieval, agent execution/tool work, final chat response, and speech generation when tracing is enabled.
 - Cache lookups and writes are traced as LangSmith-compatible cache/tool spans with hit, miss, skipped, avoided-LLM-call, hit-rate, and savings metadata when tracing is enabled.
-- User authentication uses `users`, DB-backed refresh sessions use `refresh_tokens`, and authenticated token/cost accounting uses `usage_logs`.
+- User authentication uses `users`, DB-backed refresh sessions use `refresh_tokens`, authenticated token/cost accounting uses `usage_logs`, and subscriptions use provider-neutral `user_subscriptions` plus optional `plan_provider_mappings`.
 - Reservation persistence uses `tours` and `reservations` plus PostgreSQL functions from `003_create_tour_reservations.sql`; transaction, row locking, derived tour location metadata, and authenticated `user_id` persistence live in database functions after ownership migration. Chat-level booking metadata such as transportation selections is stored in `conversations.metadata`.
 
 ## Testing

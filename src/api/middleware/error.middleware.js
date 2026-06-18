@@ -8,9 +8,10 @@ export default function errorMiddleware(err, req, res, next) {
 
   const status = err.status || 500;
   const isServerError = status >= 500;
+  const shouldMask = isServerError && !err.expose;
   const error = {
-    message: isServerError ? 'Internal server error' : err.message || 'Unexpected error',
-    code: isServerError ? 'INTERNAL_SERVER_ERROR' : err.code || 'REQUEST_ERROR',
+    message: shouldMask ? 'Internal server error' : err.message || 'Unexpected error',
+    code: shouldMask ? 'INTERNAL_SERVER_ERROR' : err.code || 'REQUEST_ERROR',
   };
 
   if (err.details) {

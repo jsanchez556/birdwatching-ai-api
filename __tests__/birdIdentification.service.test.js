@@ -302,9 +302,10 @@ describe('birdIdentificationService', () => {
 
     expect(mockAnalyze).toHaveBeenCalledWith({
       imageUrl: 'https://example.test/bird.jpg',
-      metadata: {
+      metadata: expect.objectContaining({
         parentTraceId: 'bird-identification-parent-trace',
-      },
+        userId: '7',
+      }),
     });
     expect(mockTraceBirdIdentificationPipeline).toHaveBeenCalledWith(
       'bird_identification_multimodal_pipeline',
@@ -370,13 +371,14 @@ describe('birdIdentificationService', () => {
         role: 'user',
         content: expect.stringContaining('likely birds: Resplendent Quetzal'),
       },
-    ], expect.stringContaining('visible traits: colors: green, red; beak: yellow'), {
+    ], expect.stringContaining('visible traits: colors: green, red; beak: yellow'), expect.objectContaining({
       parentTraceId: 'bird-identification-parent-trace',
+      userId: '7',
       topK: 5,
       filters: {
         documentType: 'bird_profile',
       },
-    });
+    }));
     expect(mockBuildContext.mock.calls[0][1]).toContain('bill shape: unknown');
     expect(mockBuildContext.mock.calls[0][1]).toContain('underparts: red');
     expect(mockCreateHistory).toHaveBeenCalledWith({
@@ -614,9 +616,10 @@ describe('birdIdentificationService', () => {
 
     expect(mockAnalyze).toHaveBeenCalledWith({
       imageUrl: 'https://example.test/multimodal-quetzal.jpg',
-      metadata: {
+      metadata: expect.objectContaining({
         parentTraceId: 'bird-identification-parent-trace',
-      },
+        userId: 7,
+      }),
     });
     expect(mockIdentify).toHaveBeenCalledWith(expect.objectContaining({
       imageAnalysis: expect.objectContaining({
@@ -627,13 +630,14 @@ describe('birdIdentificationService', () => {
     expect(mockBuildContext).toHaveBeenCalledWith(
       expect.any(Array),
       expect.stringContaining('likely birds: Resplendent Quetzal, Golden-browed Chlorophonia'),
-      {
+      expect.objectContaining({
         parentTraceId: 'bird-identification-parent-trace',
+        userId: 7,
         topK: 5,
         filters: {
           documentType: 'bird_profile',
         },
-      }
+      })
     );
     expect(mockBuildContext.mock.calls[0][1]).toContain('beak color interpretation: orange/yellow ambiguity');
     expect(result.candidates).toEqual([

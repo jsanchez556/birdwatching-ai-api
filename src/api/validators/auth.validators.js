@@ -123,3 +123,20 @@ export function validateLogoutBody(req) {
     },
   };
 }
+
+export function validateProfileBody(req) {
+  const errors = [];
+  const normalizedName = normalizeName(req.body.name, errors);
+
+  if (normalizedName === undefined) {
+    errors.push('Name is required');
+  }
+
+  return {
+    message: 'Invalid profile payload',
+    errors,
+    value: {
+      name: normalizedName,
+    },
+  };
+}

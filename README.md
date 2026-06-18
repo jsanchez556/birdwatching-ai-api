@@ -48,6 +48,8 @@ Common optional variables:
 - `CLOUDFRONT_BASE_URL` enables public CDN media URLs for relative object keys
 - `S3_REGION`, `S3_BUCKET_NAME`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` enable media asset uploads to the S3 bucket
 - `BULLMQ_JOB_ATTEMPTS`, `BULLMQ_JOB_BACKOFF_DELAY_MS`, `BULLMQ_WORKER_CONCURRENCY`, and BullMQ cleanup variables tune background job retry and retention behavior
+- `BILLING_PROVIDERS` and `BILLING_DEFAULT_PROVIDER` select enabled billing adapters; Stripe is currently the concrete adapter for hosted checkout and billing management in development/testing
+- `STRIPE_SECRET_KEY`, `STRIPE_PRO_PRICE_ID`, and `STRIPE_WEBHOOK_SECRET` configure the Stripe billing provider adapter
 - `LANGCHAIN_TRACING`, `LANGCHAIN_PROJECT`, and `LANGCHAIN_API_KEY` enable sanitized LangSmith trace export
 
 Run database migrations before using chat memory:
@@ -69,11 +71,36 @@ psql "$DATABASE_URL" -f src/db/migrations/014_create_tour_cart.sql
 psql "$DATABASE_URL" -f src/db/migrations/015_reservations_refactor.sql
 psql "$DATABASE_URL" -f src/db/migrations/016_create_bird_identifications.sql
 psql "$DATABASE_URL" -f src/db/migrations/017_create_jobs.sql
+psql "$DATABASE_URL" -f src/db/migrations/018_create_subscription_plans.sql
+psql "$DATABASE_URL" -f src/db/migrations/019_add_user_profile_image.sql
 ```
+
+## Billing & Monetization
+Billing plans, quotas, usage events, and subscription status are internal domain
+concepts. Provider adapters translate hosted payment concepts into
+`billing_provider`, `provider_customer_id`, `provider_subscription_id`, and
+`provider_price_id` values on `user_subscriptions`. `plan_provider_mappings`
+can map internal plans such as `PRO` to provider-specific product, price, SKU,
+or equivalent identifiers when adding providers such as TiloPay.
+
+- Subscription Plans: internal plans define the product tiers, entitlement
+  names, and billing-provider mappings used when a user upgrades or changes
+  their subscription.
+- Usage Metering: authenticated AI requests persist provider-neutral usage
+  events with token, cost, model, and trace metadata for downstream reporting.
+- Quota Enforcement: plan quotas should be checked before billable AI features
+  run so over-limit users receive a controlled API response instead of
+  incurring unbounded usage.
+- Cost Governance: model usage, estimated cost, cache savings, and evaluation
+  quality-per-dollar metrics give operators a way to manage AI spend without
+  exposing provider internals to clients.
+- Stripe Integration: Stripe is the first hosted checkout, webhook, and billing
+  management adapter; it remains behind the provider abstraction so additional
+  payment providers can be added without changing the public billing domain.
 
 ## Bird Knowledge Base
 Chat responses use a PostgreSQL-backed RAG flow with `pgvector`. Documents must
-be ingested from `src/ai/enrichment/data` before retrieval can return RAG context. The
+be ingested from `src/ingestion/data` before retrieval can return RAG context. The
 ingestion command parses normalized JSON datasets, chunks each document, embeds
 chunks with the OpenAI embeddings API, and persists documents, chunks, metadata,
 and vectors in PostgreSQL.
@@ -95,10 +122,10 @@ structured `metadata`. Media URLs stay in metadata; generated embeddings are
 stored only in PostgreSQL.
 
 Reusable external API clients for future ingestion jobs live in
-`src/ai/enrichment/clients/`. eBird fetches Costa Rica species codes and recent
+`src/ingestion/clients/`. eBird fetches Costa Rica species codes and recent
 observations, iNaturalist searches taxa by name with one request, and
 Xeno-canto fetches Costa Rica bird song recordings across all available pages by
-default. `src/ai/enrichment/services/birds.enrichment.service.js` orchestrates provider exports, while
+default. `src/ingestion/services/birdsIngest.service.js` orchestrates provider exports, while
 `src/utils/rateLimiter.js` keeps calls at or below 40 requests per minute.
 Fetched provider data should be normalized before passing documents into the
 existing vector ingestion service.
@@ -123,7 +150,7 @@ with `data.url`, then render that URL. The endpoint requires
 may still be returned and can be rendered directly by clients.
 
 The bird enrichment pipeline writes external provider responses to
-`src/ai/enrichment/data` before generating `birds.json`. Run:
+`src/ingestion/data` before generating `birds.json`. Run:
 ```bash
 npm run enrich -- birds
 ```
@@ -138,7 +165,7 @@ that normalized dataset into the vector store. Taxonomy exports still fetch
 missing species in chunks of 50 codes and preserve existing keyed records; recent
 observations are written incrementally after each species.
 
-Semantic retrieval runs through `src/ai/enrichment/services/retrieval.service.js` and
+Semantic retrieval runs through `src/ai/services/retrieval.service.js` and
 `src/db/vector/vector.repository.js`, with optional metadata filters for fields
 such as source, category, document type, locale, tags, and JSON metadata. If
 PostgreSQL or `pgvector` is unavailable, chat continues without RAG context.
@@ -222,6 +249,11 @@ npm test       # Jest ESM test runner
 - `POST /auth/login`
 - `POST /auth/refresh`
 - `POST /auth/logout`
+- `POST /billing/checkout`
+- `POST /billing/portal`
+- `GET /billing/usage`
+- `POST /billing/webhook`
+- `POST /billing/webhook/:provider`
 - `GET /cart`
 - `POST /cart/items`
 - `PATCH /cart/items/:itemId`

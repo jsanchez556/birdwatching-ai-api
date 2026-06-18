@@ -6,6 +6,7 @@ import { aiRateLimit, visitorAiRateLimit } from '../middleware/rateLimit.middlew
 import { asyncHandler } from '../../utils/async.utils.js';
 import HttpError from '../../utils/httpError.js';
 import { validateAudioUpload } from '../validators/audio.validator.js';
+import { validateChatQuota } from '../validators/usage.validator.js';
 import { validateVoiceChatContext } from '../validators/voiceChat.validator.js';
 
 const router = express.Router();
@@ -37,6 +38,7 @@ router.post(
   roleAwareAiRateLimit,
   audioUpload,
   validateVoiceChatRequest,
+  validateChatQuota,
   asyncHandler(voiceChatController.handleVoiceChat.bind(voiceChatController))
 );
 

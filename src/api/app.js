@@ -16,6 +16,7 @@ app.set('trust proxy', 1);
 
 app.use(securityHeaders);
 app.use(corsProtection);
+app.use('/billing/webhook', express.raw({ type: 'application/json', limit: '64kb' }));
 app.use(express.json({ limit: '64kb' }));
 app.use(sanitizeRequest);
 app.use((req, res, next) => {

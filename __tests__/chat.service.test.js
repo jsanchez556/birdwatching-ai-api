@@ -569,11 +569,31 @@ describe('ChatService streaming orchestration', () => {
     const openAiUsage = {
       promptTokens: 1000,
       completionTokens: 250,
+      totalTokens: 1250,
       estimatedCostUsd: 0.005,
       hasEstimatedCost: true,
+      modelUsage: [
+        {
+          model: 'gpt-4o-mini',
+          promptTokens: 1000,
+          completionTokens: 250,
+          totalTokens: 1250,
+          estimatedCostUsd: 0.005,
+        },
+      ],
+    };
+    const usageRecord = {
+      traceMetadata: {
+        billingUsageEventId: 'usage-1',
+        billingFeature: 'chat',
+        requestCostUsd: 0.005,
+        requestTokens: 1250,
+        modelUsage: openAiUsage.modelUsage,
+      },
     };
 
     mockBuildConversationContext.mockResolvedValue(conversationMessages);
+    mockRecordOpenAiUsage.mockResolvedValue(usageRecord);
     mockStreamResponseWithTools.mockImplementation(async (messages, metadata) => {
       metadata.openAiUsage = openAiUsage;
       return 'Quetzals favor cloud forest habitat.';
@@ -593,7 +613,10 @@ describe('ChatService streaming orchestration', () => {
       }
     );
 
-    expect(mockRecordOpenAiUsage).toHaveBeenCalledWith('7', openAiUsage);
+    expect(mockRecordOpenAiUsage).toHaveBeenCalledWith('7', openAiUsage, {
+      usageEventId: undefined,
+      traceId: expect.any(String),
+    });
   });
 
   it('blocks visitor reservation requests before AI orchestration', async () => {

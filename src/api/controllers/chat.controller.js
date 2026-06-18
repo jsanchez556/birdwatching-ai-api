@@ -55,6 +55,7 @@ class ChatController {
           customerContext,
           conversationContext,
           authUser: req.user,
+          usageEventId: req.usageQuota?.usageEventId,
           role,
           responseMode,
         }

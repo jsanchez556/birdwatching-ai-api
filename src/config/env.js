@@ -30,6 +30,7 @@ const numericEnvKeys = [
   'BULLMQ_REMOVE_ON_FAIL_COUNT',
   'BULLMQ_WORKER_CONCURRENCY',
   'BIRD_IDENTIFICATION_JOB_STALL_TIMEOUT_MS',
+  'STRIPE_WEBHOOK_TOLERANCE_SECONDS',
 ];
 
 for (const key of numericEnvKeys) {
@@ -84,6 +85,11 @@ const headLineBirds = (process.env.HEAD_LINE_BIRDS || process.env.HOMEPAGE_BIRD_
   .map((name) => name.trim())
   .filter(Boolean);
 
+const billingProviders = (process.env.BILLING_PROVIDERS || 'stripe')
+  .split(',')
+  .map((provider) => provider.trim().toLowerCase())
+  .filter(Boolean);
+
 const env = {
   port: Number(process.env.PORT) || 3000,
   nodeEnv,
@@ -122,6 +128,24 @@ const env = {
     secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
   },
   adminEmail: process.env.ADMIN_EMAIL,
+  billing: {
+    defaultProvider: (process.env.BILLING_DEFAULT_PROVIDER || billingProviders[0] || 'stripe')
+      .trim()
+      .toLowerCase(),
+    providers: billingProviders,
+  },
+  stripe: {
+    secretKey: process.env.STRIPE_SECRET_KEY,
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+    proPriceId: process.env.STRIPE_PRO_PRICE_ID,
+    checkoutSuccessUrl: process.env.STRIPE_CHECKOUT_SUCCESS_URL,
+    checkoutCancelUrl: process.env.STRIPE_CHECKOUT_CANCEL_URL,
+    portalReturnUrl: process.env.STRIPE_PORTAL_RETURN_URL,
+    webhookToleranceSeconds: parsePositiveInteger(
+      process.env.STRIPE_WEBHOOK_TOLERANCE_SECONDS,
+      5 * 60
+    ),
+  },
   birdIdentificationJobStallTimeoutMs: parsePositiveInteger(
     process.env.BIRD_IDENTIFICATION_JOB_STALL_TIMEOUT_MS,
     5 * 60 * 1000

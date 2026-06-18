@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import request from 'supertest';
 
 const mockEnqueueIdentification = jest.fn();
+const mockReserveUsage = jest.fn();
 
 await jest.unstable_mockModule('../src/utils/logger.js', () => ({
   default: {
@@ -15,6 +16,16 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
 await jest.unstable_mockModule('../src/services/birdIdentificationJob.service.js', () => ({
   default: {
     enqueueIdentification: mockEnqueueIdentification,
+  },
+}));
+
+await jest.unstable_mockModule('../src/services/quota.service.js', () => ({
+  QUOTA_FEATURES: {
+    CHAT: 'chat',
+    IDENTIFICATION: 'identification',
+  },
+  default: {
+    reserveUsage: mockReserveUsage,
   },
 }));
 
@@ -33,6 +44,13 @@ function authHeader() {
 describe('bird identification endpoint', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockReserveUsage.mockResolvedValue({
+      allowed: true,
+      plan: 'FREE',
+      feature: 'identification',
+      used: 1,
+      max: 5,
+    });
   });
 
   it('queues the image URL for async identification and returns a job id', async () => {
@@ -88,6 +106,40 @@ describe('bird identification endpoint', () => {
       .send({ imageUrl: 'https://example.test/bird.jpg' });
 
     expect(res.statusCode).toBe(401);
+    expect(mockEnqueueIdentification).not.toHaveBeenCalled();
+  });
+
+  it('returns 429 before enqueueing when daily identification quota is exceeded', async () => {
+    const quotaError = new Error('Daily quota exceeded');
+    quotaError.status = 429;
+    quotaError.code = 'QUOTA_EXCEEDED';
+    quotaError.details = {
+      plan: 'FREE',
+      feature: 'identification',
+      used: 5,
+      max: 5,
+    };
+    mockReserveUsage.mockRejectedValue(quotaError);
+
+    const res = await request(app)
+      .post('/birds/identify')
+      .set('Authorization', authHeader())
+      .send({ imageUrl: 'https://example.test/bird.jpg' });
+
+    expect(res.statusCode).toBe(429);
+    expect(res.body).toEqual({
+      success: false,
+      error: {
+        code: 'QUOTA_EXCEEDED',
+        message: 'Daily quota exceeded',
+        details: {
+          plan: 'FREE',
+          feature: 'identification',
+          used: 5,
+          max: 5,
+        },
+      },
+    });
     expect(mockEnqueueIdentification).not.toHaveBeenCalled();
   });
 

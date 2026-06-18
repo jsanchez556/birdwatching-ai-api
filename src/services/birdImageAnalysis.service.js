@@ -10,6 +10,8 @@ import { traceLlmCall } from '../tracing/aiTracing.middleware.js';
 import { asyncRetry } from '../utils/async.utils.js';
 import HttpError from '../utils/httpError.js';
 import logger from '../utils/logger.js';
+import { getCompletionUsageSummary } from '../ai/evaluations/token.usage.js';
+import usageService, { USAGE_FEATURES, buildModelUsageEntry } from './usage.service.js';
 
 const DEFAULT_IMAGE_ANALYSIS = {
   dominantColors: [],
@@ -189,6 +191,23 @@ class BirdImageAnalysisService {
       colorCount: analysis.dominantColors.length,
       fieldMarkCount: analysis.fieldMarks.length,
       confidence: analysis.confidence,
+    });
+
+    const usage = getCompletionUsageSummary(response);
+    await usageService.recordUsageEvent({
+      userId: metadata.userId,
+      feature: USAGE_FEATURES.IMAGE_ANALYSIS,
+      tokens: usage.totalTokens,
+      estimatedCost: usage.estimatedCostUsd,
+      traceId: metadata.parentTraceId,
+      modelUsage: [
+        buildModelUsageEntry(response.model || env.openAiModel, {
+          promptTokens: usage.promptTokens,
+          completionTokens: usage.completionTokens,
+          totalTokens: usage.totalTokens,
+          estimatedCostUsd: usage.estimatedCostUsd,
+        }),
+      ],
     });
 
     return {

@@ -5,7 +5,8 @@ import logger from '../../utils/logger.js';
 import { buildHashKey } from '../../utils/hash.utils.js';
 import { normalizeWhitespace } from '../../utils/text.utils.js';
 import { availableTools, executeToolCall } from '../tools/index.js';
-import { addCompletionUsage } from '../evaluations/token.usage.js';
+import { addCompletionUsage, estimateCost } from '../evaluations/token.usage.js';
+import usageService, { USAGE_FEATURES, buildModelUsageEntry } from '../../services/usage.service.js';
 import { traceLlmCall } from '../../tracing/aiTracing.middleware.js';
 import aiTelemetry from '../../monitoring/aiTelemetry.js';
 import createResponseCache from '../../cache/responseCache.js';
@@ -217,7 +218,7 @@ class OpenAIClient {
     return this.streamChatCompletion(conversation, options);
   }
 
-  async generateEmbedding(input) {
+  async generateEmbedding(input, options = {}) {
     const inputs = Array.isArray(input) ? input : [input];
     const inputCount = inputs.length;
     const inputKind = Array.isArray(input) ? 'array' : 'single';
@@ -248,6 +249,7 @@ class OpenAIClient {
     });
 
     const embeddingResponse = await traceLlmCall('embedding_generation', {
+      parentTraceId: options.parentTraceId,
       model: this.embeddingModel,
       inputCount: missingInputs.length,
     }, () => asyncRetry(() => this.client.embeddings.create({
@@ -271,6 +273,28 @@ class OpenAIClient {
       promptTokens: embeddingResponse.usage?.prompt_tokens,
       totalTokens: embeddingResponse.usage?.total_tokens,
       inputCount: missingInputs.length,
+    });
+
+    await usageService.recordUsageEvent({
+      userId: options.userId,
+      feature: USAGE_FEATURES.EMBEDDING,
+      tokens: embeddingResponse.usage?.total_tokens || embeddingResponse.usage?.prompt_tokens,
+      estimatedCost: estimateCost(embeddingResponse.model || this.embeddingModel, {
+        promptTokens: embeddingResponse.usage?.prompt_tokens || embeddingResponse.usage?.total_tokens || 0,
+        completionTokens: 0,
+      }),
+      traceId: options.parentTraceId,
+      modelUsage: [
+        buildModelUsageEntry(embeddingResponse.model || this.embeddingModel, {
+          promptTokens: embeddingResponse.usage?.prompt_tokens || embeddingResponse.usage?.total_tokens || 0,
+          completionTokens: 0,
+          totalTokens: embeddingResponse.usage?.total_tokens || embeddingResponse.usage?.prompt_tokens,
+          estimatedCostUsd: estimateCost(embeddingResponse.model || this.embeddingModel, {
+            promptTokens: embeddingResponse.usage?.prompt_tokens || embeddingResponse.usage?.total_tokens || 0,
+            completionTokens: 0,
+          }),
+        }),
+      ],
     });
 
     const generatedEmbeddings = [...embeddingResponse.data]

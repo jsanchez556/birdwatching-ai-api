@@ -6,6 +6,7 @@ import { aiRateLimit } from '../middleware/rateLimit.middleware.js';
 import { asyncHandler } from '../../utils/async.utils.js';
 import HttpError from '../../utils/httpError.js';
 import { validateBirdIdentificationBody } from '../validators/birdIdentification.validator.js';
+import { validateIdentificationQuota } from '../validators/usage.validator.js';
 
 const router = express.Router();
 
@@ -34,6 +35,7 @@ router.post(
   aiRateLimit,
   imageUpload,
   validateBirdIdentificationRequest,
+  validateIdentificationQuota,
   asyncHandler(birdIdentificationController.handleIdentifyBird.bind(birdIdentificationController))
 );
 
@@ -43,6 +45,7 @@ router.post(
   aiRateLimit,
   imageUpload,
   validateBirdIdentificationRequest,
+  validateIdentificationQuota,
   asyncHandler(birdIdentificationController.handleIdentifyBird.bind(birdIdentificationController))
 );
 

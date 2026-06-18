@@ -56,6 +56,15 @@ Optional:
 - `SEMANTIC_CACHE_TTL_SECONDS`, defaults to `300`
 - `SEMANTIC_CACHE_SIMILARITY_THRESHOLD`, defaults to `0.92`
 - `SEMANTIC_CACHE_MAX_ENTRIES`, defaults to `100`
+- `BILLING_PROVIDERS`, comma-separated enabled billing providers; defaults to `stripe`
+- `BILLING_DEFAULT_PROVIDER`, billing provider used when the request body or webhook route does not name one; defaults to the first enabled provider
+- `STRIPE_SECRET_KEY`: Stripe secret key used by the Stripe billing adapter to create Checkout Sessions
+- `STRIPE_PRO_PRICE_ID`: Stripe recurring price ID mapped to the internal PRO plan for development/testing
+- `STRIPE_WEBHOOK_SECRET`: Stripe webhook signing secret for `/billing/webhook` or `/billing/webhook/stripe`
+- `STRIPE_CHECKOUT_SUCCESS_URL`: optional hosted Checkout success redirect URL
+- `STRIPE_CHECKOUT_CANCEL_URL`: optional hosted Checkout cancellation redirect URL
+- `STRIPE_PORTAL_RETURN_URL`: optional Stripe Customer Portal return URL; defaults to the request origin with `?billing=portal`
+- `STRIPE_WEBHOOK_TOLERANCE_SECONDS`, defaults to `300`
 - `EMBEDDING_CACHE_TTL_SECONDS`, defaults to `86400`
 - `LANGCHAIN_API_KEY`, enables LangSmith trace export when set with `LANGCHAIN_TRACING=true`
 - `LANGCHAIN_TRACING`, set to `true` to enable LangSmith-compatible tracing
@@ -88,6 +97,19 @@ Optional:
 
 Do not commit `.env` files. The local `.gitignore` excludes them.
 
+## Billing Providers
+Subscription plans, usage tracking, and quota enforcement are provider-neutral.
+`user_subscriptions` stores `billing_provider`, provider customer/subscription
+IDs, provider price IDs, and local status. `plan_provider_mappings` can map
+internal plans to provider product IDs, prices, SKUs, or equivalent identifiers.
+
+Stripe is currently the concrete provider adapter. Enable and configure the
+Stripe Customer Portal in the Stripe Dashboard before using `POST
+/billing/portal` with `provider: "stripe"`. To add TiloPay or another provider,
+add a provider adapter under `src/providers/billing/`, register it in the
+provider index, add provider-specific environment variables, and translate
+provider callbacks into the normalized subscription sync shape.
+
 ## PostgreSQL
 The app expects tables and SQL helper functions from:
 ```text
@@ -108,21 +130,24 @@ src/db/migrations/014_create_tour_cart.sql
 src/db/migrations/015_reservations_refactor.sql
 src/db/migrations/016_create_bird_identifications.sql
 src/db/migrations/017_create_jobs.sql
+src/db/migrations/018_create_subscription_plans.sql
+src/db/migrations/019_add_user_profile_image.sql
 ```
 
-Run migrations in order with `psql`, Railway shell, or your deployment platform's database tooling before using chat memory, reservations, users, refresh-token sessions, usage logging, tour-location metadata, cart/reservation entry flows, bird-identification records, job polling, or pgvector-backed RAG.
+Run migrations in order with `psql`, Railway shell, or your deployment platform's database tooling before using chat memory, reservations, users, refresh-token sessions, usage logging, tour-location metadata, cart/reservation entry flows, bird-identification records, job polling, subscription plans, provider billing, profile images, or pgvector-backed RAG.
 
 Production database connections use SSL with `rejectUnauthorized: false`.
 
 ## Runtime Data
-- Bird RAG source data lives under `src/ai/enrichment/data`; run `npm run enrich -- birds` after vector migrations to refresh provider data, generate `birds.json`, and ingest it.
-- External bird data clients for eBird, iNaturalist, and Xeno-canto live under `src/ai/enrichment/`. They are reusable building blocks for ingestion jobs and are rate-limited to no more than 40 requests per minute before data is normalized for the vector store.
-- External provider JSON exports are written to `src/ai/enrichment/data` by `npm run enrich -- birds`. The eBird taxonomy export is incremental from the refreshed species list, eBird recent observations are fetched per species code from that list and written incrementally as a keyed `{ locations, lstDt }` summary. The enrich pipeline refreshes the species list monthly, taxonomy and Xeno-canto songs every six months, recent observations weekly, and iNaturalist images monthly.
+- Bird RAG source data lives under `src/ingestion/data`; run `npm run enrich -- birds` after vector migrations to refresh provider data, generate `birds.json`, and ingest it.
+- External bird data clients for eBird, iNaturalist, wiki, and Xeno-canto live under `src/ingestion/clients/`. They are reusable building blocks for ingestion jobs and are rate-limited to no more than 40 requests per minute before data is normalized for the vector store.
+- External provider JSON exports are written to `src/ingestion/data` by `npm run enrich -- birds`. The eBird taxonomy export is incremental from the refreshed species list, eBird recent observations are fetched per species code from that list and written incrementally as a keyed `{ locations, lstDt }` summary. The enrich pipeline refreshes the species list monthly, taxonomy and Xeno-canto songs every six months, recent observations weekly, and iNaturalist images monthly.
 - RAG retrieval reads PostgreSQL `knowledge_documents` and `knowledge_chunks`; chat requests do not ingest files or write vectors.
 - Redis caches AI responses, semantic response candidates, embedding results, and RAG retrieval results when reachable. Cache misses or Redis errors fall back to OpenAI or pgvector, and PostgreSQL remains the source of truth for RAG.
 - Tour seed data begins in `003_create_tour_reservations.sql`; `011_tours_seed_data.sql` adds tour `node_id`, coordinates, start/end dates, and the `country`/`zone`/`node`/`birds`/`birds_by_node` reference tables for Costa Rica birding geography and target species.
 - Tour reservation availability is durable PostgreSQL state and is updated transactionally by PostgreSQL functions.
 - Voice-chat generated speech responses are stored as MP3 objects under the S3 `voice-chat/` prefix. `POST /voice-chat` returns a relative `/files/voice-chat/...` URL, and `GET /files/:folderName/:filename` turns that relative key into a CloudFront URL using `CLOUDFRONT_BASE_URL`.
+- User profile images are stored as JPEG, PNG, or WebP objects under the S3 `user-profile-images/` prefix. Uploads are capped at 5 MB and the API persists only the object key.
 
 ## AI Observability
 Centralized AI telemetry lives under `src/observability`, `src/tracing`, and `src/monitoring`.

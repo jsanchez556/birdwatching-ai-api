@@ -46,7 +46,7 @@ in this order:
 `rag.service.js` then uses the prompt builder to optionally inject a second
 `system` message immediately after the base system prompt. The retrieved context
 comes from PostgreSQL pgvector-backed knowledge chunks created by
-`npm run enrich -- birds`; source files live under `src/ai/enrichment/data` as normalized
+`npm run enrich -- birds`; source files live under `src/ingestion/data` as normalized
 JSON arrays. Retrieved sources can
 include similarity scores, locations, snippets, and document metadata. If
 retrieval or embedding fails, chat continues with the base messages and an empty

@@ -9,6 +9,7 @@ class VoiceChatController {
         ...req.voiceChatContext,
         clientIP: req.ip || req.connection.remoteAddress,
         authUser: req.user,
+        usageEventId: req.usageQuota?.usageEventId,
         parentTraceId: req.headers['x-ai-trace-id'],
       },
     });

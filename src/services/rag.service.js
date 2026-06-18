@@ -447,6 +447,8 @@ class RagService {
       minScore: options.minScore,
       minSemanticScore: options.minSemanticScore,
       maxChunksPerDocument: options.maxChunksPerDocument,
+      userId: options.userId,
+      parentTraceId: options.parentTraceId,
     };
     const cacheKey = buildRetrievalCacheKey(question, retrievalOptions);
     const cacheLookup = await traceCacheOperation('rag_retrieval_cache_lookup', {

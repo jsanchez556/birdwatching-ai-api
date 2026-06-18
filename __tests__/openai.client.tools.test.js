@@ -121,6 +121,14 @@ describe('OpenAIClient tool calling', () => {
       completionTokens: 370,
       totalTokens: 2570,
       hasEstimatedCost: true,
+      modelUsage: [
+        expect.objectContaining({
+          model: 'gpt-4o',
+          promptTokens: 2200,
+          completionTokens: 370,
+          totalTokens: 2570,
+        }),
+      ],
     });
     expect(usage.openAiUsage.estimatedCostDisplay).toMatch(/^\$\d+\.\d{4}$/);
 

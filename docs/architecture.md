@@ -16,7 +16,7 @@ src/
     routes/              route modules
     streaming/           HTTP response streaming helpers
     validators/          request payload validators
-  ai/                    OpenAI client/service, agents, orchestrators, prompts, guardrails, schemas, chat tools
+  ai/                    OpenAI client/service, agents, orchestrators, prompts, guardrails, schemas, chat tools, retrieval/chunking
   cache/                 Redis client and reusable response/retrieval cache abstractions
   config/                environment parsing and validation
   db/                    pg pool, migrations, query modules
@@ -25,7 +25,8 @@ src/
   jobs/                  shared background job names and default job options
   queues/                BullMQ queue configuration and queue manager
   workers/               BullMQ worker process entrypoint, manager, and job processors
-  ai/enrichment/         external provider clients, enrichment data, chunking, and vector enrichment
+  ingestion/             external bird data clients, normalized source data, enrichment/export orchestration
+  providers/             billing provider registry and provider-specific adapters
   services/              business orchestration
   utils/                 shared helpers; prefer <name>.utils.js for new utility modules
   observability/         LangSmith-compatible trace configuration and trace lifecycle service
@@ -70,7 +71,7 @@ Chat context is assembled from:
 RAG uses:
 1. `npm run enrich -- birds` to refresh bird provider data, generate `birds.json`, normalize documents, persist source text, and enqueue embedding jobs
 2. `rag.service.js` to check Redis for an equivalent retrieval query and relevant retrieval options
-3. `src/ai/enrichment/services/retrieval.service.js` to embed the user question and retrieve ranked chunks through `src/db/vector/vector.repository.js` on cache miss
+3. `src/ai/services/retrieval.service.js` to embed the user question and retrieve ranked chunks through `src/db/vector/vector.repository.js` on cache miss
 4. `rag.service.js` to write successful retrieval results back to Redis using the configured retrieval TTL
 5. `rag.service.js` to inject a compact system context message and return frontend-safe `sources`
 6. `rag.service.js` to derive compact `birdMatches` metadata from top `bird_profile` documents, including optional media references stored in document metadata
@@ -84,12 +85,12 @@ Bird identification uses:
 6. `birdIdentification.service.js` to retrieve bird-profile RAG for candidates and confusion species, run verification/reranking against retrieved profiles, calibrate confidence thresholds, and assemble the final normalized response
 
 External bird data ingestion uses:
-1. provider-specific clients in `src/ai/enrichment/clients/` for eBird, iNaturalist, and Xeno-canto
+1. provider-specific clients in `src/ingestion/clients/` for eBird, iNaturalist, wiki, and Xeno-canto
 2. `src/utils/httpClient.js` for shared GET request construction, JSON parsing, non-2xx errors, and response-shape validation
 3. `src/utils/rateLimiter.js` for a shared async limiter capped at 40 requests per minute
-4. focused export services in `src/ai/enrichment/services/` to orchestrate provider calls without coupling the clients to routes or controllers
-5. reusable bird normalization helpers in `src/ai/enrichment/utils/birds.utils.js`, imported from their defining module instead of re-exported through services
-6. `src/ai/enrichment/services/birds.enrichment.service.js` plus `src/ai/enrichment/scripts/enrich.js` to export provider JSON under `src/ai/enrichment/data` from `npm run enrich -- birds`
+4. focused export services in `src/ingestion/services/` to orchestrate provider calls without coupling the clients to routes or controllers
+5. reusable bird normalization helpers in `src/ingestion/utils/birdsIngest.utils.js`, imported from their defining module instead of re-exported through services
+6. `src/ingestion/services/birdsIngest.service.js` plus `scripts/enrich.js` to export provider JSON under `src/ingestion/data` from `npm run enrich -- birds`
 
 Shared utility modules should be checked before adding new helper code. JSON file
 IO and freshness checks live in `src/utils/fs.utils.js`; reusable file and media
@@ -127,6 +128,21 @@ Media routing uses:
 Relative bird media keys in RAG metadata are references into this media route.
 They are not static files served by the frontend. Absolute provider URLs may
 still pass through RAG metadata unchanged.
+
+Billing uses a provider-neutral domain boundary:
+1. `billing.service.js` authenticates the user, selects an enabled provider, and
+   returns generic payment or management URLs.
+2. Provider adapters under `src/providers/billing/` own provider HTTP
+   calls, hosted checkout/portal behavior, signature verification, and callback
+   normalization. Stripe is the first adapter.
+3. `plan.service.js` syncs normalized provider subscription events into internal
+   plans and subscription status without naming provider-specific objects.
+4. Quota enforcement reads internal plan limits from PostgreSQL; usage tracking
+   writes provider-neutral `usage_events` and does not store provider secrets or
+   customer IDs in trace metadata.
+5. Future providers such as TiloPay should register an adapter and map provider
+   products, prices, SKUs, or equivalent identifiers through
+   `plan_provider_mappings`.
 
 Chat streaming uses:
 1. `agent.orchestrator.js` to classify the turn, plan booking/tool steps, and request the final assistant response
@@ -197,7 +213,7 @@ matching handlers.
 
 ## AI Layer
 The `src/ai/` layer is split by responsibility:
-- `openai.client.js` and `openai.service.js` own provider calls, retry use, tool-call loops, chat response handling, embedding caching, exact response caching, semantic response caching, and cache metrics.
+- `clients/openai.client.js` and `services/openai.service.js` own provider calls, retry use, tool-call loops, chat response handling, embedding caching, exact response caching, semantic response caching, and cache metrics.
 - `prompts/` owns versioned system prompts, RAG context formatting, and prompt message construction.
 - `schemas/` owns OpenAI tool schemas.
 - `tools/` owns thin tool adapters and registry validation for model-callable functions.

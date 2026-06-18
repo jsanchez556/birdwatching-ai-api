@@ -21,6 +21,22 @@ class AuthController {
     const result = await authService.logout(req.body);
     return sendSuccess(res, result);
   }
+
+  async updateProfile(req, res) {
+    const result = await authService.updateProfile({
+      authUser: req.user,
+      name: req.body.name,
+    });
+    return sendSuccess(res, result);
+  }
+
+  async updateProfileImage(req, res) {
+    const result = await authService.updateProfileImage({
+      authUser: req.user,
+      imageUpload: req.imageUpload,
+    });
+    return sendSuccess(res, result);
+  }
 }
 
 export default new AuthController();

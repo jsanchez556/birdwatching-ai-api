@@ -87,7 +87,10 @@ class RetrievalService {
       return [];
     }
 
-    const [embedding] = await openaiClient.generateEmbedding([query]);
+    const [embedding] = await openaiClient.generateEmbedding([query], {
+      userId: options.userId,
+      parentTraceId: options.parentTraceId,
+    });
     const filters = normalizeFilters(options);
     const resultLimit = normalizeResultLimit(options.topK || options.limit);
     const candidateLimit = calculateCandidateLimit(resultLimit, options.candidateMultiplier);

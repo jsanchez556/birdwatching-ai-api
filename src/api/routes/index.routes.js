@@ -1,5 +1,6 @@
 import express from 'express';
 import authRoutes from './auth.routes.js';
+import billingRoutes from './billing.routes.js';
 import birdIdentificationRoutes from './birdIdentification.routes.js';
 import cartRoutes from './cart.routes.js';
 import chatRoutes from './chat.routes.js';
@@ -14,6 +15,7 @@ const router = express.Router();
 
 router.use('/health', healthRoutes);
 router.use('/auth', authRoutes);
+router.use('/billing', billingRoutes);
 router.use(birdIdentificationRoutes);
 router.use('/jobs', jobRoutes);
 router.use('/ingestions', ingestionRoutes);

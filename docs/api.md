@@ -25,6 +25,155 @@ Errors use:
 }
 ```
 
+Quota errors use `429` with code `QUOTA_EXCEEDED` and a user-facing message.
+
+## Auth Profile
+`PATCH /auth/profile` requires JWT bearer authentication and updates the
+authenticated user's display name. The request body is:
+
+```json
+{
+  "name": "Ana Rivera"
+}
+```
+
+`POST /auth/profile-image` requires JWT bearer authentication and accepts raw
+JPEG, PNG, or WebP image bytes up to 5 MB. The endpoint stores images in S3
+under `user-profile-images/`, persists the resulting object key on the user
+record, and returns a frontend-safe user profile.
+
+Success data:
+
+```json
+{
+  "user": {
+    "id": "user-1",
+    "email": "ana@example.com",
+    "name": "Ana Rivera",
+    "role": "customer",
+    "plan": "FREE",
+    "imageUrl": "/files/user-profile-images/user-1.png"
+  }
+}
+```
+
+The client never sends a user ID for profile updates; the API uses the bearer
+token identity.
+
+## Subscription Plans
+Authenticated users are assigned a subscription plan. New users default to:
+
+```json
+{
+  "plan": "FREE"
+}
+```
+
+### `POST /billing/checkout`
+Requires JWT bearer authentication. Creates a hosted provider checkout/payment
+session for the requested internal plan. The body may be empty, or may specify
+the enabled provider and plan:
+
+```json
+{
+  "provider": "stripe",
+  "plan": "PRO"
+}
+```
+
+Success data:
+
+```json
+{
+  "provider": "stripe",
+  "plan": "PRO",
+  "paymentUrl": "https://checkout.stripe.com/c/pay/cs_test_..."
+}
+```
+
+### `POST /billing/portal`
+Requires JWT bearer authentication. Creates a hosted billing management session
+for the authenticated user's active subscription. The body may be empty, or may
+specify the enabled provider:
+
+```json
+{
+  "provider": "stripe"
+}
+```
+
+The client never sends provider customer or subscription IDs.
+
+Success data:
+
+```json
+{
+  "provider": "stripe",
+  "managementUrl": "https://billing.stripe.com/p/session/..."
+}
+```
+
+If the account does not have an active provider subscription/customer record, the
+API returns a safe `409` error with code `BILLING_SUBSCRIPTION_NOT_FOUND`.
+
+### `GET /billing/usage`
+Requires JWT bearer authentication. Returns the authenticated user's current
+month estimated AI cost and usage-event count.
+
+Success data:
+
+```json
+{
+  "monthlyCost": 4.28,
+  "monthlyRequests": 142
+}
+```
+
+### `POST /billing/webhook` and `POST /billing/webhook/:provider`
+Receive provider webhook or callback events. The default route uses
+`BILLING_DEFAULT_PROVIDER`; provider-specific routes use the provider path
+segment. The Stripe adapter verifies `Stripe-Signature`, handles Checkout
+completion and subscription update/delete events, and persists subscription
+status locally through provider-neutral fields.
+
+AI usage costs are stored in `usage_events` with `user_id`, `feature`, `tokens`,
+`estimated_cost`, optional `trace_id`, compact `model_usage`, and `created_at`.
+`trace_id` stores the LangSmith-compatible parent trace ID when available, so
+billing rows can be correlated with runtime traces without storing prompt text,
+responses, email addresses, or provider customer IDs in trace metadata. Features
+include chat, identification, embedding, voice, and image analysis.
+
+Internal plans remain provider-neutral. `plan_provider_mappings` can map a plan
+to provider product, price, SKU, or equivalent identifiers. To add TiloPay or
+another provider, add an adapter under `src/providers/billing/`, register it,
+configure `BILLING_PROVIDERS`, and map provider callback payloads to the
+normalized subscription sync shape used by `billing.service.js`.
+
+Plan limits are enforced daily:
+
+| Plan | Chats | Bird identifications |
+| --- | ---: | ---: |
+| FREE | 20 | 5 |
+| PRO | 500 | 100 |
+
+When the daily quota is exhausted, protected AI endpoints return:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "QUOTA_EXCEEDED",
+    "message": "Daily quota exceeded",
+    "details": {
+      "plan": "FREE",
+      "feature": "chat",
+      "used": 20,
+      "max": 20
+    }
+  }
+}
+```
+
 ## `GET /health`
 Returns service health and process uptime.
 
@@ -680,7 +829,7 @@ Validation and behavior:
 - successful responses do not expose bucket credentials
 
 ## Current Protection
-`GET /chat/latest`, `GET /chat/:conversationId`, `POST /birds/identify`, `POST /bird-identification`, `GET /jobs/:id`, `POST /ingestions`, `GET /ingestions/:id`, and all `/cart` routes require JWT bearer authentication. `POST /chat` and `POST /voice-chat` accept authenticated customer/admin users or unauthenticated visitors; visitors can only ask bird-related questions, cannot execute tool-backed tour or reservation actions, and have a stricter 10-request-per-hour IP limit. Conversation, reservation, job, and ingestion ownership is enforced server-side. `POST /auth/signup`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, homepage content endpoints, `GET /files/:folderName/:filename`, and `GET /health` remain public.
+`POST /billing/checkout`, `POST /billing/portal`, `GET /billing/usage`, `GET /chat/latest`, `GET /chat/:conversationId`, `POST /birds/identify`, `POST /bird-identification`, `GET /jobs/:id`, `POST /ingestions`, `GET /ingestions/:id`, and all `/cart` routes require JWT bearer authentication. `POST /chat` and `POST /voice-chat` accept authenticated customer/admin users or unauthenticated visitors; visitors can only ask bird-related questions, cannot execute tool-backed tour or reservation actions, and have a stricter 10-request-per-hour IP limit. Conversation, reservation, job, and ingestion ownership is enforced server-side. Billing webhooks are public provider callbacks and verify provider signatures where supported. `POST /auth/signup`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, homepage content endpoints, `GET /files/:folderName/:filename`, and `GET /health` remain public.
 
 Request protection includes:
 - Helmet security headers through `security.middleware.js`.

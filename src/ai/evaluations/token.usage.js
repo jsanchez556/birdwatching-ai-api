@@ -7,6 +7,22 @@ const MODEL_PRICES_PER_MILLION_TOKENS = {
     input: 0.15,
     output: 0.6,
   },
+  'text-embedding-3-small': {
+    input: 0.02,
+    output: 0,
+  },
+  'text-embedding-3-large': {
+    input: 0.13,
+    output: 0,
+  },
+  'gpt-4o-mini-transcribe': {
+    input: 1.25,
+    output: 5,
+  },
+  'gpt-4o-mini-tts': {
+    input: 0.6,
+    output: 0,
+  },
 };
 
 function normalizeTokenCount(value) {
@@ -27,7 +43,7 @@ function getModelPricing(model) {
   return modelFamily ? MODEL_PRICES_PER_MILLION_TOKENS[modelFamily] : null;
 }
 
-function estimateCost(model, usage) {
+export function estimateCost(model, usage) {
   const pricing = getModelPricing(model);
 
   if (!pricing) {
@@ -52,6 +68,18 @@ function getCompletionUsage(completion) {
   };
 }
 
+export function getCompletionUsageSummary(completion) {
+  const usage = getCompletionUsage(completion);
+  const model = completion?.model;
+  const estimatedCostUsd = estimateCost(model, usage);
+
+  return {
+    ...usage,
+    estimatedCostUsd,
+    estimatedCostDisplay: estimatedCostUsd === null ? null : formatCost(estimatedCostUsd),
+  };
+}
+
 function createEmptyUsage() {
   return {
     promptTokens: 0,
@@ -60,6 +88,7 @@ function createEmptyUsage() {
     estimatedCostUsd: 0,
     estimatedCostDisplay: '$0.0000',
     hasEstimatedCost: false,
+    modelUsage: [],
   };
 }
 
@@ -77,6 +106,25 @@ export function addCompletionUsage(usageCollector, completion, fallbackModel) {
     const nextEstimatedCost = estimatedCostUsd === null
       ? currentUsage.estimatedCostUsd
       : currentUsage.estimatedCostUsd + estimatedCostUsd;
+    const modelUsage = [...(currentUsage.modelUsage || [])];
+    const existingModelUsage = modelUsage.find((entry) => entry.model === model);
+
+    if (existingModelUsage) {
+      existingModelUsage.promptTokens += usage.promptTokens;
+      existingModelUsage.completionTokens += usage.completionTokens;
+      existingModelUsage.totalTokens += usage.totalTokens;
+      existingModelUsage.estimatedCostUsd = estimatedCostUsd === null
+        ? existingModelUsage.estimatedCostUsd
+        : Number((existingModelUsage.estimatedCostUsd + estimatedCostUsd).toFixed(6));
+    } else {
+      modelUsage.push({
+        model,
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+        totalTokens: usage.totalTokens,
+        estimatedCostUsd: estimatedCostUsd === null ? 0 : estimatedCostUsd,
+      });
+    }
 
     usageCollector.openAiUsage = {
       promptTokens: currentUsage.promptTokens + usage.promptTokens,
@@ -85,6 +133,7 @@ export function addCompletionUsage(usageCollector, completion, fallbackModel) {
       estimatedCostUsd: Number(nextEstimatedCost.toFixed(6)),
       estimatedCostDisplay: formatCost(nextEstimatedCost),
       hasEstimatedCost: currentUsage.hasEstimatedCost || estimatedCostUsd !== null,
+      modelUsage,
     };
   }
 

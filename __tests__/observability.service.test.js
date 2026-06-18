@@ -201,6 +201,54 @@ describe('AI observability service', () => {
     });
   });
 
+  it('includes late trace annotations in LangSmith completion metadata', async () => {
+    const telemetry = new AiTelemetry({ log: mockLogger });
+    const langSmithClient = {
+      createRun: jest.fn().mockResolvedValue(undefined),
+      updateRun: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new ObservabilityService({
+      config: {
+        langChainTracingV2: true,
+        langChainApiKey: 'test-key',
+        langChainProject: 'birdwatching-ai',
+      },
+      telemetry,
+      idFactory: () => 'trace-1',
+      langSmithClient,
+      clock: {
+        now: jest.fn().mockReturnValueOnce(100).mockReturnValueOnce(125).mockReturnValueOnce(150),
+      },
+    });
+
+    await expect(service.trace({
+      type: 'ai_execution_flow',
+      name: 'chat_stream_ai_execution_flow',
+    }, async (trace) => {
+      trace.annotate({
+        billing: {
+          billingUsageEventId: 'usage-1',
+          requestCostUsd: 0.0042,
+          modelUsage: [{ model: 'gpt-4o-mini', totalTokens: 42 }],
+        },
+      });
+
+      return { conversationId: 'conversation-1' };
+    })).resolves.toEqual({ conversationId: 'conversation-1' });
+
+    expect(langSmithClient.updateRun).toHaveBeenCalledWith('trace-1', expect.objectContaining({
+      extra: {
+        metadata: expect.objectContaining({
+          billing: {
+            billingUsageEventId: 'usage-1',
+            requestCostUsd: 0.0042,
+            modelUsage: [{ model: 'gpt-4o-mini', totalTokens: 42 }],
+          },
+        }),
+      },
+    }));
+  });
+
   it('maps cache traces to LangSmith tool runs', () => {
     const service = new ObservabilityService({
       config: {},

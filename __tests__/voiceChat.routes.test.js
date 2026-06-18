@@ -1,10 +1,12 @@
 import { jest } from '@jest/globals';
+import jwt from 'jsonwebtoken';
 import request from 'supertest';
 
 const mockTranscribe = jest.fn();
 const mockSynthesizeSpeech = jest.fn();
 const mockProcessMessageStream = jest.fn();
 const mockUploadSpeechResponse = jest.fn();
+const mockReserveUsage = jest.fn();
 
 await jest.unstable_mockModule('../src/services/audio.service.js', () => ({
   default: {
@@ -25,6 +27,16 @@ await jest.unstable_mockModule('../src/services/voiceChatAudioStorage.service.js
   },
 }));
 
+await jest.unstable_mockModule('../src/services/quota.service.js', () => ({
+  QUOTA_FEATURES: {
+    CHAT: 'chat',
+    IDENTIFICATION: 'identification',
+  },
+  default: {
+    reserveUsage: mockReserveUsage,
+  },
+}));
+
 await jest.unstable_mockModule('../src/utils/logger.js', () => ({
   default: {
     info: jest.fn(),
@@ -35,9 +47,26 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
 
 const { default: app } = await import('../src/api/app.js');
 
+function authHeader(userId = 'voice-quota-user') {
+  const token = jwt.sign(
+    { email: 'ana@example.com' },
+    'test-jwt-secret',
+    { subject: userId, expiresIn: '1h' }
+  );
+
+  return 'Bearer ' + token;
+}
+
 describe('voice chat endpoint', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockReserveUsage.mockResolvedValue({
+      allowed: true,
+      plan: 'FREE',
+      feature: 'chat',
+      used: 1,
+      max: 20,
+    });
     mockTranscribe.mockResolvedValue({
       transcript: 'Where can I see quetzals?',
     });
@@ -106,6 +135,44 @@ describe('voice chat endpoint', () => {
       filename: 'response.mp3',
     });
     expect(res.body.data.audioResponseUrl).toBe('/files/voice-chat/response-1.mp3');
+  });
+
+  it('returns 429 before transcription when daily chat quota is exceeded', async () => {
+    const quotaError = new Error('Daily quota exceeded');
+    quotaError.status = 429;
+    quotaError.code = 'QUOTA_EXCEEDED';
+    quotaError.details = {
+      plan: 'FREE',
+      feature: 'chat',
+      used: 20,
+      max: 20,
+    };
+    mockReserveUsage.mockRejectedValue(quotaError);
+
+    const res = await request(app)
+      .post('/voice-chat')
+      .set('Authorization', authHeader())
+      .set('Host', 'api.example.test')
+      .set('Content-Type', 'audio/mpeg')
+      .set('X-Filename', 'question.mp3')
+      .send(Buffer.from('mp3 question'));
+
+    expect(res.statusCode).toBe(429);
+    expect(res.body).toEqual({
+      success: false,
+      error: {
+        code: 'QUOTA_EXCEEDED',
+        message: 'Daily quota exceeded',
+        details: {
+          plan: 'FREE',
+          feature: 'chat',
+          used: 20,
+          max: 20,
+        },
+      },
+    });
+    expect(mockTranscribe).not.toHaveBeenCalled();
+    expect(mockProcessMessageStream).not.toHaveBeenCalled();
   });
 
   it('processes a wav voice chat and forwards optional chat context headers', async () => {

@@ -1,6 +1,7 @@
 import logger from '../utils/logger.js';
 
 const SENSITIVE_KEY_PATTERN = /(password|secret|token|apiKey|authorization|databaseUrl|customerEmail|customerName|email|phone|content|prompt|message|input|output|^answer$|answerText|assistantAnswer|finalAnswer|text|args|arguments|customer)/i;
+const SAFE_TOKEN_USAGE_KEY_PATTERN = /^(promptTokens|completionTokens|totalTokens|inputTokens|outputTokens|requestTokens|prompt_tokens|completion_tokens|total_tokens|input_tokens|output_tokens|tokenUsage)$/;
 const MAX_ARRAY_ITEMS = 8;
 const MAX_OBJECT_KEYS = 24;
 const MAX_STRING_LENGTH = 240;
@@ -27,7 +28,9 @@ function sanitizeTelemetryValue(value, depth = 0) {
     .slice(0, MAX_OBJECT_KEYS)
     .map(([key, entryValue]) => [
       key,
-      SENSITIVE_KEY_PATTERN.test(key) ? '[redacted]' : sanitizeTelemetryValue(entryValue, depth + 1),
+      SENSITIVE_KEY_PATTERN.test(key) && !SAFE_TOKEN_USAGE_KEY_PATTERN.test(key)
+        ? '[redacted]'
+        : sanitizeTelemetryValue(entryValue, depth + 1),
     ]));
 }
 

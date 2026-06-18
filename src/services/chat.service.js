@@ -224,6 +224,7 @@ class ChatService {
       {
         ...options,
         aiExecutionTraceId: trace.id,
+        aiExecutionTrace: trace,
       }
     ));
   }
@@ -298,6 +299,7 @@ class ChatService {
     const ragContext = await ragService.buildContext(conversationMessages, message, {
       clientIP,
       conversationId: activeConversationId,
+      userId,
       parentTraceId,
     });
 
@@ -390,7 +392,17 @@ class ChatService {
 
     const finalResponse = outputGuardrail.response;
     throwIfAborted(signal);
-    await usageService.recordOpenAiUsage(userId, openAiMetadata.openAiUsage);
+    const usageRecord = await usageService.recordOpenAiUsage(userId, openAiMetadata.openAiUsage, {
+      usageEventId: options.usageEventId,
+      traceId: options.aiExecutionTraceId,
+    });
+
+    if (usageRecord?.traceMetadata) {
+      options.aiExecutionTrace?.annotate?.({
+        billing: usageRecord.traceMetadata,
+      });
+    }
+
     const messageMeta = buildToolMeta(openAiMetadata);
     const conversationMeta = buildConversationMeta(openAiMetadata);
     const saveOptions = {

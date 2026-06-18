@@ -243,7 +243,7 @@ function assertSafeDataPath(fileName, dataDir) {
   const relativePath = path.relative(dataDir, filePath);
 
   if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
-    throw new Error(`Refusing to read outside src/ai/enrichment/data: ${fileName}`);
+    throw new Error(`Refusing to read outside src/ingestion/data: ${fileName}`);
   }
 
   return filePath;
