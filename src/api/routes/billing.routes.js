@@ -1,6 +1,6 @@
 import express from 'express';
 import billingController from '../controllers/billing.controller.js';
-import { requireAuth } from '../middleware/auth.middleware.js';
+import { requireAdmin, requireAuth } from '../middleware/auth.middleware.js';
 import { asyncHandler } from '../../utils/async.utils.js';
 
 const router = express.Router();
@@ -22,6 +22,20 @@ router.get(
   '/usage',
   requireAuth,
   asyncHandler(billingController.getUsageDashboard.bind(billingController))
+);
+
+router.get(
+  '/admin/dashboard',
+  requireAuth,
+  requireAdmin,
+  asyncHandler(billingController.getAdminDashboard.bind(billingController))
+);
+
+router.post(
+  '/admin/simulate-payment',
+  requireAuth,
+  requireAdmin,
+  asyncHandler(billingController.simulatePayment.bind(billingController))
 );
 
 router.post(

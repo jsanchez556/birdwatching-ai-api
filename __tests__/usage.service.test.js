@@ -2,14 +2,14 @@ import { jest } from '@jest/globals';
 
 const mockCreateLog = jest.fn();
 const mockCreateUsageEvent = jest.fn();
-const mockGetMonthlyDashboard = jest.fn();
+const mockGetBillingUsageDashboard = jest.fn();
 const mockUpdateUsageEventCost = jest.fn();
 
 await jest.unstable_mockModule('../src/db/queries/usage.queries.js', () => ({
   default: {
     createLog: mockCreateLog,
     createUsageEvent: mockCreateUsageEvent,
-    getMonthlyDashboard: mockGetMonthlyDashboard,
+    getBillingUsageDashboard: mockGetBillingUsageDashboard,
     updateUsageEventCost: mockUpdateUsageEventCost,
   },
 }));
@@ -27,7 +27,7 @@ const { default: usageService } = await import('../src/services/usage.service.js
 describe('UsageService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetMonthlyDashboard.mockResolvedValue(null);
+    mockGetBillingUsageDashboard.mockResolvedValue(null);
     mockUpdateUsageEventCost.mockResolvedValue(null);
   });
 
@@ -116,9 +116,32 @@ describe('UsageService', () => {
   });
 
   it('calculates the monthly billing dashboard from usage events', async () => {
-    mockGetMonthlyDashboard.mockResolvedValue({
+    mockGetBillingUsageDashboard.mockResolvedValue({
       monthly_cost: '4.284999',
       monthly_requests: '142',
+      monthly_tokens: '12000',
+      plan_name: 'PRO',
+      subscription_status: 'active',
+      billing_provider: 'Stripe',
+      has_provider_subscription: true,
+      provider_revenue: '29.00',
+      gross_profit: '24.715001',
+      gross_margin_percent: '85.22',
+      langsmith_trace_count: '18',
+      usage_by_feature: [
+        {
+          feature: 'chat',
+          requests: 100,
+          tokens: 9000,
+          cost: '3.500000',
+        },
+        {
+          feature: 'identification',
+          requests: 42,
+          tokens: 3000,
+          cost: '0.784999',
+        },
+      ],
     });
 
     await expect(usageService.getMonthlyDashboard('7', {
@@ -126,9 +149,42 @@ describe('UsageService', () => {
     })).resolves.toEqual({
       monthlyCost: 4.28,
       monthlyRequests: 142,
+      plan: {
+        name: 'PRO',
+        status: 'active',
+        billingProvider: 'Stripe',
+        hasProviderSubscription: true,
+      },
+      usage: {
+        requests: 142,
+        tokens: 12000,
+        byFeature: [
+          {
+            feature: 'chat',
+            requests: 100,
+            tokens: 9000,
+            cost: 3.5,
+          },
+          {
+            feature: 'identification',
+            requests: 42,
+            tokens: 3000,
+            cost: 0.784999,
+          },
+        ],
+      },
+      langSmith: {
+        traceCount: 18,
+      },
+      profitability: {
+        revenue: 29,
+        cost: 4.284999,
+        profit: 24.72,
+        marginPercent: 85.22,
+      },
     });
 
-    expect(mockGetMonthlyDashboard).toHaveBeenCalledWith({
+    expect(mockGetBillingUsageDashboard).toHaveBeenCalledWith({
       userId: 7,
       monthStart: '2026-06-01T00:00:00.000Z',
     });
@@ -138,8 +194,28 @@ describe('UsageService', () => {
     await expect(usageService.getMonthlyDashboard(null)).resolves.toEqual({
       monthlyCost: 0,
       monthlyRequests: 0,
+      plan: {
+        name: 'FREE',
+        status: 'active',
+        billingProvider: null,
+        hasProviderSubscription: false,
+      },
+      usage: {
+        requests: 0,
+        tokens: 0,
+        byFeature: [],
+      },
+      langSmith: {
+        traceCount: 0,
+      },
+      profitability: {
+        revenue: 0,
+        cost: 0,
+        profit: 0,
+        marginPercent: null,
+      },
     });
 
-    expect(mockGetMonthlyDashboard).not.toHaveBeenCalled();
+    expect(mockGetBillingUsageDashboard).not.toHaveBeenCalled();
   });
 });

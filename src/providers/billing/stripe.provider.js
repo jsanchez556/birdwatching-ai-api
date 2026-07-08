@@ -1,14 +1,20 @@
 import crypto from 'crypto';
 import env from '../../config/env.js';
+import {
+  STRIPE_CHECKOUT_SESSION_COMPLETED,
+  STRIPE_INVOICE_PAYMENT_FAILED,
+  STRIPE_INVOICE_PAYMENT_SUCCEEDED,
+  STRIPE_SUBSCRIPTION_CREATED,
+  STRIPE_SUBSCRIPTION_DELETED,
+  STRIPE_SUBSCRIPTION_UPDATED,
+  isStripeSubscriptionEvent,
+} from '../../events/stripeEvents.js';
 import HttpError from '../../utils/httpError.js';
 import logger from '../../utils/logger.js';
 
 const STRIPE_API_BASE_URL = 'https://api.stripe.com/v1';
-const STRIPE_API_VERSION = '2025-02-24.acacia';
+const STRIPE_API_VERSION = '2026-02-25.clover';
 const STRIPE_PROVIDER_NAME = 'Stripe';
-const CHECKOUT_SESSION_COMPLETED = 'checkout.session.completed';
-const SUBSCRIPTION_UPDATED = 'customer.subscription.updated';
-const SUBSCRIPTION_DELETED = 'customer.subscription.deleted';
 
 function appendFormValue(params, key, value) {
   if (value !== undefined && value !== null && value !== '') {
@@ -59,11 +65,73 @@ function subscriptionPriceId(subscription = {}) {
   return subscription.items?.data?.[0]?.price?.id || subscription.metadata?.providerPriceId || null;
 }
 
+function subscriptionPeriodEnd(subscription = {}) {
+  return subscription.current_period_end
+    || subscription.items?.data?.[0]?.current_period_end
+    || null;
+}
+
 function subscriptionUserId(subscription = {}) {
   const value = subscription.metadata?.userId;
   const normalized = Number(value);
 
   return Number.isFinite(normalized) ? normalized : null;
+}
+
+function subscriptionPlanName(subscription = {}) {
+  const planName = subscription.metadata?.plan;
+
+  return typeof planName === 'string' && planName.trim()
+    ? planName.trim().toUpperCase()
+    : null;
+}
+
+function stripeObjectId(value) {
+  if (!value) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  return value.id || null;
+}
+
+function invoiceSubscriptionId(invoice = {}) {
+  return stripeObjectId(invoice.subscription)
+    || stripeObjectId(invoice.parent?.subscription_details?.subscription)
+    || null;
+}
+
+function billingEventData(object = {}) {
+  return {
+    livemode: Boolean(object.livemode),
+    mode: object.mode || null,
+    planName: subscriptionPlanName(object) || object.metadata?.plan || null,
+    providerPriceId: subscriptionPriceId(object),
+    providerStatus: object.status || null,
+  };
+}
+
+function buildProviderEventRecord(event = {}, eventName, object = {}, overrides = {}) {
+  if (!event.id || !event.type || !eventName) {
+    return null;
+  }
+
+  return {
+    provider: STRIPE_PROVIDER_NAME,
+    providerEventId: event.id,
+    eventType: event.type,
+    eventName,
+    providerObjectId: stripeObjectId(object.id),
+    providerCustomerId: stripeObjectId(object.customer),
+    providerSubscriptionId: stripeObjectId(object.subscription) || stripeObjectId(object.id),
+    providerInvoiceId: null,
+    status: object.status || null,
+    eventData: billingEventData(object),
+    ...overrides,
+  };
 }
 
 function timingSafeEqualString(left, right) {
@@ -168,11 +236,12 @@ function buildSubscriptionSync(subscription = {}, {
   return {
     provider: STRIPE_PROVIDER_NAME,
     userId: subscriptionUserId(subscription) || fallbackUserId,
-    providerCustomerId: subscription.customer || fallbackCustomerId,
+    providerCustomerId: stripeObjectId(subscription.customer) || stripeObjectId(fallbackCustomerId),
     providerSubscriptionId: subscription.id || fallbackSubscriptionId,
     providerPriceId: subscriptionPriceId(subscription) || fallbackPriceId,
     providerStatus: subscription.status || 'active',
-    currentPeriodEnd: normalizePeriodEnd(subscription.current_period_end),
+    planName: subscriptionPlanName(subscription),
+    currentPeriodEnd: normalizePeriodEnd(subscriptionPeriodEnd(subscription)),
   };
 }
 
@@ -182,6 +251,20 @@ class StripeBillingProvider {
 
   isConfigured() {
     return Boolean(env.stripe.secretKey);
+  }
+
+  getConfiguredPlanPriceId(planName) {
+    const normalizedPlan = typeof planName === 'string' ? planName.trim().toUpperCase() : '';
+
+    if (normalizedPlan === 'PRO') {
+      return env.stripe.proPriceId || null;
+    }
+
+    if (normalizedPlan === 'GUIDE') {
+      return env.stripe.guidePriceId || null;
+    }
+
+    return null;
   }
 
   async createCheckoutSession({
@@ -287,7 +370,7 @@ class StripeBillingProvider {
     const event = await this.constructWebhookEvent({ payload, headers });
     const object = event.data?.object || {};
 
-    if (event.type === CHECKOUT_SESSION_COMPLETED) {
+    if (event.type === STRIPE_CHECKOUT_SESSION_COMPLETED) {
       if (object.mode !== 'subscription') {
         return null;
       }
@@ -305,6 +388,14 @@ class StripeBillingProvider {
 
       return {
         type: 'subscription_synced',
+        providerEvent: buildProviderEventRecord(event, 'checkout_completed', object, {
+          providerSubscriptionId: stripeObjectId(object.subscription),
+          status: object.payment_status || object.status || null,
+          eventData: {
+            ...billingEventData(object),
+            paymentStatus: object.payment_status || null,
+          },
+        }),
         subscription: buildSubscriptionSync(subscription, {
           fallbackUserId: userId,
           fallbackCustomerId: object.customer || null,
@@ -314,10 +405,51 @@ class StripeBillingProvider {
       };
     }
 
-    if (event.type === SUBSCRIPTION_UPDATED || event.type === SUBSCRIPTION_DELETED) {
+    if (isStripeSubscriptionEvent(event.type)) {
+      const eventName = {
+        [STRIPE_SUBSCRIPTION_CREATED]: 'subscription_created',
+        [STRIPE_SUBSCRIPTION_UPDATED]: 'subscription_updated',
+        [STRIPE_SUBSCRIPTION_DELETED]: 'subscription_cancelled',
+      }[event.type];
+
       return {
-        type: 'subscription_changed',
+        type: event.type === STRIPE_SUBSCRIPTION_CREATED
+          ? 'subscription_synced'
+          : 'subscription_changed',
+        providerEvent: buildProviderEventRecord(event, eventName, object),
         subscription: buildSubscriptionSync(object),
+      };
+    }
+
+    if (event.type === STRIPE_INVOICE_PAYMENT_FAILED) {
+      return {
+        type: 'payment_failed',
+        providerEvent: buildProviderEventRecord(event, 'payment_failed', object, {
+          providerSubscriptionId: invoiceSubscriptionId(object),
+          providerInvoiceId: stripeObjectId(object.id),
+          status: object.status || object.collection_status || null,
+          eventData: {
+            ...billingEventData(object),
+            amountDue: object.amount_due || null,
+            attemptCount: object.attempt_count || null,
+          },
+        }),
+      };
+    }
+
+    if (event.type === STRIPE_INVOICE_PAYMENT_SUCCEEDED) {
+      return {
+        type: 'subscription_renewed',
+        providerEvent: buildProviderEventRecord(event, 'subscription_renewed', object, {
+          providerSubscriptionId: invoiceSubscriptionId(object),
+          providerInvoiceId: stripeObjectId(object.id),
+          status: object.status || object.collection_status || null,
+          eventData: {
+            ...billingEventData(object),
+            amountPaid: object.amount_paid || null,
+            billingReason: object.billing_reason || null,
+          },
+        }),
       };
     }
 
@@ -326,12 +458,16 @@ class StripeBillingProvider {
 }
 
 export {
-  CHECKOUT_SESSION_COMPLETED,
   STRIPE_API_VERSION,
+  STRIPE_CHECKOUT_SESSION_COMPLETED,
+  STRIPE_INVOICE_PAYMENT_FAILED,
+  STRIPE_INVOICE_PAYMENT_SUCCEEDED,
   STRIPE_PROVIDER_NAME,
-  SUBSCRIPTION_DELETED,
-  SUBSCRIPTION_UPDATED,
+  STRIPE_SUBSCRIPTION_CREATED,
+  STRIPE_SUBSCRIPTION_DELETED,
+  STRIPE_SUBSCRIPTION_UPDATED,
   StripeBillingProvider,
+  buildProviderEventRecord,
   buildCheckoutUrls,
   buildCustomerPortalReturnUrl,
   buildSubscriptionSync,

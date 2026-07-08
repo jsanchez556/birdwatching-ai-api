@@ -45,3 +45,15 @@ export function requireAuth(req, res, next) {
     return next(error);
   }
 }
+
+export function requireAdmin(req, res, next) {
+  if (!req.user) {
+    return next(new HttpError(401, 'Authentication is required', { code: 'UNAUTHORIZED' }));
+  }
+
+  if (req.user.role !== 'admin') {
+    return next(new HttpError(403, 'Admin access is required', { code: 'FORBIDDEN' }));
+  }
+
+  return next();
+}

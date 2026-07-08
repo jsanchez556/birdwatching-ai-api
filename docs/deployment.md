@@ -59,12 +59,28 @@ Optional:
 - `BILLING_PROVIDERS`, comma-separated enabled billing providers; defaults to `stripe`
 - `BILLING_DEFAULT_PROVIDER`, billing provider used when the request body or webhook route does not name one; defaults to the first enabled provider
 - `STRIPE_SECRET_KEY`: Stripe secret key used by the Stripe billing adapter to create Checkout Sessions
-- `STRIPE_PRO_PRICE_ID`: Stripe recurring price ID mapped to the internal PRO plan for development/testing
+- `STRIPE_PRICE_PRO`: Stripe recurring price ID mapped to the internal PRO plan for development/testing
+- `STRIPE_PRICE_GUIDE`: Stripe recurring price ID mapped to the internal GUIDE plan for development/testing
 - `STRIPE_WEBHOOK_SECRET`: Stripe webhook signing secret for `/billing/webhook` or `/billing/webhook/stripe`
 - `STRIPE_CHECKOUT_SUCCESS_URL`: optional hosted Checkout success redirect URL
 - `STRIPE_CHECKOUT_CANCEL_URL`: optional hosted Checkout cancellation redirect URL
 - `STRIPE_PORTAL_RETURN_URL`: optional Stripe Customer Portal return URL; defaults to the request origin with `?billing=portal`
 - `STRIPE_WEBHOOK_TOLERANCE_SECONDS`, defaults to `300`
+
+For local Stripe test-mode checkout, forward signed subscription events before
+opening Checkout:
+
+```bash
+stripe listen \
+  --events checkout.session.completed,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted \
+  --forward-to localhost:3000/billing/webhook/stripe
+```
+
+Set `STRIPE_WEBHOOK_SECRET` to the signing secret printed by that listener and
+restart the API. Keep the listener running through checkout completion. The
+successful browser return is not an entitlement signal by itself; only the
+verified webhook updates `user_subscriptions`.
+
 - `EMBEDDING_CACHE_TTL_SECONDS`, defaults to `86400`
 - `LANGCHAIN_API_KEY`, enables LangSmith trace export when set with `LANGCHAIN_TRACING=true`
 - `LANGCHAIN_TRACING`, set to `true` to enable LangSmith-compatible tracing
@@ -132,6 +148,9 @@ src/db/migrations/016_create_bird_identifications.sql
 src/db/migrations/017_create_jobs.sql
 src/db/migrations/018_create_subscription_plans.sql
 src/db/migrations/019_add_user_profile_image.sql
+src/db/migrations/020_create_billing_events.sql
+src/db/migrations/021_create_billing_dashboard.sql
+src/db/migrations/022_fix_subscription_sync.sql
 ```
 
 Run migrations in order with `psql`, Railway shell, or your deployment platform's database tooling before using chat memory, reservations, users, refresh-token sessions, usage logging, tour-location metadata, cart/reservation entry flows, bird-identification records, job polling, subscription plans, provider billing, profile images, or pgvector-backed RAG.

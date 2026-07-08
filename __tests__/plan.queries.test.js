@@ -89,10 +89,10 @@ describe('PlanQueries provider-neutral subscription persistence', () => {
   it('updates provider subscriptions through provider and subscription identifiers', async () => {
     const row = {
       user_id: 7,
-      plan_name: 'FREE',
+      plan_name: 'GUIDE',
       billing_provider: 'Stripe',
       provider_subscription_id: 'sub_123',
-      status: 'inactive',
+      status: 'past_due',
     };
     mockQuery.mockResolvedValue({ rows: [row] });
 
@@ -101,17 +101,19 @@ describe('PlanQueries provider-neutral subscription persistence', () => {
       providerSubscriptionId: 'sub_123',
       status: 'past_due',
       providerPriceId: 'price_pro',
+      planName: 'GUIDE',
       currentPeriodEnd: null,
     })).resolves.toMatchObject({
       userId: 7,
-      name: 'FREE',
+      name: 'GUIDE',
+      status: 'past_due',
       billingProvider: 'Stripe',
       providerSubscriptionId: 'sub_123',
     });
 
     expect(mockQuery).toHaveBeenCalledWith(
-      'SELECT * FROM update_provider_subscription_status($1, $2, $3, $4, $5)',
-      ['Stripe', 'sub_123', 'past_due', 'price_pro', null]
+      'SELECT * FROM update_provider_subscription_status($1, $2, $3, $4, $5, $6)',
+      ['Stripe', 'sub_123', 'past_due', 'price_pro', 'GUIDE', null]
     );
   });
 });

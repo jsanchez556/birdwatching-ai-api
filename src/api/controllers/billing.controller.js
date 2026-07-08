@@ -39,6 +39,20 @@ class BillingController {
 
     return sendSuccess(res, result);
   }
+
+  async getAdminDashboard(req, res) {
+    const result = await billingService.getAdminDashboard({
+      monthStart: req.query?.monthStart,
+    });
+
+    return sendSuccess(res, result);
+  }
+
+  async simulatePayment(req, res) {
+    const result = await billingService.simulatePayment(req.body || {});
+
+    return sendSuccess(res, result);
+  }
 }
 
 export default new BillingController();

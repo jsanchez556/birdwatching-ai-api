@@ -49,7 +49,7 @@ Common optional variables:
 - `S3_REGION`, `S3_BUCKET_NAME`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` enable media asset uploads to the S3 bucket
 - `BULLMQ_JOB_ATTEMPTS`, `BULLMQ_JOB_BACKOFF_DELAY_MS`, `BULLMQ_WORKER_CONCURRENCY`, and BullMQ cleanup variables tune background job retry and retention behavior
 - `BILLING_PROVIDERS` and `BILLING_DEFAULT_PROVIDER` select enabled billing adapters; Stripe is currently the concrete adapter for hosted checkout and billing management in development/testing
-- `STRIPE_SECRET_KEY`, `STRIPE_PRO_PRICE_ID`, and `STRIPE_WEBHOOK_SECRET` configure the Stripe billing provider adapter
+- `STRIPE_SECRET_KEY`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_GUIDE`, and `STRIPE_WEBHOOK_SECRET` configure the Stripe billing provider adapter
 - `LANGCHAIN_TRACING`, `LANGCHAIN_PROJECT`, and `LANGCHAIN_API_KEY` enable sanitized LangSmith trace export
 
 Run database migrations before using chat memory:
@@ -73,6 +73,8 @@ psql "$DATABASE_URL" -f src/db/migrations/016_create_bird_identifications.sql
 psql "$DATABASE_URL" -f src/db/migrations/017_create_jobs.sql
 psql "$DATABASE_URL" -f src/db/migrations/018_create_subscription_plans.sql
 psql "$DATABASE_URL" -f src/db/migrations/019_add_user_profile_image.sql
+psql "$DATABASE_URL" -f src/db/migrations/020_create_billing_events.sql
+psql "$DATABASE_URL" -f src/db/migrations/021_create_billing_dashboard.sql
 ```
 
 ## Billing & Monetization
@@ -80,14 +82,25 @@ Billing plans, quotas, usage events, and subscription status are internal domain
 concepts. Provider adapters translate hosted payment concepts into
 `billing_provider`, `provider_customer_id`, `provider_subscription_id`, and
 `provider_price_id` values on `user_subscriptions`. `plan_provider_mappings`
-can map internal plans such as `PRO` to provider-specific product, price, SKU,
+can map internal plans such as `PRO` and `GUIDE` to provider-specific product, price, SKU,
 or equivalent identifiers when adding providers such as TiloPay.
 
 - Subscription Plans: internal plans define the product tiers, entitlement
   names, and billing-provider mappings used when a user upgrades or changes
-  their subscription.
+  their subscription. Subscription lifecycle statuses are `trialing`, `active`,
+  `past_due`, `cancelled`, and `expired`.
 - Usage Metering: authenticated AI requests persist provider-neutral usage
   events with token, cost, model, and trace metadata for downstream reporting.
+- Billing Usage Dashboard: `GET /billing/usage` correlates LangSmith trace IDs,
+  AI usage cost, plan/subscription status, provider revenue, gross profit, and
+  margin for the authenticated user's current billing month.
+- Admin Billing Dashboard: `GET /billing/admin/dashboard` is admin-only and
+  reports monthly revenue, MRR, ARR, active/cancelled subscriptions, and revenue
+  plus active subscription counts by paid plan.
+- Billing Simulator: `POST /billing/admin/simulate-payment` is admin-only and
+  records internal provider-neutral lifecycle events so development and QA can
+  test renewals, cancellations, upgrades, downgrades, payment failures, and
+  expirations without Stripe webhooks or external provider calls.
 - Quota Enforcement: plan quotas should be checked before billable AI features
   run so over-limit users receive a controlled API response instead of
   incurring unbounded usage.
@@ -97,6 +110,8 @@ or equivalent identifiers when adding providers such as TiloPay.
 - Stripe Integration: Stripe is the first hosted checkout, webhook, and billing
   management adapter; it remains behind the provider abstraction so additional
   payment providers can be added without changing the public billing domain.
+  Webhook deliveries are stored idempotently in `billing_events` by provider
+  event ID before subscription side effects run.
 
 ## Bird Knowledge Base
 Chat responses use a PostgreSQL-backed RAG flow with `pgvector`. Documents must
@@ -252,6 +267,8 @@ npm test       # Jest ESM test runner
 - `POST /billing/checkout`
 - `POST /billing/portal`
 - `GET /billing/usage`
+- `GET /billing/admin/dashboard`
+- `POST /billing/admin/simulate-payment`
 - `POST /billing/webhook`
 - `POST /billing/webhook/:provider`
 - `GET /cart`

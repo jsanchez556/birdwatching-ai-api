@@ -71,15 +71,17 @@ class PlanQueries {
     providerSubscriptionId,
     status,
     providerPriceId,
+    planName = null,
     currentPeriodEnd,
   }) {
     const result = await pool.query(
-      'SELECT * FROM update_provider_subscription_status($1, $2, $3, $4, $5)',
+      'SELECT * FROM update_provider_subscription_status($1, $2, $3, $4, $5, $6)',
       [
         billingProvider,
         providerSubscriptionId,
         status,
         providerPriceId,
+        planName,
         currentPeriodEnd,
       ]
     );

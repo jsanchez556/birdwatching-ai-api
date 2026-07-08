@@ -36,6 +36,16 @@ function normalizeTraceId(traceId) {
   return typeof traceId === 'string' && traceId.trim() ? traceId.trim() : null;
 }
 
+function normalizeMoney(value, decimals = 2) {
+  const normalized = Number(value);
+  return Number.isFinite(normalized) ? Number(normalized.toFixed(decimals)) : 0;
+}
+
+function normalizeNullablePercent(value) {
+  const normalized = Number(value);
+  return Number.isFinite(normalized) ? Number(normalized.toFixed(2)) : null;
+}
+
 function normalizeModelUsage(modelUsage = []) {
   if (!Array.isArray(modelUsage)) {
     return [];
@@ -95,6 +105,75 @@ function buildBillingTraceMetadata({
     requestCostUsd: Number.isFinite(normalizedCost) ? Number(normalizedCost.toFixed(6)) : null,
     requestTokens: normalizeTokenCount(tokens ?? usageEvent.tokens),
     modelUsage: normalizeModelUsage(modelUsage.length ? modelUsage : usageEvent.model_usage),
+  };
+}
+
+function normalizeUsageByFeature(value = []) {
+  const entries = Array.isArray(value) ? value : [];
+
+  return entries
+    .filter((entry) => entry && typeof entry === 'object')
+    .map((entry) => ({
+      feature: typeof entry.feature === 'string' && entry.feature.trim()
+        ? entry.feature.trim()
+        : 'unknown',
+      requests: Number(entry.requests || 0),
+      tokens: Number(entry.tokens || 0),
+      cost: normalizeMoney(entry.cost, 6),
+    }));
+}
+
+function buildEmptyBillingDashboard() {
+  return {
+    monthlyCost: 0,
+    monthlyRequests: 0,
+    plan: {
+      name: 'FREE',
+      status: 'active',
+      billingProvider: null,
+      hasProviderSubscription: false,
+    },
+    usage: {
+      requests: 0,
+      tokens: 0,
+      byFeature: [],
+    },
+    langSmith: {
+      traceCount: 0,
+    },
+    profitability: {
+      revenue: 0,
+      cost: 0,
+      profit: 0,
+      marginPercent: null,
+    },
+  };
+}
+
+function mapBillingDashboard(row = {}) {
+  return {
+    monthlyCost: normalizeMoney(row?.monthly_cost, 2),
+    monthlyRequests: Number(row?.monthly_requests || 0),
+    plan: {
+      name: row?.plan_name || 'FREE',
+      status: row?.subscription_status || 'active',
+      billingProvider: row?.billing_provider || null,
+      hasProviderSubscription: row?.has_provider_subscription === true,
+    },
+    usage: {
+      requests: Number(row?.monthly_requests || 0),
+      tokens: Number(row?.monthly_tokens || 0),
+      byFeature: normalizeUsageByFeature(row?.usage_by_feature),
+    },
+    langSmith: {
+      traceCount: Number(row?.langsmith_trace_count || 0),
+    },
+    profitability: {
+      revenue: normalizeMoney(row?.provider_revenue, 2),
+      cost: normalizeMoney(row?.monthly_cost, 6),
+      profit: normalizeMoney(row?.gross_profit, 2),
+      marginPercent: normalizeNullablePercent(row?.gross_margin_percent),
+    },
   };
 }
 
@@ -241,29 +320,26 @@ class UsageService {
     const normalizedUserId = normalizeUserId(userId);
 
     if (normalizedUserId === null) {
-      return {
-        monthlyCost: 0,
-        monthlyRequests: 0,
-      };
+      return buildEmptyBillingDashboard();
     }
 
-    const row = await usageQueries.getMonthlyDashboard({
+    const row = await usageQueries.getBillingUsageDashboard({
       userId: normalizedUserId,
       monthStart,
     });
 
-    return {
-      monthlyCost: Number(Number(row?.monthly_cost || 0).toFixed(2)),
-      monthlyRequests: Number(row?.monthly_requests || 0),
-    };
+    return mapBillingDashboard(row);
   }
 }
 
 export {
   USAGE_FEATURES,
   buildBillingTraceMetadata,
+  buildEmptyBillingDashboard,
   buildModelUsageEntry,
+  mapBillingDashboard,
   normalizeCost,
+  normalizeMoney,
   normalizeModelUsage,
   normalizeTokenCount,
   normalizeTraceId,

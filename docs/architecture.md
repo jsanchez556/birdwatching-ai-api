@@ -140,7 +140,10 @@ Billing uses a provider-neutral domain boundary:
 4. Quota enforcement reads internal plan limits from PostgreSQL; usage tracking
    writes provider-neutral `usage_events` and does not store provider secrets or
    customer IDs in trace metadata.
-5. Future providers such as TiloPay should register an adapter and map provider
+5. The admin-only payment simulator records internal provider-neutral billing
+   events with provider `Other` and reuses subscription lifecycle services; it
+   does not call provider adapters or external APIs.
+6. Future providers such as TiloPay should register an adapter and map provider
    products, prices, SKUs, or equivalent identifiers through
    `plan_provider_mappings`.
 

@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS plans (
 CREATE TABLE IF NOT EXISTS user_subscriptions (
   user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   plan_id INTEGER NOT NULL REFERENCES plans(id),
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'cancelled', 'past_due')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('trialing', 'active', 'past_due', 'cancelled', 'expired')),
   billing_provider TEXT CHECK (billing_provider IS NULL OR billing_provider IN ('Stripe', 'TiloPay', 'BAC', 'Other')),
   provider_customer_id TEXT,
   provider_subscription_id TEXT,
@@ -86,7 +86,8 @@ WHERE trace_id IS NOT NULL;
 INSERT INTO plans (name, max_chats, max_identifications)
 VALUES
   ('FREE', 20, 5),
-  ('PRO', 500, 100)
+  ('PRO', 500, 100),
+  ('GUIDE', 1200, 300)
 ON CONFLICT (name) DO UPDATE
 SET
   max_chats = EXCLUDED.max_chats,
@@ -416,6 +417,7 @@ CREATE OR REPLACE FUNCTION update_provider_subscription_status(
   p_provider_subscription_id TEXT,
   p_status TEXT,
   p_provider_price_id TEXT,
+  p_plan_name TEXT DEFAULT NULL,
   p_current_period_end TIMESTAMPTZ DEFAULT NULL
 )
 RETURNS TABLE (
@@ -430,12 +432,23 @@ RETURNS TABLE (
   current_period_end TIMESTAMPTZ
 ) AS $$
 DECLARE
-  target_plan_name TEXT := CASE
-    WHEN p_status IN ('active', 'trialing') THEN 'PRO'
-    ELSE 'FREE'
-  END;
+  target_plan_name TEXT := 'FREE';
   target_plan_id INTEGER;
 BEGIN
+  IF p_status IN ('active', 'trialing', 'past_due') THEN
+    SELECT plans.name
+    INTO target_plan_name
+    FROM plan_provider_mappings
+    INNER JOIN provider_mappings ON provider_mappings.id = plan_provider_mappings.provider_mapping_id
+    INNER JOIN plans ON plans.id = plan_provider_mappings.plan_id
+    WHERE provider_mappings.provider = p_billing_provider
+      AND provider_mappings.provider_price_id = p_provider_price_id
+    ORDER BY plan_provider_mappings.is_default DESC, plan_provider_mappings.provider_mapping_id
+    LIMIT 1;
+
+    target_plan_name := COALESCE(NULLIF(UPPER(TRIM(p_plan_name)), ''), target_plan_name, 'PRO');
+  END IF;
+
   SELECT plans.id
   INTO target_plan_id
   FROM plans
@@ -446,7 +459,13 @@ BEGIN
   UPDATE user_subscriptions
   SET
     plan_id = target_plan_id,
-    status = CASE WHEN p_status IN ('active', 'trialing') THEN 'active' ELSE 'inactive' END,
+    status = CASE
+      WHEN p_status = 'trialing' THEN 'trialing'
+      WHEN p_status = 'active' THEN 'active'
+      WHEN p_status = 'past_due' THEN 'past_due'
+      WHEN p_status IN ('canceled', 'cancelled') THEN 'cancelled'
+      ELSE 'expired'
+    END,
     provider_price_id = COALESCE(p_provider_price_id, user_subscriptions.provider_price_id),
     current_period_end = COALESCE(p_current_period_end, user_subscriptions.current_period_end)
   WHERE user_subscriptions.billing_provider = p_billing_provider
@@ -506,7 +525,7 @@ BEGIN
     FROM get_user_subscription_plan(p_user_id);
   END IF;
 
-  IF subscription.status <> 'active' THEN
+  IF subscription.status NOT IN ('active', 'trialing', 'past_due') THEN
     SELECT plans.name, plans.max_chats, plans.max_identifications
     INTO free_plan
     FROM plans
@@ -542,6 +561,7 @@ BEGIN
   RETURN QUERY SELECT TRUE, reserved_usage_event_id, subscription.plan_name, p_feature, current_used + 1, feature_limit;
 END;
 $$ LANGUAGE plpgsql;
+
 
 CREATE OR REPLACE FUNCTION update_usage_event_cost(
   p_usage_event_id BIGINT,

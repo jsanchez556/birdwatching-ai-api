@@ -77,7 +77,7 @@ the enabled provider and plan:
 ```json
 {
   "provider": "stripe",
-  "plan": "PRO"
+  "plan": "GUIDE"
 }
 ```
 
@@ -86,10 +86,13 @@ Success data:
 ```json
 {
   "provider": "stripe",
-  "plan": "PRO",
+  "plan": "GUIDE",
+  "checkoutUrl": "https://checkout.stripe.com/c/pay/cs_test_...",
   "paymentUrl": "https://checkout.stripe.com/c/pay/cs_test_..."
 }
 ```
+
+`FREE` plan requests do not create hosted provider checkout sessions.
 
 ### `POST /billing/portal`
 Requires JWT bearer authentication. Creates a hosted billing management session
@@ -113,28 +116,144 @@ Success data:
 }
 ```
 
-If the account does not have an active provider subscription/customer record, the
-API returns a safe `409` error with code `BILLING_SUBSCRIPTION_NOT_FOUND`.
+If the account does not have a provider subscription/customer record in a
+billing-manageable state, the API returns a safe `409` error with code
+`BILLING_SUBSCRIPTION_NOT_FOUND`.
 
 ### `GET /billing/usage`
 Requires JWT bearer authentication. Returns the authenticated user's current
-month estimated AI cost and usage-event count.
+month AI cost, usage, LangSmith trace correlation, subscription plan context,
+and provider revenue/profitability summary. `monthlyCost` and
+`monthlyRequests` are retained as top-level compatibility fields.
 
 Success data:
 
 ```json
 {
   "monthlyCost": 4.28,
-  "monthlyRequests": 142
+  "monthlyRequests": 142,
+  "plan": {
+    "name": "PRO",
+    "status": "active",
+    "billingProvider": "Stripe",
+    "hasProviderSubscription": true
+  },
+  "usage": {
+    "requests": 142,
+    "tokens": 12000,
+    "byFeature": [
+      {
+        "feature": "chat",
+        "requests": 100,
+        "tokens": 9000,
+        "cost": 3.5
+      }
+    ]
+  },
+  "langSmith": {
+    "traceCount": 18
+  },
+  "profitability": {
+    "revenue": 29,
+    "cost": 4.284999,
+    "profit": 24.72,
+    "marginPercent": 85.22
+  }
+}
+```
+
+### `GET /billing/admin/dashboard`
+Requires JWT bearer authentication with an admin role. Returns current-month
+billing metrics for operator dashboards. The optional `monthStart` query
+parameter accepts an ISO date string and defaults to the current database month.
+
+Success data:
+
+```json
+{
+  "monthlyRevenue": 2450,
+  "mrr": 2450,
+  "arr": 29400,
+  "activeSubscriptions": 103,
+  "cancelledSubscriptions": 7,
+  "revenueByPlan": [
+    {
+      "plan": "GUIDE",
+      "monthlyRevenue": 950,
+      "activeSubscriptions": 19
+    },
+    {
+      "plan": "PRO",
+      "monthlyRevenue": 1500,
+      "activeSubscriptions": 84
+    }
+  ]
+}
+```
+
+### `POST /billing/admin/simulate-payment`
+Requires JWT bearer authentication with an admin role. Simulates provider-neutral
+subscription lifecycle events without calling Stripe or any external provider.
+Simulated events are persisted in `billing_events` with provider `Other` and
+`eventData.simulated: true`.
+
+Request body:
+
+```json
+{
+  "userId": 7,
+  "action": "renewal",
+  "plan": "PRO",
+  "status": "active",
+  "amountPaid": 2900,
+  "currency": "usd",
+  "effectiveAt": "2026-07-08T00:00:00.000Z"
+}
+```
+
+Supported actions are `renewal`, `cancel`, `upgrade`, `downgrade`,
+`payment_failed`, and `expire`. `upgrade` and `downgrade` require a paid plan;
+renewal and payment-failure simulations use the supplied paid plan or the
+current paid plan.
+
+Success data:
+
+```json
+{
+  "simulated": true,
+  "action": "renewal",
+  "userId": 7,
+  "plan": "PRO",
+  "status": "active",
+  "subscription": {
+    "userId": 7,
+    "plan": "PRO",
+    "status": "active"
+  },
+  "billingEvent": {
+    "provider": "Other",
+    "eventName": "subscription_renewed"
+  }
 }
 ```
 
 ### `POST /billing/webhook` and `POST /billing/webhook/:provider`
 Receive provider webhook or callback events. The default route uses
 `BILLING_DEFAULT_PROVIDER`; provider-specific routes use the provider path
-segment. The Stripe adapter verifies `Stripe-Signature`, handles Checkout
-completion and subscription update/delete events, and persists subscription
-status locally through provider-neutral fields.
+segment. The Stripe adapter verifies `Stripe-Signature`, stores provider events
+idempotently by provider event ID, handles Checkout completion, subscription
+create/update/delete events, records renewals and payment failures, and persists
+subscription status locally through provider-neutral fields.
+
+Local `user_subscriptions.status` values are:
+
+| Status | Meaning |
+| --- | --- |
+| `trialing` | Provider subscription is in a trial period. |
+| `active` | Provider subscription is active. |
+| `past_due` | Provider subscription is in payment-retry/dunning state. |
+| `cancelled` | Provider subscription was cancelled. |
+| `expired` | Provider subscription expired or cannot become active. |
 
 AI usage costs are stored in `usage_events` with `user_id`, `feature`, `tokens`,
 `estimated_cost`, optional `trace_id`, compact `model_usage`, and `created_at`.
@@ -155,6 +274,7 @@ Plan limits are enforced daily:
 | --- | ---: | ---: |
 | FREE | 20 | 5 |
 | PRO | 500 | 100 |
+| GUIDE | 1200 | 300 |
 
 When the daily quota is exhausted, protected AI endpoints return:
 

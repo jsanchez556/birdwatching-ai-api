@@ -28,10 +28,15 @@ describe('PlanService subscriptions', () => {
   it('normalizes provider statuses into local plan and subscription state', () => {
     expect(planNameForProviderStatus('active')).toBe('PRO');
     expect(planNameForProviderStatus('trialing')).toBe('PRO');
-    expect(planNameForProviderStatus('past_due')).toBe('FREE');
+    expect(planNameForProviderStatus('active', 'GUIDE')).toBe('GUIDE');
+    expect(planNameForProviderStatus('past_due', 'GUIDE')).toBe('GUIDE');
+    expect(planNameForProviderStatus('canceled')).toBe('FREE');
+    expect(planNameForProviderStatus('incomplete_expired')).toBe('FREE');
     expect(normalizeSubscriptionStatus('active')).toBe('active');
-    expect(normalizeSubscriptionStatus('trialing')).toBe('active');
-    expect(normalizeSubscriptionStatus('canceled')).toBe('inactive');
+    expect(normalizeSubscriptionStatus('trialing')).toBe('trialing');
+    expect(normalizeSubscriptionStatus('past_due')).toBe('past_due');
+    expect(normalizeSubscriptionStatus('canceled')).toBe('cancelled');
+    expect(normalizeSubscriptionStatus('incomplete_expired')).toBe('expired');
   });
 
   it('ensures new users default to FREE', async () => {
@@ -56,11 +61,11 @@ describe('PlanService subscriptions', () => {
     });
   });
 
-  it('activates PRO subscriptions for active provider states', async () => {
+  it('activates PRO subscriptions for paid provider states', async () => {
     mockUpsertProviderSubscription.mockResolvedValue({
       userId: 7,
       name: 'PRO',
-      status: 'active',
+      status: 'trialing',
     });
 
     await expect(planService.syncProviderSubscription({
@@ -74,13 +79,13 @@ describe('PlanService subscriptions', () => {
     })).resolves.toEqual({
       userId: 7,
       name: 'PRO',
-      status: 'active',
+      status: 'trialing',
     });
 
     expect(mockUpsertProviderSubscription).toHaveBeenCalledWith({
       userId: 7,
       planName: 'PRO',
-      status: 'active',
+      status: 'trialing',
       billingProvider: 'Stripe',
       providerCustomerId: 'cus_123',
       providerSubscriptionId: 'sub_123',
@@ -89,11 +94,36 @@ describe('PlanService subscriptions', () => {
     });
   });
 
-  it('downgrades inactive provider states to FREE when syncing a stored subscription', async () => {
+  it('preserves paid plan for past-due subscriptions during dunning', async () => {
+    mockUpsertProviderSubscription.mockResolvedValue({
+      userId: 7,
+      name: 'GUIDE',
+      status: 'past_due',
+    });
+
+    await planService.syncProviderSubscription({
+      userId: 7,
+      billingProvider: 'stripe',
+      providerCustomerId: 'cus_123',
+      providerSubscriptionId: 'sub_123',
+      providerPriceId: 'price_pro',
+      providerStatus: 'past_due',
+      planName: 'GUIDE',
+      currentPeriodEnd: null,
+    });
+
+    expect(mockUpsertProviderSubscription).toHaveBeenCalledWith(expect.objectContaining({
+      planName: 'GUIDE',
+      status: 'past_due',
+      billingProvider: 'Stripe',
+    }));
+  });
+
+  it('downgrades cancelled and expired provider states to FREE', async () => {
     mockUpsertProviderSubscription.mockResolvedValue({
       userId: 7,
       name: 'FREE',
-      status: 'inactive',
+      status: 'cancelled',
     });
 
     await planService.syncProviderSubscription({
@@ -108,7 +138,7 @@ describe('PlanService subscriptions', () => {
 
     expect(mockUpsertProviderSubscription).toHaveBeenCalledWith(expect.objectContaining({
       planName: 'FREE',
-      status: 'inactive',
+      status: 'cancelled',
       billingProvider: 'Stripe',
     }));
   });
@@ -116,8 +146,8 @@ describe('PlanService subscriptions', () => {
   it('delegates subscription status updates to the plan query module', async () => {
     mockUpdateProviderSubscriptionStatus.mockResolvedValue({
       userId: 7,
-      name: 'FREE',
-      status: 'inactive',
+      name: 'GUIDE',
+      status: 'past_due',
     });
 
     await expect(planService.updateProviderSubscription({
@@ -125,11 +155,12 @@ describe('PlanService subscriptions', () => {
       providerSubscriptionId: 'sub_123',
       providerStatus: 'past_due',
       providerPriceId: 'price_pro',
+      planName: 'GUIDE',
       currentPeriodEnd: null,
     })).resolves.toEqual({
       userId: 7,
-      name: 'FREE',
-      status: 'inactive',
+      name: 'GUIDE',
+      status: 'past_due',
     });
 
     expect(mockUpdateProviderSubscriptionStatus).toHaveBeenCalledWith({
@@ -137,6 +168,7 @@ describe('PlanService subscriptions', () => {
       providerSubscriptionId: 'sub_123',
       status: 'past_due',
       providerPriceId: 'price_pro',
+      planName: 'GUIDE',
       currentPeriodEnd: null,
     });
   });

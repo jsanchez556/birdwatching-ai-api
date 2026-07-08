@@ -100,6 +100,25 @@ describe('UsageQueries', () => {
     );
   });
 
+  it('reads the monthly billing usage dashboard', async () => {
+    const dashboard = {
+      monthly_cost: '4.280000',
+      monthly_requests: 142,
+      plan_name: 'PRO',
+    };
+    mockQuery.mockResolvedValue({ rows: [dashboard] });
+
+    await expect(usageQueries.getBillingUsageDashboard({
+      userId: 7,
+      monthStart: '2026-06-01T00:00:00.000Z',
+    })).resolves.toBe(dashboard);
+
+    expect(mockQuery).toHaveBeenCalledWith(
+      'SELECT * FROM get_monthly_billing_usage_dashboard($1, $2)',
+      [7, '2026-06-01T00:00:00.000Z']
+    );
+  });
+
   it('throws when the database insert fails', async () => {
     mockQuery.mockRejectedValue(new Error('Database error'));
 

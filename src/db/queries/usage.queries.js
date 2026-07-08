@@ -43,6 +43,15 @@ export class UsageQueries {
     return result.rows[0] || null;
   }
 
+  async getBillingUsageDashboard({ userId, monthStart = null }) {
+    const result = await pool.query(
+      'SELECT * FROM get_monthly_billing_usage_dashboard($1, $2)',
+      [userId, monthStart]
+    );
+
+    return result.rows[0] || null;
+  }
+
   async createLog({ userId, promptTokens, completionTokens, estimatedCost }) {
     try {
       const query = `

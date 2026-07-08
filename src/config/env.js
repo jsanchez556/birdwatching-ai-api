@@ -1,7 +1,13 @@
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
 import { parsePositiveInteger } from '../utils/number.utils.js';
 
-dotenv.config({ quiet: true });
+const projectEnvPath = fileURLToPath(new URL('../../.env', import.meta.url));
+
+dotenv.config({
+  path: projectEnvPath,
+  quiet: true,
+});
 
 const required = ['OPENAI_API_KEY', 'DATABASE_URL', 'JWT_SECRET'];
 const nodeEnv = process.env.NODE_ENV || 'development';
@@ -137,7 +143,8 @@ const env = {
   stripe: {
     secretKey: process.env.STRIPE_SECRET_KEY,
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
-    proPriceId: process.env.STRIPE_PRO_PRICE_ID,
+    proPriceId: process.env.STRIPE_PRICE_PRO,
+    guidePriceId: process.env.STRIPE_PRICE_GUIDE,
     checkoutSuccessUrl: process.env.STRIPE_CHECKOUT_SUCCESS_URL,
     checkoutCancelUrl: process.env.STRIPE_CHECKOUT_CANCEL_URL,
     portalReturnUrl: process.env.STRIPE_PORTAL_RETURN_URL,
