@@ -156,6 +156,11 @@ describe('ReservationService', () => {
       participants: 2,
       customerName: 'Ana Gomez',
       conversationId: 'conversation-123',
+    }, {
+      authUser: { plan: 'PRO' },
+      model: 'gpt-test',
+      ragTrace: { retrievedChunkCount: 2 },
+      source: 'voice',
     });
 
     expect(result).toMatchObject({
@@ -193,9 +198,12 @@ describe('ReservationService', () => {
       idempotencyKey: 'conversation-123:1:2',
       properties: {
         conversationId: 'conversation-123',
-        model: undefined,
+        latencyMs: expect.any(Number),
+        model: 'gpt-test',
         participants: 2,
-        source: 'chat',
+        plan: 'PRO',
+        ragUsed: true,
+        source: 'voice',
         tourId: 1,
       },
     });
@@ -207,8 +215,10 @@ describe('ReservationService', () => {
       properties: {
         conversationId: 'conversation-123',
         latencyMs: expect.any(Number),
-        model: undefined,
-        source: 'chat',
+        model: 'gpt-test',
+        plan: 'PRO',
+        ragUsed: true,
+        source: 'voice',
         tourId: 1,
         participants: 2,
         amount: 240,

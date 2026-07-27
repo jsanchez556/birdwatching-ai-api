@@ -38,6 +38,8 @@ describe('searchTours analytics', () => {
       conversationId: 'conversation-123',
       model: 'gpt-test',
       source: 'voice',
+      authUser: { plan: 'PRO' },
+      ragTrace: { retrievedChunkCount: 3 },
     })).resolves.toMatchObject({
       success: true,
       tours: [{ tourId: 1 }, { tourId: 2 }],
@@ -47,15 +49,36 @@ describe('searchTours analytics', () => {
       userId: 7,
       anonymousId: 'conversation:conversation-123',
       event: 'tour_recommended',
+      idempotencyKey: 'conversation-123:1,2',
       properties: {
         conversationId: 'conversation-123',
         latencyMs: expect.any(Number),
         model: 'gpt-test',
-        plan: undefined,
+        plan: 'PRO',
+        ragUsed: true,
         recommendationCount: 2,
         recommendationType: 'recommendation',
         source: 'voice',
       },
     });
+  });
+
+  it('does not track an empty recommendation result', async () => {
+    mockRecommendTours.mockResolvedValue({
+      success: true,
+      tours: [],
+    });
+
+    await expect(searchTours({
+      recommend: true,
+    }, {
+      userId: 7,
+      conversationId: 'conversation-123',
+    })).resolves.toEqual({
+      success: true,
+      tours: [],
+    });
+
+    expect(mockAnalyticsTrack).not.toHaveBeenCalled();
   });
 });
