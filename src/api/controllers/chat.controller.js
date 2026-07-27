@@ -58,6 +58,7 @@ class ChatController {
           usageEventId: req.usageQuota?.usageEventId,
           role,
           responseMode,
+          source: 'text',
         }
       );
 

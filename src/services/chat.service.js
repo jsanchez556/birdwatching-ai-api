@@ -17,6 +17,9 @@ import {
 } from '../tracing/aiTracing.middleware.js';
 import { injectResponseModeMessage } from '../ai/prompts/prompt.builder.js';
 import { FIELD_ASSISTANT_RESPONSE_MODE } from '../ai/prompts/system.prompt.js';
+import analytics from '../analytics/analytics.service.js';
+import { ANALYTICS_EVENTS } from '../analytics/events.js';
+import env from '../config/env.js';
 
 const STREAM_GUARDRAIL_BUFFER_CHARS = 48;
 const VISITOR_ROLE = 'visitor';
@@ -202,6 +205,18 @@ function mergeChatMeta(messageMeta = {}, conversationMeta = {}) {
   };
 }
 
+function resolveChatSource(options = {}) {
+  if (options.source === 'voice' || options.source === 'text') {
+    return options.source;
+  }
+
+  return normalizeResponseMode(options.responseMode) ? 'voice' : 'text';
+}
+
+function resolveChatModel(metadata = {}) {
+  return metadata.openAiUsage?.modelUsage?.[0]?.model || env.openAiModel;
+}
+
 class ChatService {
   async processMessageStream(message, conversationId, clientIP, events = {}, options = {}) {
     const activeConversationId = conversationId?.trim() || randomUUID();
@@ -230,6 +245,7 @@ class ChatService {
   }
 
   async processMessageStreamUntraced(message, activeConversationId, clientIP, events = {}, options = {}) {
+    const startedAt = Date.now();
     const { signal, authUser } = options;
     const userId = authUser?.id;
     const role = resolveRole(authUser);
@@ -268,6 +284,18 @@ class ChatService {
         meta: buildPromptMeta(),
       });
       events.onChunk?.(inputGuardrail.response);
+      analytics.track({
+        userId,
+        anonymousId: `conversation:${activeConversationId}`,
+        event: ANALYTICS_EVENTS.CHAT_MESSAGE_SENT,
+        properties: {
+          conversationId: activeConversationId,
+          latencyMs: Date.now() - startedAt,
+          ragUsed: false,
+          role,
+          source: resolveChatSource(options),
+        },
+      });
 
       return {
         conversationId: activeConversationId,
@@ -301,6 +329,7 @@ class ChatService {
       conversationId: activeConversationId,
       userId,
       parentTraceId,
+      source: resolveChatSource(options),
     });
 
     throwIfAborted(signal);
@@ -315,6 +344,8 @@ class ChatService {
       conversationId: activeConversationId,
       role,
       ...(responseMode ? { responseMode } : {}),
+      model: env.openAiModel,
+      source: resolveChatSource(options),
       ...(userId ? { userId } : {}),
       ...(authUser ? { authUser } : {}),
       ...(customerContext ? { customerContext } : {}),
@@ -415,6 +446,19 @@ class ChatService {
     } else {
       await conversationService.saveExchange(activeConversationId, message, finalResponse);
     }
+    analytics.track({
+      userId,
+      anonymousId: `conversation:${activeConversationId}`,
+      event: ANALYTICS_EVENTS.CHAT_MESSAGE_SENT,
+      properties: {
+        conversationId: activeConversationId,
+        latencyMs: Date.now() - startedAt,
+        model: resolveChatModel(openAiMetadata),
+        ragUsed: Number(ragContext.ragTrace?.retrievedChunkCount || 0) > 0,
+        role,
+        source: openAiMetadata.source,
+      },
+    });
 
     return {
       conversationId: activeConversationId,
@@ -487,5 +531,7 @@ export {
   buildToolMeta,
   mergeAuthenticatedCustomerContext,
   normalizeResponseMode,
+  resolveChatModel,
+  resolveChatSource,
 };
 export default new ChatService();

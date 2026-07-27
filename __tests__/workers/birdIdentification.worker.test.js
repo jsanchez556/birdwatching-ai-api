@@ -50,6 +50,9 @@ describe('bird identification worker', () => {
     expect(jobService.completeJob).toHaveBeenCalledWith({
       jobId: 'job-1',
       identification,
+      metadata: {
+        parentTraceId: 'trace-1',
+      },
     });
     expect(jobService.failJob).not.toHaveBeenCalled();
   });

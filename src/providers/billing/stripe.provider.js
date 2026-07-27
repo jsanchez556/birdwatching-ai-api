@@ -394,6 +394,12 @@ class StripeBillingProvider {
           eventData: {
             ...billingEventData(object),
             paymentStatus: object.payment_status || null,
+            amount: Number.isFinite(Number(object.amount_total))
+              ? Number(object.amount_total) / 100
+              : null,
+            currency: typeof object.currency === 'string'
+              ? object.currency.toUpperCase()
+              : null,
           },
         }),
         subscription: buildSubscriptionSync(subscription, {

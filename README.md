@@ -10,6 +10,7 @@ REST API for Costa Rica birdwatching chat, voice chat, trip recommendations, con
 - Prompting: [docs/prompting.md](./docs/prompting.md)
 - Memory design: [docs/memory.md](./docs/memory.md)
 - Deployment: [docs/deployment.md](./docs/deployment.md)
+- Product analytics: [docs/analytics.md](./docs/analytics.md)
 
 ## Stack
 - Node.js ESM, Express 5
@@ -51,6 +52,7 @@ Common optional variables:
 - `BILLING_PROVIDERS` and `BILLING_DEFAULT_PROVIDER` select enabled billing adapters; Stripe is currently the concrete adapter for hosted checkout and billing management in development/testing
 - `STRIPE_SECRET_KEY`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_GUIDE`, and `STRIPE_WEBHOOK_SECRET` configure the Stripe billing provider adapter
 - `LANGCHAIN_TRACING`, `LANGCHAIN_PROJECT`, and `LANGCHAIN_API_KEY` enable sanitized LangSmith trace export
+- `POSTHOG_ENABLED`, `POSTHOG_API_KEY`, and `POSTHOG_HOST` configure server-side product analytics
 
 Run database migrations before using chat memory:
 ```bash

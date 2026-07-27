@@ -15,6 +15,13 @@ const mockProcessMessageStream = jest.fn();
 const mockEnsureDefaultSubscription = jest.fn();
 const mockReserveUsage = jest.fn();
 const mockUploadObject = jest.fn();
+const mockAnalyticsTrack = jest.fn();
+
+await jest.unstable_mockModule('../src/analytics/analytics.service.js', () => ({
+  default: {
+    track: mockAnalyticsTrack,
+  },
+}));
 
 await jest.unstable_mockModule('../src/utils/logger.js', () => ({
   default: {
@@ -141,6 +148,16 @@ describe('auth endpoints', () => {
       tokenHash: expect.any(String),
       expiresAt: expect.any(Date),
     });
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith({
+      userId: 'user-1',
+      event: 'user_signed_up',
+      properties: {
+        latencyMs: expect.any(Number),
+        role: 'customer',
+        plan: 'FREE',
+        source: 'email_password',
+      },
+    });
   });
 
   it('rejects duplicate signup emails with a safe error', async () => {
@@ -195,6 +212,7 @@ describe('auth endpoints', () => {
       tokenHash: expect.any(String),
       expiresAt: expect.any(Date),
     });
+    expect(mockAnalyticsTrack).not.toHaveBeenCalled();
   });
 
   it('refreshes a session and rotates the refresh token', async () => {

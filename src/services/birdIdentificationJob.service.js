@@ -6,6 +6,8 @@ import env from '../config/env.js';
 import { JOB_STATUSES, JOB_TYPES } from '../jobs/jobTypes.js';
 import { registerBirdIdentificationQueue } from '../queues/birdIdentification.queue.js';
 import logger from '../utils/logger.js';
+import analytics from '../analytics/analytics.service.js';
+import { ANALYTICS_EVENTS } from '../analytics/events.js';
 
 const SAFE_BIRD_IDENTIFICATION_ERROR = 'Bird identification failed. Please try again.';
 const STALLABLE_JOB_STATUSES = new Set([
@@ -99,12 +101,14 @@ class BirdIdentificationJobService {
     imageStorage = birdIdentificationImageStorage,
     queueFactory = registerBirdIdentificationQueue,
     stallTimeoutMs = env.birdIdentificationJobStallTimeoutMs,
+    analyticsClient = analytics,
   } = {}) {
     this.queries = queries;
     this.historyQueries = historyQueries;
     this.imageStorage = imageStorage;
     this.queueFactory = queueFactory;
     this.stallTimeoutMs = stallTimeoutMs;
+    this.analytics = analyticsClient;
   }
 
   async enqueueIdentification({ imageUrl, imageUpload, userId, metadata = {} }) {
@@ -120,6 +124,7 @@ class BirdIdentificationJobService {
       userId: normalizedUserId,
     });
     const jobId = randomUUID();
+    const source = imageUpload?.buffer?.length ? 'upload' : 'url';
 
     await this.queries.createJob({
       jobId,
@@ -141,6 +146,7 @@ class BirdIdentificationJobService {
           parentTraceId: metadata.parentTraceId,
           usageEventId: metadata.usageEventId,
           debug: Boolean(metadata.debug),
+          source,
         },
       }, {
         jobId,
@@ -156,6 +162,15 @@ class BirdIdentificationJobService {
       });
       throw error;
     }
+    this.analytics.track({
+      userId: normalizedUserId,
+      event: ANALYTICS_EVENTS.BIRD_IDENTIFICATION_STARTED,
+      idempotencyKey: jobId,
+      properties: {
+        model: env.openAiModel,
+        source,
+      },
+    });
 
     return {
       jobId,
@@ -223,7 +238,7 @@ class BirdIdentificationJobService {
     return this.queries.markActive({ jobId });
   }
 
-  async completeJob({ jobId, identification }) {
+  async completeJob({ jobId, identification, metadata = {} }) {
     const { result, meta } = splitIdentificationResult(identification);
     const row = typeof this.queries.getJobForProcessing === 'function'
       ? await this.queries.getJobForProcessing({
@@ -257,6 +272,20 @@ class BirdIdentificationJobService {
         });
       }
     }
+    const createdAtMs = new Date(row?.created_at).getTime();
+
+    this.analytics.track({
+      userId: row?.user_id,
+      event: ANALYTICS_EVENTS.BIRD_IDENTIFICATION_COMPLETED,
+      idempotencyKey: jobId,
+      properties: {
+        latencyMs: Number.isFinite(createdAtMs) ? Date.now() - createdAtMs : undefined,
+        model: meta.model || env.openAiModel,
+        ragUsed: Number(meta.ragTrace?.retrievedChunkCount || 0) > 0,
+        source: metadata.source || 'unknown',
+        status: result.status,
+      },
+    });
 
     return completedJob;
   }

@@ -2,6 +2,7 @@ import app from './app.js';
 import env from '../config/env.js';
 import queueManager, { registerQueues } from '../queues/index.js';
 import logger from '../utils/logger.js';
+import analytics from '../analytics/analytics.service.js';
 
 const port = env.port;
 
@@ -27,6 +28,7 @@ const startApiServer = () => {
     server.close(async () => {
       try {
         await queueManager.close();
+        await analytics.shutdown();
         process.exit(0);
       } catch (error) {
         logger.error('Failed to close queue infrastructure', {

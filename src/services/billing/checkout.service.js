@@ -10,6 +10,8 @@ import subscriptionService, {
 } from '../subscriptions/subscription.service.js';
 import { getBillingProvider } from '../../providers/index.js';
 import HttpError from '../../utils/httpError.js';
+import analytics from '../../analytics/analytics.service.js';
+import { ANALYTICS_EVENTS } from '../../analytics/events.js';
 
 function normalizeProviderName(providerName) {
   const candidate = typeof providerName === 'string' && providerName.trim()
@@ -96,6 +98,7 @@ class CheckoutService {
     providerName = null,
     planName = PRO_PLAN_NAME,
   }) {
+    const startedAt = Date.now();
     assertAuthenticated(authUser);
 
     const checkoutPlanName = normalizeCheckoutPlan(planName);
@@ -127,6 +130,16 @@ class CheckoutService {
       planName: checkoutPlanName,
       providerCustomerId: providerSubscription?.providerCustomerId,
       providerPriceId,
+    });
+    analytics.track({
+      userId: authUser.id,
+      event: ANALYTICS_EVENTS.CHECKOUT_STARTED,
+      properties: {
+        latencyMs: Date.now() - startedAt,
+        plan: checkoutPlanName,
+        billingProvider: billingProviderName,
+        source: 'account_upgrade',
+      },
     });
 
     return checkoutResponse({

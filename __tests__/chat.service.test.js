@@ -6,6 +6,13 @@ const mockAssertCanAccess = jest.fn();
 const mockBuildContext = jest.fn();
 const mockStreamResponseWithTools = jest.fn();
 const mockRecordOpenAiUsage = jest.fn();
+const mockAnalyticsTrack = jest.fn();
+
+await jest.unstable_mockModule('../src/analytics/analytics.service.js', () => ({
+  default: {
+    track: mockAnalyticsTrack,
+  },
+}));
 
 await jest.unstable_mockModule('../src/services/conversation.service.js', () => ({
   default: {
@@ -121,6 +128,19 @@ describe('ChatService streaming orchestration', () => {
         promptVersions: {
           chat: '2.3.0',
         },
+      },
+    });
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith({
+      userId: undefined,
+      anonymousId: 'conversation:conversation-123',
+      event: 'chat_message_sent',
+      properties: {
+        conversationId: 'conversation-123',
+        latencyMs: expect.any(Number),
+        model: expect.stringMatching(/^gpt-/),
+        ragUsed: false,
+        role: 'visitor',
+        source: 'text',
       },
     });
   });

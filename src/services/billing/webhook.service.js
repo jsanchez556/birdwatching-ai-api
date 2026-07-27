@@ -2,6 +2,12 @@ import billingEventQueries from '../../db/queries/billingEvent.queries.js';
 import subscriptionService from '../subscriptions/subscription.service.js';
 import { normalizeProviderMappingName } from '../providerMapping.service.js';
 import { resolveBillingProvider } from './checkout.service.js';
+import analytics from '../../analytics/analytics.service.js';
+import { ANALYTICS_EVENTS } from '../../analytics/events.js';
+import {
+  PAID_ENTITLEMENT_STATUSES,
+  isPaidPlanName,
+} from '../subscriptions/subscription.service.js';
 
 class WebhookService {
   async syncProviderSubscription(subscription = {}) {
@@ -53,8 +59,36 @@ class WebhookService {
       }
     }
 
+    let syncedSubscription = null;
+
     if (event?.type === 'subscription_synced' || event?.type === 'subscription_changed') {
-      await this.syncProviderSubscription(event.subscription);
+      syncedSubscription = await this.syncProviderSubscription(event.subscription);
+    }
+
+    const isCompletedCheckout = event?.providerEvent?.eventName === 'checkout_completed';
+    const userId = syncedSubscription?.userId || event?.subscription?.userId;
+    const idempotencyBase = event?.providerEvent
+      ? `${event.providerEvent.provider}:${event.providerEvent.providerEventId}`
+      : null;
+
+    if (
+      isCompletedCheckout
+      && isPaidPlanName(syncedSubscription?.name)
+      && PAID_ENTITLEMENT_STATUSES.has(syncedSubscription?.status)
+    ) {
+      analytics.track({
+        userId,
+        event: ANALYTICS_EVENTS.SUBSCRIPTION_ACTIVATED,
+        idempotencyKey: idempotencyBase,
+        properties: {
+          billingProvider: normalizeProviderMappingName(provider.name),
+          currency: event.providerEvent.eventData?.currency,
+          amount: event.providerEvent.eventData?.amount,
+          plan: syncedSubscription.name,
+          source: 'billing_webhook',
+          status: syncedSubscription.status,
+        },
+      });
     }
 
     if (event?.providerEvent) {

@@ -9,6 +9,13 @@ const mockEnsureDefaultSubscription = jest.fn();
 const mockRecordProviderEvent = jest.fn();
 const mockMarkProviderEventProcessed = jest.fn();
 const mockWarn = jest.fn();
+const mockAnalyticsTrack = jest.fn();
+
+await jest.unstable_mockModule('../src/analytics/analytics.service.js', () => ({
+  default: {
+    track: mockAnalyticsTrack,
+  },
+}));
 
 await jest.unstable_mockModule('../src/config/env.js', () => ({
   default: {
@@ -181,6 +188,16 @@ describe('BillingService provider orchestration', () => {
     expect(mockGetDefaultProviderMapping).toHaveBeenCalledWith({
       planName: 'PRO',
       provider: 'Stripe',
+    });
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith({
+      userId: 7,
+      event: 'checkout_started',
+      properties: {
+        latencyMs: expect.any(Number),
+        plan: 'PRO',
+        billingProvider: 'Stripe',
+        source: 'account_upgrade',
+      },
     });
   });
 
@@ -391,6 +408,9 @@ describe('BillingService provider orchestration', () => {
           client_reference_id: '7',
           customer: 'cus_123',
           subscription: 'sub_123',
+          payment_status: 'paid',
+          amount_total: 2500,
+          currency: 'usd',
         },
       },
     };
@@ -462,6 +482,19 @@ describe('BillingService provider orchestration', () => {
     expect(mockMarkProviderEventProcessed).toHaveBeenCalledWith({
       provider: 'Stripe',
       providerEventId: 'evt_checkout_123',
+    });
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith({
+      userId: 7,
+      event: 'subscription_activated',
+      idempotencyKey: 'Stripe:evt_checkout_123',
+      properties: {
+        billingProvider: 'Stripe',
+        currency: 'USD',
+        amount: 25,
+        plan: 'PRO',
+        source: 'billing_webhook',
+        status: 'active',
+      },
     });
   });
 
@@ -615,6 +648,7 @@ describe('BillingService provider orchestration', () => {
     expect(mockUpdateProviderSubscription).not.toHaveBeenCalled();
     expect(mockSyncProviderSubscription).not.toHaveBeenCalled();
     expect(mockMarkProviderEventProcessed).not.toHaveBeenCalled();
+    expect(mockAnalyticsTrack).not.toHaveBeenCalled();
   });
 
   it('retries a previously recorded webhook that was not processed', async () => {

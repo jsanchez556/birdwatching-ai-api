@@ -10,6 +10,9 @@ import {
 describe('BirdIdentificationJobService', () => {
   it('uploads raw images before enqueueing and stores only the image URL in the job payload', async () => {
     const add = jest.fn().mockResolvedValue({ id: 'job-1' });
+    const analyticsClient = {
+      track: jest.fn(),
+    };
     const queries = {
       createJob: jest.fn().mockResolvedValue({ job_id: 'job-1' }),
       failJob: jest.fn(),
@@ -23,6 +26,7 @@ describe('BirdIdentificationJobService', () => {
       queries,
       imageStorage,
       queueFactory: () => ({ add }),
+      analyticsClient,
     });
     const imageUpload = {
       buffer: Buffer.from([0xff, 0xd8, 0xff]),
@@ -64,6 +68,7 @@ describe('BirdIdentificationJobService', () => {
         metadata: {
           parentTraceId: 'trace-1',
           debug: true,
+          source: 'upload',
         },
       },
       {
@@ -72,6 +77,15 @@ describe('BirdIdentificationJobService', () => {
     );
     expect(add.mock.calls[0][1]).not.toHaveProperty('imageUpload');
     expect(add.mock.calls[0][1]).not.toHaveProperty('buffer');
+    expect(analyticsClient.track).toHaveBeenCalledWith({
+      userId: 7,
+      event: 'bird_identification_started',
+      idempotencyKey: result.jobId,
+      properties: {
+        model: expect.stringMatching(/^gpt-/),
+        source: 'upload',
+      },
+    });
   });
 
   it('marks the persisted job failed when queue enqueue fails', async () => {
@@ -225,10 +239,14 @@ describe('BirdIdentificationJobService', () => {
   });
 
   it('persists active, completed, and failed job lifecycle transitions', async () => {
+    const analyticsClient = {
+      track: jest.fn(),
+    };
     const queries = {
       markActive: jest.fn().mockResolvedValue({ status: 'active' }),
       getJobForProcessing: jest.fn().mockResolvedValue({
         user_id: 7,
+        created_at: new Date(Date.now() - 1000),
         request_params: {
           imageUrl: 'https://example.test/bird.jpg',
         },
@@ -244,6 +262,7 @@ describe('BirdIdentificationJobService', () => {
       historyQueries,
       imageStorage: {},
       queueFactory: jest.fn(),
+      analyticsClient,
     });
 
     await service.markActive({ jobId: 'job-1' });
@@ -258,6 +277,9 @@ describe('BirdIdentificationJobService', () => {
         promptVersions: {
           birdIdentification: '1.0.0',
         },
+      },
+      metadata: {
+        source: 'upload',
       },
     });
     await service.failJob({ jobId: 'job-1' });
@@ -303,6 +325,18 @@ describe('BirdIdentificationJobService', () => {
     expect(queries.failJob).toHaveBeenCalledWith({
       jobId: 'job-1',
       errorMessage: SAFE_BIRD_IDENTIFICATION_ERROR,
+    });
+    expect(analyticsClient.track).toHaveBeenCalledWith({
+      userId: 7,
+      event: 'bird_identification_completed',
+      idempotencyKey: 'job-1',
+      properties: {
+        latencyMs: expect.any(Number),
+        model: expect.stringMatching(/^gpt-/),
+        ragUsed: false,
+        source: 'upload',
+        status: 'identified',
+      },
     });
   });
 

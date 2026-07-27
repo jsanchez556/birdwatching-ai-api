@@ -38,6 +38,7 @@ const createBirdIdentificationProcessor = ({
     await jobService.completeJob({
       jobId,
       identification,
+      metadata,
     });
 
     return {

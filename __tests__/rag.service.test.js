@@ -2,6 +2,13 @@ import { jest } from '@jest/globals';
 
 const mockRetrieve = jest.fn();
 const mockFindBirdProfile = jest.fn();
+const mockAnalyticsTrack = jest.fn();
+
+await jest.unstable_mockModule('../src/analytics/analytics.service.js', () => ({
+  default: {
+    track: mockAnalyticsTrack,
+  },
+}));
 
 await jest.unstable_mockModule('../src/ai/services/retrieval.service.js', () => ({
   default: {
@@ -385,6 +392,19 @@ describe('RagService', () => {
       ],
     });
     expect(context.ragTrace.contextMessageLength).toBeGreaterThan(0);
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith({
+      userId: undefined,
+      anonymousId: 'conversation:conversation-123',
+      event: 'rag_query_executed',
+      properties: {
+        conversationId: 'conversation-123',
+        latencyMs: expect.any(Number),
+        model: expect.any(String),
+        ragUsed: true,
+        retrievedChunkCount: 1,
+        source: 'chat',
+      },
+    });
     expect(logger.info).toHaveBeenCalledWith('RAG context retrieved for chat', {
       conversationId: 'conversation-123',
       documentCount: 1,

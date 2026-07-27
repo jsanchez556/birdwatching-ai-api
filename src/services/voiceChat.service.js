@@ -58,6 +58,7 @@ class VoiceChatService {
           authUser: context.authUser,
           role: context.role,
           responseMode: context.responseMode,
+          source: 'voice',
           parentTraceId: trace.id,
         }
       );

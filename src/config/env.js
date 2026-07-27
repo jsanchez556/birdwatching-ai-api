@@ -59,6 +59,13 @@ if (
   throw new Error('BULLMQ_DLQ_ENABLED must be true or false');
 }
 
+if (
+  process.env.POSTHOG_ENABLED
+  && !['true', 'false'].includes(process.env.POSTHOG_ENABLED)
+) {
+  throw new Error('POSTHOG_ENABLED must be true or false');
+}
+
 if (nodeEnv !== 'test') {
   for (const key of required) {
     if (!process.env[key]) {
@@ -152,6 +159,11 @@ const env = {
       process.env.STRIPE_WEBHOOK_TOLERANCE_SECONDS,
       5 * 60
     ),
+  },
+  posthog: {
+    enabled: process.env.POSTHOG_ENABLED === 'true',
+    apiKey: process.env.POSTHOG_API_KEY,
+    host: process.env.POSTHOG_HOST || 'https://us.i.posthog.com',
   },
   birdIdentificationJobStallTimeoutMs: parsePositiveInteger(
     process.env.BIRD_IDENTIFICATION_JOB_STALL_TIMEOUT_MS,

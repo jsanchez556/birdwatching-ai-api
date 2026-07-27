@@ -4,6 +4,13 @@ const mockGetTourById = jest.fn();
 const mockGetAvailableTours = jest.fn();
 const mockCreateReservation = jest.fn();
 const mockGetLatestByConversationId = jest.fn();
+const mockAnalyticsTrack = jest.fn();
+
+await jest.unstable_mockModule('../src/analytics/analytics.service.js', () => ({
+  default: {
+    track: mockAnalyticsTrack,
+  },
+}));
 
 await jest.unstable_mockModule('../src/db/queries/reservation.queries.js', () => ({
   default: {
@@ -45,13 +52,48 @@ describe('ReservationService', () => {
       difficulty: 'moderate',
     });
 
-    await expect(reservationService.checkTourAvailability({ tourId: 1 })).resolves.toMatchObject({
+    await expect(reservationService.checkTourAvailability({ tourId: 1 }, {
+      userId: 7,
+      conversationId: 'conversation-123',
+      model: 'gpt-test',
+      source: 'voice',
+      agentPlan: {
+        status: 'select_tour',
+      },
+    })).resolves.toMatchObject({
       success: true,
       tourId: 1,
       availableSlots: 5,
       isAvailable: true,
     });
     expect(mockGetTourById).toHaveBeenCalledWith(1);
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith({
+      userId: 7,
+      anonymousId: 'conversation:conversation-123',
+      event: 'tour_selected',
+      idempotencyKey: 'conversation-123:1',
+      properties: {
+        conversationId: 'conversation-123',
+        model: 'gpt-test',
+        source: 'voice',
+        tourId: 1,
+      },
+    });
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith({
+      userId: 7,
+      anonymousId: 'conversation:conversation-123',
+      event: 'availability_checked',
+      properties: {
+        conversationId: 'conversation-123',
+        latencyMs: expect.any(Number),
+        model: 'gpt-test',
+        source: 'voice',
+        tourId: 1,
+        participants: undefined,
+        availabilityResult: true,
+        availableSlots: 5,
+      },
+    });
   });
 
   it('calculates prices with discounts', async () => {
@@ -144,6 +186,35 @@ describe('ReservationService', () => {
       discountRate: 0,
       confirmationCode: expect.stringMatching(/^BW-/),
     }));
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith({
+      userId: undefined,
+      anonymousId: 'conversation:conversation-123',
+      event: 'reservation_started',
+      idempotencyKey: 'conversation-123:1:2',
+      properties: {
+        conversationId: 'conversation-123',
+        model: undefined,
+        participants: 2,
+        source: 'chat',
+        tourId: 1,
+      },
+    });
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith({
+      userId: undefined,
+      anonymousId: 'conversation:conversation-123',
+      event: 'reservation_completed',
+      idempotencyKey: 42,
+      properties: {
+        conversationId: 'conversation-123',
+        latencyMs: expect.any(Number),
+        model: undefined,
+        source: 'chat',
+        tourId: 1,
+        participants: 2,
+        amount: 240,
+        currency: 'USD',
+      },
+    });
   });
 
   it('uses request context for itinerary dates without storing reservation metadata', async () => {

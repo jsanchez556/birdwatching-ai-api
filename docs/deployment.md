@@ -66,6 +66,9 @@ Optional:
 - `STRIPE_CHECKOUT_CANCEL_URL`: optional hosted Checkout cancellation redirect URL
 - `STRIPE_PORTAL_RETURN_URL`: optional Stripe Customer Portal return URL; defaults to the request origin with `?billing=portal`
 - `STRIPE_WEBHOOK_TOLERANCE_SECONDS`, defaults to `300`
+- `POSTHOG_ENABLED`, `true` or `false`; defaults to `false`
+- `POSTHOG_API_KEY`, PostHog project API key used only when analytics is enabled
+- `POSTHOG_HOST`, PostHog ingest host; defaults to `https://us.i.posthog.com`
 
 For local Stripe test-mode checkout, forward signed subscription events before
 opening Checkout:

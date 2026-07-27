@@ -7,6 +7,8 @@ import S3BucketService from '../storage/s3Bucket.service.js';
 import env from '../config/env.js';
 import HttpError from '../utils/httpError.js';
 import { getAuthTokenExpiresAt, signAuthToken } from '../utils/authTokens.js';
+import analytics from '../analytics/analytics.service.js';
+import { ANALYTICS_EVENTS } from '../analytics/events.js';
 
 const DUPLICATE_KEY_ERROR = '23505';
 const REFRESH_TOKEN_BYTES = 32;
@@ -81,6 +83,7 @@ class AuthService {
   }
 
   async signup({ email, password, name }) {
+    const startedAt = Date.now();
     const normalizedEmail = normalizeEmail(email);
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
@@ -92,10 +95,21 @@ class AuthService {
       });
       const subscription = await planService.ensureDefaultSubscription(user.id);
 
-      return this.issueSession({
+      const session = await this.issueSession({
         ...user,
         plan: subscription.plan,
       });
+      analytics.track({
+        userId: user.id,
+        event: ANALYTICS_EVENTS.USER_SIGNED_UP,
+        properties: {
+          latencyMs: Date.now() - startedAt,
+          role: user.role || 'customer',
+          plan: subscription.plan,
+          source: 'email_password',
+        },
+      });
+      return session;
     } catch (error) {
       if (error.code === DUPLICATE_KEY_ERROR) {
         throw new HttpError(409, 'An account with this email already exists', {
@@ -122,10 +136,11 @@ class AuthService {
 
     const subscription = await planService.ensureDefaultSubscription(user.id);
 
-    return this.issueSession({
+    const session = await this.issueSession({
       ...user,
       plan: subscription.plan,
     });
+    return session;
   }
 
   async refresh({ refreshToken }) {
