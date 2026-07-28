@@ -21,7 +21,6 @@ function buildRecommendationIdempotencyKey(conversationId, tours = []) {
 }
 
 async function searchTours(args = {}, metadata = {}) {
-  const startedAt = Date.now();
   let result;
 
   if (args.recommend === true || args.budget || args.limit) {
@@ -55,10 +54,7 @@ async function searchTours(args = {}, metadata = {}) {
       ),
       properties: {
         conversationId: metadata.conversationId,
-        latencyMs: Date.now() - startedAt,
-        model: metadata.model,
         plan: metadata.authUser?.plan,
-        ragUsed: Number(metadata.ragTrace?.retrievedChunkCount || 0) > 0,
         recommendationCount: result.tours.length,
         recommendationType: args.recommend === true ? 'recommendation' : 'tour_search',
         source: metadata.source || 'chat',

@@ -35,9 +35,11 @@ class TextToSpeech {
   async synthesize({ text, metadata = {} }) {
     const response = await traceLlmCall('audio_speech_generation', {
       model: SPEECH_MODEL,
+      promptVersion: 'not_applicable',
       voice: SPEECH_VOICE,
       textLength: text.length,
       parentTraceId: metadata.parentTraceId,
+      cacheStatus: 'not_applicable',
     }, () => asyncRetry(() => openaiClient.client.audio.speech.create({
       model: SPEECH_MODEL,
       voice: SPEECH_VOICE,
@@ -47,7 +49,11 @@ class TextToSpeech {
       retries: 2,
       shouldRetry: isRetryableOpenAIError,
     }), {
-      tokenUsage: null,
+      tokenUsage: {
+        promptTokens: Math.max(1, Math.ceil(text.length / 4)),
+        completionTokens: 0,
+        totalTokens: Math.max(1, Math.ceil(text.length / 4)),
+      },
       outputMetadata: () => ({
         model: SPEECH_MODEL,
         voice: SPEECH_VOICE,

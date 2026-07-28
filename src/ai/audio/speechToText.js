@@ -21,9 +21,11 @@ class SpeechToText {
 
     const response = await traceLlmCall('audio_transcription', {
       model: TRANSCRIPTION_MODEL,
+      promptVersion: 'not_applicable',
       fileType: mimeType,
       fileSizeBytes: buffer.length,
       parentTraceId: metadata.parentTraceId,
+      cacheStatus: 'not_applicable',
     }, () => asyncRetry(() => openaiClient.client.audio.transcriptions.create({
       file,
       model: TRANSCRIPTION_MODEL,
@@ -31,7 +33,14 @@ class SpeechToText {
       retries: 2,
       shouldRetry: isRetryableOpenAIError,
     }), {
-      tokenUsage: null,
+      tokenUsage: (result) => {
+        const completionTokens = Math.max(1, Math.ceil(String(result?.text || '').length / 4));
+        return {
+          promptTokens: 0,
+          completionTokens,
+          totalTokens: completionTokens,
+        };
+      },
       outputMetadata: (result) => ({
         requestId: result.id,
         model: TRANSCRIPTION_MODEL,

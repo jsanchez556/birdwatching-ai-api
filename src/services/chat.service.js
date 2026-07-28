@@ -213,10 +213,6 @@ function resolveChatSource(options = {}) {
   return normalizeResponseMode(options.responseMode) ? 'voice' : 'text';
 }
 
-function resolveChatModel(metadata = {}) {
-  return metadata.openAiUsage?.modelUsage?.[0]?.model || env.openAiModel;
-}
-
 class ChatService {
   async processMessageStream(message, conversationId, clientIP, events = {}, options = {}) {
     const activeConversationId = conversationId?.trim() || randomUUID();
@@ -245,7 +241,6 @@ class ChatService {
   }
 
   async processMessageStreamUntraced(message, activeConversationId, clientIP, events = {}, options = {}) {
-    const startedAt = Date.now();
     const { signal, authUser } = options;
     const userId = authUser?.id;
     const role = resolveRole(authUser);
@@ -290,8 +285,6 @@ class ChatService {
         event: ANALYTICS_EVENTS.CHAT_MESSAGE_SENT,
         properties: {
           conversationId: activeConversationId,
-          latencyMs: Date.now() - startedAt,
-          ragUsed: false,
           role,
           source: resolveChatSource(options),
         },
@@ -345,6 +338,7 @@ class ChatService {
       role,
       ...(responseMode ? { responseMode } : {}),
       model: env.openAiModel,
+      promptVersion: CHAT_SYSTEM_PROMPT_VERSION,
       source: resolveChatSource(options),
       ...(userId ? { userId } : {}),
       ...(authUser ? { authUser } : {}),
@@ -452,9 +446,6 @@ class ChatService {
       event: ANALYTICS_EVENTS.CHAT_MESSAGE_SENT,
       properties: {
         conversationId: activeConversationId,
-        latencyMs: Date.now() - startedAt,
-        model: resolveChatModel(openAiMetadata),
-        ragUsed: Number(ragContext.ragTrace?.retrievedChunkCount || 0) > 0,
         role,
         source: openAiMetadata.source,
       },
@@ -531,7 +522,6 @@ export {
   buildToolMeta,
   mergeAuthenticatedCustomerContext,
   normalizeResponseMode,
-  resolveChatModel,
   resolveChatSource,
 };
 export default new ChatService();

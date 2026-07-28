@@ -201,6 +201,61 @@ describe('AI observability service', () => {
     });
   });
 
+  it('keeps model cost telemetry in LangSmith completion metadata', async () => {
+    const langSmithClient = {
+      createRun: jest.fn().mockResolvedValue(undefined),
+      updateRun: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new ObservabilityService({
+      config: {
+        langChainTracingV2: true,
+        langChainApiKey: 'test-key',
+        langChainProject: 'birdwatching-ai',
+      },
+      idFactory: () => 'llm-trace-1',
+      langSmithClient,
+      clock: {
+        now: jest.fn().mockReturnValueOnce(100).mockReturnValueOnce(140).mockReturnValueOnce(150),
+      },
+    });
+
+    await service.trace({
+      type: 'llm',
+      name: 'chat_completion',
+      metadata: {
+        model: 'gpt-4o-mini',
+        promptVersion: '2.3.0',
+      },
+      tokenUsage: (result) => result.usage,
+      outputMetadata: () => ({
+        model: 'gpt-4o-mini',
+      }),
+    }, async () => ({
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 20,
+        total_tokens: 120,
+      },
+    }));
+
+    expect(langSmithClient.updateRun).toHaveBeenCalledWith('llm-trace-1', expect.objectContaining({
+      outputs: expect.objectContaining({
+        model: 'gpt-4o-mini',
+        estimatedCostUsd: 0.000027,
+      }),
+      extra: {
+        metadata: expect.objectContaining({
+          model: 'gpt-4o-mini',
+          promptVersion: '2.3.0',
+          estimatedCostUsd: 0.000027,
+        }),
+      },
+      prompt_tokens: 100,
+      completion_tokens: 20,
+      total_tokens: 120,
+    }));
+  });
+
   it('includes late trace annotations in LangSmith completion metadata', async () => {
     const telemetry = new AiTelemetry({ log: mockLogger });
     const langSmithClient = {

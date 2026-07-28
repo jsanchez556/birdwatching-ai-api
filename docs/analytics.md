@@ -12,21 +12,20 @@ operation.
 
 | Event | Owner and successful trigger | Safe properties |
 |---|---|---|
-| `user_signed_up` | Auth service after the user and session are created | `plan`, `source`, `latencyMs`, `role` |
+| `user_signed_up` | Auth service after the user and session are created | `plan`, `source`, `role` |
 | `chat_started` | Frontend when a chat surface is opened | `plan`, `source`, `userType` |
-| `chat_message_sent` | Chat service after a text or voice message is successfully processed and persisted | `conversationId`, `source`, `model`, `ragUsed`, `latencyMs`, `role` |
-| `rag_query_executed` | RAG service after retrieval and grounding completes or safely falls back | `conversationId`, `source`, `model`, `ragUsed`, `latencyMs`, `retrievedChunkCount` |
-| `bird_identification_started` | Bird-identification job service after a job is persisted and queued | `source`, `model` |
-| `bird_identification_completed` | Worker-side job service after the result is persisted | `source`, `model`, `ragUsed`, `latencyMs`, `status` |
-| `tour_recommended` | `searchTours` after a structured tour result succeeds with at least one tour; identical tour sets are deduplicated per conversation | `conversationId`, `plan`, `source`, `model`, `ragUsed`, `latencyMs`, `recommendationType`, `recommendationCount` |
-| `tour_selected` | Availability service after a specific tour is resolved; deduplicated per conversation and tour | `conversationId`, `source`, `model`, `tourId` |
-| `availability_checked` | Reservation service after a structured availability lookup succeeds | `conversationId`, `source`, `model`, `latencyMs`, `tourId`, `participants`, `availabilityResult`, `availableSlots` |
-| `reservation_started` | Reservation service after required inputs and the selected tour are validated; deduplicated per conversation, tour, and participant count | `conversationId`, `plan`, `source`, `model`, `ragUsed`, `latencyMs`, `tourId`, `participants` |
-| `reservation_completed` | Reservation service after PostgreSQL persists the reservation; deduplicated by persisted reservation ID | `conversationId`, `plan`, `source`, `model`, `ragUsed`, `latencyMs`, `tourId`, `participants`, `amount`, `currency` |
-| `checkout_started` | Checkout service after the hosted checkout session is created | `plan`, `source`, `latencyMs`, `billingProvider` |
+| `chat_message_sent` | Chat service after a text or voice message is successfully processed and persisted | `conversationId`, `source`, `role` |
+| `bird_identification_started` | Bird-identification job service after a job is persisted and queued | `source` |
+| `bird_identification_completed` | Worker-side job service after the result is persisted | `source`, `status` |
+| `tour_recommended` | `searchTours` after a structured tour result succeeds with at least one tour; identical tour sets are deduplicated per conversation | `conversationId`, `plan`, `source`, `recommendationType`, `recommendationCount` |
+| `tour_selected` | Availability service after a specific tour is resolved; deduplicated per conversation and tour | `conversationId`, `source`, `tourId` |
+| `availability_checked` | Reservation service after a structured availability lookup succeeds | `conversationId`, `source`, `tourId`, `participants`, `availabilityResult`, `availableSlots` |
+| `reservation_started` | Reservation service after required inputs and the selected tour are validated; deduplicated per conversation, tour, and participant count | `conversationId`, `plan`, `source`, `tourId`, `participants` |
+| `reservation_completed` | Reservation service after PostgreSQL persists the reservation; deduplicated by persisted reservation ID | `conversationId`, `plan`, `source`, `tourId`, `participants`, `amount`, `currency` |
+| `checkout_started` | Checkout service after the hosted checkout session is created | `plan`, `source`, `billingProvider` |
 | `subscription_activated` | Webhook service after a verified event produces an authoritative paid, entitled subscription | `plan`, `source`, `billingProvider`, `status`, `amount`, `currency` |
 
-The frontend owns only `chat_started`; confirmed product and AI outcomes are
+The frontend owns only `chat_started`; confirmed product outcomes are
 server-owned to prevent duplicate semantic events.
 
 ## Identity and Idempotency
@@ -66,3 +65,15 @@ names, email addresses, messages, prompts, responses, tokens, reservation
 notes, raw provider payloads, or billing-provider object IDs.
 
 Automated tests inject fake providers and do not send real events.
+
+## Observability Responsibilities
+
+- PostHog answers product questions such as what action a user took and which
+  business milestone they reached.
+- LangSmith owns AI-system behavior: model, prompt version, RAG usage, tool
+  calls, cache status, latency, token usage, estimated cost, and evaluation
+  scores.
+- Application logs own technical execution, failures, retries, and operational
+  diagnostics.
+
+Do not export LangSmith traces or application-log payloads to PostHog.

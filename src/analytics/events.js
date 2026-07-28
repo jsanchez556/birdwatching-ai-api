@@ -1,7 +1,6 @@
 export const ANALYTICS_EVENTS = Object.freeze({
   USER_SIGNED_UP: 'user_signed_up',
   CHAT_MESSAGE_SENT: 'chat_message_sent',
-  RAG_QUERY_EXECUTED: 'rag_query_executed',
   BIRD_IDENTIFICATION_STARTED: 'bird_identification_started',
   BIRD_IDENTIFICATION_COMPLETED: 'bird_identification_completed',
   TOUR_RECOMMENDED: 'tour_recommended',

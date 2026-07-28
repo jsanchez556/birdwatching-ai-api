@@ -136,9 +136,6 @@ describe('ChatService streaming orchestration', () => {
       event: 'chat_message_sent',
       properties: {
         conversationId: 'conversation-123',
-        latencyMs: expect.any(Number),
-        model: expect.stringMatching(/^gpt-/),
-        ragUsed: false,
         role: 'visitor',
         source: 'text',
       },

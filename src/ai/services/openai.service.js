@@ -221,6 +221,7 @@ class OpenAIService {
     }
 
     this.recordCacheMiss();
+    metadata.cacheStatus = cacheEligible ? 'miss' : 'skipped';
     const response = await this.orchestrator.generateResponse(messages, metadata, {
       metadata,
       usage,
@@ -459,6 +460,7 @@ class OpenAIService {
     });
 
     metadata.openAiUsage = usage.openAiUsage || null;
+    metadata.cacheStatus = cacheMetadata.cacheStatus || 'not_applicable';
 
     return response;
   }

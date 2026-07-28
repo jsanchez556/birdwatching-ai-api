@@ -74,7 +74,6 @@ describe('ReservationService', () => {
       idempotencyKey: 'conversation-123:1',
       properties: {
         conversationId: 'conversation-123',
-        model: 'gpt-test',
         source: 'voice',
         tourId: 1,
       },
@@ -85,8 +84,6 @@ describe('ReservationService', () => {
       event: 'availability_checked',
       properties: {
         conversationId: 'conversation-123',
-        latencyMs: expect.any(Number),
-        model: 'gpt-test',
         source: 'voice',
         tourId: 1,
         participants: undefined,
@@ -198,11 +195,8 @@ describe('ReservationService', () => {
       idempotencyKey: 'conversation-123:1:2',
       properties: {
         conversationId: 'conversation-123',
-        latencyMs: expect.any(Number),
-        model: 'gpt-test',
         participants: 2,
         plan: 'PRO',
-        ragUsed: true,
         source: 'voice',
         tourId: 1,
       },
@@ -214,10 +208,7 @@ describe('ReservationService', () => {
       idempotencyKey: 42,
       properties: {
         conversationId: 'conversation-123',
-        latencyMs: expect.any(Number),
-        model: 'gpt-test',
         plan: 'PRO',
-        ragUsed: true,
         source: 'voice',
         tourId: 1,
         participants: 2,

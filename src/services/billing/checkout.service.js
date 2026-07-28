@@ -98,7 +98,6 @@ class CheckoutService {
     providerName = null,
     planName = PRO_PLAN_NAME,
   }) {
-    const startedAt = Date.now();
     assertAuthenticated(authUser);
 
     const checkoutPlanName = normalizeCheckoutPlan(planName);
@@ -135,7 +134,6 @@ class CheckoutService {
       userId: authUser.id,
       event: ANALYTICS_EVENTS.CHECKOUT_STARTED,
       properties: {
-        latencyMs: Date.now() - startedAt,
         plan: checkoutPlanName,
         billingProvider: billingProviderName,
         source: 'account_upgrade',

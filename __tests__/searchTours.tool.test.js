@@ -52,10 +52,7 @@ describe('searchTours analytics', () => {
       idempotencyKey: 'conversation-123:1,2',
       properties: {
         conversationId: 'conversation-123',
-        latencyMs: expect.any(Number),
-        model: 'gpt-test',
         plan: 'PRO',
-        ragUsed: true,
         recommendationCount: 2,
         recommendationType: 'recommendation',
         source: 'voice',

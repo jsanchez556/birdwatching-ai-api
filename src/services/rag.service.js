@@ -8,9 +8,6 @@ import { traceCacheOperation, traceRagPipeline, traceRagRetrieval } from '../tra
 import aiTelemetry from '../monitoring/aiTelemetry.js';
 import createRetrievalCache from '../cache/retrievalCache.js';
 import { getRedisConfig } from '../cache/redisClient.js';
-import analytics from '../analytics/analytics.service.js';
-import { ANALYTICS_EVENTS } from '../analytics/events.js';
-import env from '../config/env.js';
 
 const DEFAULT_TOP_K = 3;
 const DEFAULT_BIRD_MATCH_LIMIT = 6;
@@ -423,13 +420,11 @@ class RagService {
     retrievalCache = createRetrievalCache(),
     redisConfig = getRedisConfig(),
     log = logger,
-    analyticsClient = analytics,
   } = {}) {
     this.retriever = retriever;
     this.retrievalCache = retrievalCache;
     this.redisConfig = redisConfig;
     this.logger = log;
-    this.analytics = analyticsClient;
   }
 
   async getBirdProfile({ speciesCode, name } = {}) {
@@ -545,7 +540,6 @@ class RagService {
   }
 
   async buildContext(messages, question, metadata = {}) {
-    const startedAt = Date.now();
     const result = await traceRagPipeline('chat_rag_pipeline', {
       parentTraceId: metadata.parentTraceId,
       conversationId: metadata.conversationId,
@@ -559,24 +553,6 @@ class RagService {
         groundedMessageCount: result.messages?.length || 0,
       },
     });
-    const retrievedChunkCount = Number(result.ragTrace?.retrievedChunkCount || 0);
-
-    this.analytics.track({
-      userId: metadata.userId,
-      anonymousId: metadata.conversationId
-        ? `conversation:${metadata.conversationId}`
-        : undefined,
-      event: ANALYTICS_EVENTS.RAG_QUERY_EXECUTED,
-      properties: {
-        conversationId: metadata.conversationId,
-        latencyMs: Date.now() - startedAt,
-        model: env.openAiEmbeddingModel,
-        ragUsed: retrievedChunkCount > 0,
-        retrievedChunkCount,
-        source: metadata.source || (metadata.jobId ? 'bird_identification' : 'chat'),
-      },
-    });
-
     return result;
   }
 

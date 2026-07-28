@@ -152,7 +152,6 @@ describe('auth endpoints', () => {
       userId: 'user-1',
       event: 'user_signed_up',
       properties: {
-        latencyMs: expect.any(Number),
         role: 'customer',
         plan: 'FREE',
         source: 'email_password',

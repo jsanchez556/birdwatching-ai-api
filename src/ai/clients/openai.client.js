@@ -91,6 +91,9 @@ class OpenAIClient {
         parentTraceId: metadata.agentTraceId || metadata.parentTraceId,
         conversationId: metadata.conversationId,
         model: this.model,
+        promptVersion: metadata.promptVersion,
+        ragUsed: Number(metadata.ragTrace?.retrievedChunkCount || 0) > 0,
+        cacheStatus: metadata.cacheStatus,
         toolIteration: iteration,
         messageCount: conversation.length,
         toolCount: tools.length,
@@ -108,6 +111,9 @@ class OpenAIClient {
           requestId: result.id,
           model: result.model || this.model,
           toolCallCount: result.choices[0]?.message?.tool_calls?.length || 0,
+          toolCalls: (result.choices[0]?.message?.tool_calls || [])
+            .map((toolCall) => toolCall.function?.name)
+            .filter(Boolean),
         }),
       });
 
@@ -165,6 +171,9 @@ class OpenAIClient {
       parentTraceId: options.metadata?.agentTraceId || options.metadata?.parentTraceId,
       conversationId: options.metadata?.conversationId,
       model: this.model,
+      promptVersion: options.metadata?.promptVersion,
+      ragUsed: Number(options.metadata?.ragTrace?.retrievedChunkCount || 0) > 0,
+      cacheStatus: options.metadata?.cacheStatus,
       messageCount: messages.length,
       finalPromptMessageCount: options.metadata?.finalPromptMessageCount,
       groundingContext: options.metadata?.groundingContext,
@@ -209,6 +218,7 @@ class OpenAIClient {
         requestId: streamId,
         model: streamModel,
         responseLength: response.length,
+        toolCalls: options.metadata?.toolsCalled || [],
       }),
     });
   }
@@ -251,6 +261,8 @@ class OpenAIClient {
     const embeddingResponse = await traceLlmCall('embedding_generation', {
       parentTraceId: options.parentTraceId,
       model: this.embeddingModel,
+      promptVersion: 'not_applicable',
+      cacheStatus: 'miss',
       inputCount: missingInputs.length,
     }, () => asyncRetry(() => this.client.embeddings.create({
       model: this.embeddingModel,

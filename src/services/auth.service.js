@@ -83,7 +83,6 @@ class AuthService {
   }
 
   async signup({ email, password, name }) {
-    const startedAt = Date.now();
     const normalizedEmail = normalizeEmail(email);
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
@@ -103,7 +102,6 @@ class AuthService {
         userId: user.id,
         event: ANALYTICS_EVENTS.USER_SIGNED_UP,
         properties: {
-          latencyMs: Date.now() - startedAt,
           role: user.role || 'customer',
           plan: subscription.plan,
           source: 'email_password',

@@ -167,7 +167,6 @@ class BirdIdentificationJobService {
       event: ANALYTICS_EVENTS.BIRD_IDENTIFICATION_STARTED,
       idempotencyKey: jobId,
       properties: {
-        model: env.openAiModel,
         source,
       },
     });
@@ -272,16 +271,11 @@ class BirdIdentificationJobService {
         });
       }
     }
-    const createdAtMs = new Date(row?.created_at).getTime();
-
     this.analytics.track({
       userId: row?.user_id,
       event: ANALYTICS_EVENTS.BIRD_IDENTIFICATION_COMPLETED,
       idempotencyKey: jobId,
       properties: {
-        latencyMs: Number.isFinite(createdAtMs) ? Date.now() - createdAtMs : undefined,
-        model: meta.model || env.openAiModel,
-        ragUsed: Number(meta.ragTrace?.retrievedChunkCount || 0) > 0,
         source: metadata.source || 'unknown',
         status: result.status,
       },

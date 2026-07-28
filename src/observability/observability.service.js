@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { Client as LangSmithClient } from 'langsmith';
 import env from '../config/env.js';
 import aiTelemetry, { normalizeTokenUsage, sanitizeTelemetryValue } from '../monitoring/aiTelemetry.js';
+import { estimateCost } from '../ai/evaluations/token.usage.js';
 import logger from '../utils/logger.js';
 
 function isTracingEnabled(config = env) {
@@ -174,15 +175,23 @@ class ObservabilityService {
     if (!this.langSmithClient || !trace.langSmithEnabled) return;
 
     const tokenUsage = usage ? normalizeTokenUsage(usage) : trace.tokenUsage;
+    const model = details?.model || trace.metadata?.model;
+    const estimatedCostUsd = model && tokenUsage
+      ? estimateCost(model, tokenUsage)
+      : null;
 
     await this.sendLangSmithUpdate('complete', trace, async () => this.langSmithClient.updateRun(trace.id, {
       end_time: new Date(this.clock.now()).toISOString(),
-      outputs: sanitizeTelemetryValue(details),
+      outputs: sanitizeTelemetryValue({
+        ...details,
+        ...(estimatedCostUsd === null ? {} : { estimatedCostUsd }),
+      }),
       extra: {
         metadata: {
           traceType: trace.type,
           langSmithEnabled: trace.langSmithEnabled,
           ...sanitizeTelemetryValue(trace.metadata || {}),
+          ...(estimatedCostUsd === null ? {} : { estimatedCostUsd }),
         },
       },
       ...(tokenUsage ? {

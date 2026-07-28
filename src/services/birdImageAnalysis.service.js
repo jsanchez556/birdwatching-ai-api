@@ -118,6 +118,7 @@ class BirdImageAnalysisService {
       model: env.openAiModel,
       promptVersion: BIRD_IMAGE_ANALYSIS_PROMPT_VERSION,
       parentTraceId: metadata.parentTraceId,
+      cacheStatus: 'not_applicable',
     }, () => asyncRetry(() => openaiClient.client.chat.completions.create({
       model: env.openAiModel,
       messages: [

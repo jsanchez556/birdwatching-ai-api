@@ -193,7 +193,6 @@ describe('BillingService provider orchestration', () => {
       userId: 7,
       event: 'checkout_started',
       properties: {
-        latencyMs: expect.any(Number),
         plan: 'PRO',
         billingProvider: 'Stripe',
         source: 'account_upgrade',

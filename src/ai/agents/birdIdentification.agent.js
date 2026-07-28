@@ -41,6 +41,7 @@ class BirdIdentificationAgent {
       model: env.openAiModel,
       promptVersion: BIRD_IDENTIFICATION_PROMPT_VERSION,
       parentTraceId: metadata.parentTraceId,
+      cacheStatus: 'not_applicable',
       hasImageUrl: Boolean(imageUrl),
     }, () => asyncRetry(() => openaiClient.client.chat.completions.create({
       model: env.openAiModel,
@@ -79,6 +80,8 @@ class BirdIdentificationAgent {
       model: env.openAiModel,
       promptVersion: BIRD_IDENTIFICATION_VERIFICATION_PROMPT_VERSION,
       parentTraceId: metadata.parentTraceId,
+      ragUsed: Array.isArray(retrievedProfiles) && retrievedProfiles.length > 0,
+      cacheStatus: 'not_applicable',
       candidateCount: Array.isArray(candidates) ? candidates.length : 0,
       retrievedProfileCount: Array.isArray(retrievedProfiles) ? retrievedProfiles.length : 0,
     }, () => asyncRetry(() => openaiClient.client.chat.completions.create({

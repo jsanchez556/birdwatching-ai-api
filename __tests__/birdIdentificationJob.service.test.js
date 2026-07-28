@@ -82,7 +82,6 @@ describe('BirdIdentificationJobService', () => {
       event: 'bird_identification_started',
       idempotencyKey: result.jobId,
       properties: {
-        model: expect.stringMatching(/^gpt-/),
         source: 'upload',
       },
     });
@@ -331,9 +330,6 @@ describe('BirdIdentificationJobService', () => {
       event: 'bird_identification_completed',
       idempotencyKey: 'job-1',
       properties: {
-        latencyMs: expect.any(Number),
-        model: expect.stringMatching(/^gpt-/),
-        ragUsed: false,
         source: 'upload',
         status: 'identified',
       },

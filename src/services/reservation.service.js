@@ -238,7 +238,6 @@ class ReservationService {
   }
 
   async checkTourAvailability({ tourId, tourName, location, participants } = {}, metadata = {}) {
-    const startedAt = Date.now();
     const resolvedTour = await this.resolveTour({
       tourId,
       tourName,
@@ -262,7 +261,6 @@ class ReservationService {
         : undefined,
       properties: {
         conversationId: metadata.conversationId,
-        model: metadata.model,
         source: metadata.source || 'chat',
         tourId: result.tourId,
       },
@@ -275,8 +273,6 @@ class ReservationService {
       event: ANALYTICS_EVENTS.AVAILABILITY_CHECKED,
       properties: {
         conversationId: metadata.conversationId,
-        latencyMs: Date.now() - startedAt,
-        model: metadata.model,
         source: metadata.source || 'chat',
         tourId: result.tourId,
         participants: participants ? Number(participants) : undefined,
@@ -322,7 +318,6 @@ class ReservationService {
     itineraryStartDate,
     itineraryEndDate,
   } = {}, metadata = {}) {
-    const startedAt = Date.now();
     let participantCount;
     let reservationName;
 
@@ -360,11 +355,8 @@ class ReservationService {
       idempotencyKey: reservationAttemptKey,
       properties: {
         conversationId: normalizedConversationId,
-        latencyMs: Date.now() - startedAt,
-        model: metadata.model,
         participants: participantCount,
         plan: metadata.authUser?.plan,
-        ragUsed: Number(metadata.ragTrace?.retrievedChunkCount || 0) > 0,
         source: metadata.source || 'chat',
         tourId: normalizedTourId,
       },
@@ -407,10 +399,7 @@ class ReservationService {
           idempotencyKey: reservationResult.reservationId,
           properties: {
             conversationId: reservationResult.conversationId,
-            latencyMs: Date.now() - startedAt,
-            model: metadata.model,
             plan: metadata.authUser?.plan,
-            ragUsed: Number(metadata.ragTrace?.retrievedChunkCount || 0) > 0,
             source: metadata.source || 'chat',
             tourId: reservationResult.tourId,
             participants: reservationResult.participants,
