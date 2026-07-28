@@ -57,13 +57,8 @@ describe('AgentOrchestrator feature flags', () => {
         role: 'customer',
       },
     });
-    expect(executor.executePlan).toHaveBeenCalledWith(
-      expect.objectContaining({
-        status: 'booking_feature_unavailable',
-        steps: [],
-      }),
-      expect.any(Object)
-    );
+    expect(executor.executePlan).not.toHaveBeenCalled();
+    expect(aiClient.streamChatCompletion).not.toHaveBeenCalled();
   });
 
   it('injects a stable tour recommendation prompt assignment into LLM metadata', async () => {

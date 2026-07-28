@@ -686,6 +686,8 @@ class RagService {
     } catch (error) {
       aiTelemetry.recordAiError('retrieval_failed', {
         conversationId: metadata.conversationId,
+        userId: metadata.userId,
+        aiTraceId: metadata.aiTraceId,
         queryLength: question?.length || 0,
         topK: metadata.topK || DEFAULT_TOP_K,
         error: {

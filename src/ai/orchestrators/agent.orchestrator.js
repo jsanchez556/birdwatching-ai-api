@@ -13,6 +13,7 @@ import {
   normalizeTourRecommendationAssignment,
 } from '../../experiments/tourRecommendation.experiment.js';
 import { getTourRecommendationPrompt } from '../prompts/tourRecommendation.prompt.js';
+import HttpError from '../../utils/httpError.js';
 
 const BOOKING_TOOLS = new Set([
   'createReservation',
@@ -331,6 +332,19 @@ export class AgentOrchestrator {
     const hasBookingSteps = (plan.steps || []).some((step) => BOOKING_TOOLS.has(step.tool));
 
     if (hasBookingSteps) {
+      const temporaryDisable = await this.featureFlags.getTemporaryDisable?.(
+        FEATURE_FLAGS.AGENT_BOOKING
+      );
+      if (temporaryDisable) {
+        throw new HttpError(503, 'AI-assisted booking is temporarily unavailable.', {
+          code: 'FEATURE_TEMPORARILY_DISABLED',
+          expose: true,
+          meta: {
+            feature: FEATURE_FLAGS.AGENT_BOOKING,
+            disabledUntil: temporaryDisable.disabledUntil,
+          },
+        });
+      }
       const bookingEnabled = await this.featureFlags.isEnabled({
         flag: FEATURE_FLAGS.AGENT_BOOKING,
         userId: metadata.userId,
@@ -342,11 +356,10 @@ export class AgentOrchestrator {
       });
 
       if (!bookingEnabled) {
-        plan = {
-          status: 'booking_feature_unavailable',
-          steps: [],
-          message: 'Tour booking is temporarily unavailable. Explain this briefly and do not attempt booking tools.',
-        };
+        const unavailableMessage = 'AI-assisted booking is temporarily unavailable.';
+        metadata.agentPlan = { status: 'booking_feature_unavailable', tools: [] };
+        await onChunk(unavailableMessage);
+        return unavailableMessage;
       }
     }
 

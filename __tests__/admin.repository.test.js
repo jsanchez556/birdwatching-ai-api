@@ -40,7 +40,6 @@ describe('admin persistence', () => {
     };
     const repository = new AdminRepository({
       queries,
-      queues: { queues: new Map() },
     });
 
     await expect(repository.getOverview(range)).resolves.toEqual({ active_users: '1' });
@@ -62,9 +61,7 @@ describe('admin persistence', () => {
   });
 
   it('queries usage with an exclusive parameterized date range', async () => {
-    mockQuery
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ total_count: '0' }] });
+    mockQuery.mockResolvedValueOnce({ rows: [] });
     const range = {
       startAt: '2026-07-01T00:00:00.000Z',
       endAt: '2026-08-01T00:00:00.000Z',
@@ -78,29 +75,30 @@ describe('admin persistence', () => {
     expect(sql).toContain('created_at < $2');
   });
 
-  it('reads live counts from registered queues and degrades individual failures', async () => {
-    const repository = new AdminRepository({
-      queries: {},
-      queues: {
-        queues: new Map([
-          ['healthy', { getJobCounts: jest.fn().mockResolvedValue({ waiting: 2, failed: 0 }) }],
-          ['offline', { getJobCounts: jest.fn().mockRejectedValue(new Error('redis unavailable')) }],
-        ]),
-      },
+  it('aggregates AI cost dimensions without exposing user PII', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ model: 'gpt-4o-mini' }] })
+      .mockResolvedValueOnce({ rows: [{ feature: 'chat' }] })
+      .mockResolvedValueOnce({ rows: [{ plan: 'PRO' }] })
+      .mockResolvedValueOnce({ rows: [{ user_id: 7 }] });
+    const range = {
+      startAt: '2026-07-01T00:00:00.000Z',
+      endAt: '2026-08-01T00:00:00.000Z',
+      userLimit: 25,
+    };
+
+    await expect(adminQueries.getAiCosts(range)).resolves.toEqual({
+      byModel: [{ model: 'gpt-4o-mini' }],
+      byFeature: [{ feature: 'chat' }],
+      byPlan: [{ plan: 'PRO' }],
+      byUser: [{ user_id: 7 }],
     });
 
-    await expect(repository.getQueueHealth()).resolves.toEqual([
-      {
-        name: 'healthy',
-        available: true,
-        counts: { waiting: 2, failed: 0 },
-      },
-      {
-        name: 'offline',
-        available: false,
-        counts: null,
-      },
-    ]);
+    expect(mockQuery).toHaveBeenCalledTimes(4);
+    expect(mockQuery.mock.calls[0][0]).toContain('jsonb_array_elements');
+    expect(mockQuery.mock.calls[0][1]).toEqual([range.startAt, range.endAt]);
+    expect(mockQuery.mock.calls[3][1]).toEqual([range.startAt, range.endAt, 25]);
+    expect(mockQuery.mock.calls.map(([sql]) => sql).join(' ')).not.toContain('users.email');
   });
 
   it('does not select raw job errors or billing payloads for recent failures', async () => {
@@ -112,5 +110,26 @@ describe('admin persistence', () => {
     expect(sql).not.toContain('error_message');
     expect(sql).not.toContain('event_data');
     expect(sql).not.toContain('provider_customer_id');
+  });
+
+  it('queries only allowlisted operational error fields in a bounded range', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+    const options = {
+      startAt: '2026-07-01T00:00:00.000Z',
+      endAt: '2026-08-01T00:00:00.000Z',
+      limit: 1000,
+    };
+
+    await adminQueries.getOperationalErrors(options);
+
+    const [sql, parameters] = mockQuery.mock.calls[0];
+    expect(parameters).toEqual([options.startAt, options.endAt, 1000]);
+    expect(sql).toContain("jobs.status = 'failed'");
+    expect(sql).toContain("billing_events.event_name = 'payment_failed'");
+    expect(sql).toContain('LIMIT $3');
+    expect(sql).not.toContain('error_message');
+    expect(sql).not.toContain('event_data');
+    expect(sql).not.toContain('provider_event_id');
+    expect(sql).not.toContain('provider_invoice_id');
   });
 });

@@ -114,8 +114,37 @@ GET /chat/latest
 - `npm run enrich -- birds` exports provider JSON into `src/ingestion/data`, applies per-resource freshness windows, regenerates `birds.json`, persists normalized documents, and queues BullMQ embedding jobs. The embedding worker chunks stored document content, generates embeddings, and writes pgvector chunks idempotently. eBird recent observations are fetched per species code from the Costa Rica species list and written incrementally as keyed `{ locations, lstDt }` summaries.
 - `POST /ingestions` accepts authenticated normalized JSON documents or raw text uploads, persists the source payload, queues an ingestion job, and returns processing status. The ingestion worker loads the stored payload, runs the existing ingestion service, and queues embedding jobs; `GET /ingestions/:id` returns status metadata without source document contents.
 - BullMQ AI jobs use configurable exponential backoff through `BULLMQ_JOB_ATTEMPTS` and `BULLMQ_JOB_BACKOFF_DELAY_MS`. Exhausted jobs are copied to a sanitized dead-letter queue when `BULLMQ_DLQ_ENABLED` is not `false`; DLQ payloads must not include raw documents, prompts, image URLs, provider responses, secrets, or PII. Malformed job payloads should use `src/jobs/jobErrors.js` so BullMQ does not retry non-retryable validation failures.
+- Queue-health `completed` values count jobs still retained in the shared BullMQ Redis keyspace, not lifetime requests. Bird-identification enqueues explicitly attach the configured bounded `BULLMQ_REMOVE_ON_COMPLETE_AGE_SECONDS` and `BULLMQ_REMOVE_ON_COMPLETE_COUNT` policy so recent successful jobs remain visible.
 - BullMQ queue registration, enqueueing, worker execution, retry scheduling, failures, and DLQ handoff are traced through the LangSmith-compatible background job tracing adapter without exporting raw payloads or retryable provider error details.
+- `GET /admin/errors` is an authenticated admin-only operational feed. It
+  combines safe failed-job and payment-event projections from PostgreSQL,
+  bounded sanitized BullMQ dead-letter records, and a bounded process-local
+  telemetry ring for known LLM, tool, retrieval, invalid-output, and rate-limit
+  failures. It returns only the seven documented normalized types, excludes
+  unknown events, uses fixed safe messages, deduplicates matching job/DLQ
+  records, and fails closed when a source is unavailable. LangSmith trace links
+  come from the SDK and pass an HTTPS hostname allowlist; they are never
+  constructed from trace IDs.
+- `GET /admin/ai-quality` is an authenticated admin-only offline quality
+  summary. It reads timestamped safe numeric results from
+  `AI_EVAL_OUTPUT_FILE` (or the compatible `AI_EVAL_RESULTS_FILE` fallback),
+  compares UTC half-open current and immediately
+  preceding equal-duration periods, and returns grounding, answer relevance,
+  retrieval quality, and evaluated-tool success with honest null/sample-size
+  semantics. It does not execute evaluations or contact OpenAI/LangSmith.
 - Tour data, availability, selection, and reservations are stored in PostgreSQL through functions in `003_create_tour_reservations.sql`; the tour helpers join the Costa Rica `country`/`zone`/`node`/`birds`/`birds_by_node` reference graph and return `location`, `node`, `subnode`, and `zone` for tour discovery, selection, and reservation metadata.
+- Safe admin mutations use `POST /admin/jobs/:jobId/retry`,
+  `POST /admin/users/:userId/suspend`, and
+  `POST /admin/ai-features/:feature/disable`. They require current admin
+  authorization, write an audit intent before attempting a side effect, and
+  never store raw job payloads, user content, provider errors, or secrets in
+  audit metadata. Migration `025_create_admin_operations.sql` owns
+  `admin_audit_logs`, account suspension state, and expiring AI feature
+  controls, including the feature-disable function's unambiguous named
+  primary-key conflict target.
+- Suspensions revoke active refresh tokens immediately. Production auth
+  middleware also reads the current user access state so a previously issued
+  access token cannot bypass a later suspension or role change.
 - Tour listing, recommendation, guided action, pricing, transportation, and reservation details are returned in the `/chat` stream `done.meta` object for frontend rendering; assistant text stays short when structured metadata is present.
 - Tour selection accepts a tour ID or a clear/partial tour name such as `Monteverde tour` before pricing or reservation.
 - `GET /chat/latest` loads the most recent conversation for `req.user.id` before the frontend creates a new conversation ID. If that conversation has a reservation, the response includes frontend-safe `meta.reservation` details plus chat-level booking state such as `meta.participants` and `meta.selectedTransportation`. Chat requests can include `customerContext` with name, email, and itinerary dates plus `conversationContext.recentAssistantMetadata` for continuing guided booking flows. For authenticated requests, the JWT user email is authoritative and the JWT user name is preferred when available.
@@ -151,3 +180,18 @@ npm test
 4. Put PostgreSQL functions and schema changes in `src/db/migrations/`; query modules should use parameterized calls to those functions for new persistence writes instead of inline write SQL.
 5. Put prompt text and schemas in `src/ai/`.
 6. Update the relevant docs link above when behavior changes.
+
+## Authoritative safety controls
+
+`GET /admin/ai-features` reports persisted state for `voice_ai`,
+`multimodal_bird_identification`, and `agent_booking`.
+`POST /admin/ai-features/:feature/enable` and
+`POST /admin/users/:userId/unsuspend` reverse temporary shutdowns and
+suspensions idempotently; every mutation is recorded in `admin_audit_logs`.
+`GET /admin/users` exposes only safe suspension state.
+
+`GET /features/availability` is the public state projection. Voice and bird
+checks run before uploads, providers, or queues. A disabled booking feature
+stops reservation tools and the final model call without disabling unrelated
+chat. Active shutdowns use `FEATURE_TEMPORARILY_DISABLED` and an ISO UTC
+`disabledUntil`, never provider details.

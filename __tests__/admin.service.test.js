@@ -15,8 +15,8 @@ function buildRepository() {
     getAiUsage: jest.fn(),
     getAiCosts: jest.fn(),
     getReservations: jest.fn(),
-    getQueueHealth: jest.fn(),
     getFailures: jest.fn(),
+    getOperationalErrors: jest.fn(),
   };
 }
 
@@ -142,6 +142,9 @@ describe('AdminService', () => {
         name: 'Admin',
         role: 'admin',
         plan: 'PRO',
+        status: 'active',
+        suspendedAt: null,
+        suspensionReasonCode: null,
         subscriptionStatus: 'active',
         createdAt: now.toISOString(),
       }],
@@ -151,27 +154,179 @@ describe('AdminService', () => {
     expect(repository.getUsers).toHaveBeenCalledWith({ page: 2, limit: 25, offset: 25 });
   });
 
-  it('labels costs as estimates and reports missing cost records', async () => {
+  it('aggregates estimated AI costs by model, feature, plan, and user', async () => {
     const repository = buildRepository();
-    repository.getAiCosts.mockResolvedValue([
-      {
-        feature: 'chat',
+    repository.getAiCosts.mockResolvedValue({
+      byModel: [{
+        model: 'gpt-4o-mini',
+        requests: '5',
+        tokens: '1200',
         estimated_cost: '2.500001',
         priced_requests: '4',
         unpriced_requests: '1',
-      },
-    ]);
+      }],
+      byFeature: [{
+        feature: 'chat',
+        requests: '5',
+        tokens: '1200',
+        estimated_cost: '2.500001',
+        priced_requests: '4',
+        unpriced_requests: '1',
+      }],
+      byPlan: [{
+        plan: 'PRO',
+        requests: '5',
+        tokens: '1200',
+        estimated_cost: '2.500001',
+        priced_requests: '4',
+        unpriced_requests: '1',
+      }],
+      byUser: [{
+        user_id: 7,
+        plan: 'PRO',
+        requests: '5',
+        tokens: '1200',
+        estimated_cost: '2.500001',
+        priced_requests: '4',
+        unpriced_requests: '1',
+      }],
+    });
     const service = new AdminService({ repository, clock: () => now });
 
-    await expect(service.getAiCosts({})).resolves.toMatchObject({
+    await expect(service.getAiCosts({ userLimit: '10' })).resolves.toEqual({
+      range: {
+        startAt: '2026-06-28T12:00:00.000Z',
+        endAt: now.toISOString(),
+        timezone: 'UTC',
+      },
       currency: 'USD',
       costType: 'estimated',
       totals: {
+        requests: 5,
+        tokens: 1200,
         estimatedCost: 2.500001,
+        averageCostPerRequest: 0.625,
         pricedRequests: 4,
         unpricedRequests: 1,
       },
+      byModel: [{
+        model: 'gpt-4o-mini',
+        requests: 5,
+        tokens: 1200,
+        estimatedCost: 2.500001,
+        averageCostPerRequest: 0.625,
+        pricedRequests: 4,
+        unpricedRequests: 1,
+      }],
+      byFeature: [{
+        feature: 'chat',
+        requests: 5,
+        tokens: 1200,
+        estimatedCost: 2.500001,
+        averageCostPerRequest: 0.625,
+        pricedRequests: 4,
+        unpricedRequests: 1,
+      }],
+      byPlan: [{
+        plan: 'PRO',
+        requests: 5,
+        tokens: 1200,
+        estimatedCost: 2.500001,
+        averageCostPerRequest: 0.625,
+        pricedRequests: 4,
+        unpricedRequests: 1,
+      }],
+      byUser: [{
+        userId: '7',
+        plan: 'PRO',
+        requests: 5,
+        tokens: 1200,
+        estimatedCost: 2.500001,
+        averageCostPerRequest: 0.625,
+        pricedRequests: 4,
+        unpricedRequests: 1,
+      }],
+      userLimit: 10,
     });
+
+    expect(repository.getAiCosts).toHaveBeenCalledWith({
+      startAt: '2026-06-28T12:00:00.000Z',
+      endAt: now.toISOString(),
+      userLimit: 10,
+    });
+  });
+
+  it('rejects an unsafe AI cost user limit before querying', async () => {
+    const repository = buildRepository();
+    const service = new AdminService({ repository, clock: () => now });
+
+    await expect(service.getAiCosts({ userLimit: '101' })).rejects.toMatchObject({
+      status: 400,
+      code: 'VALIDATION_ERROR',
+    });
+    expect(repository.getAiCosts).not.toHaveBeenCalled();
+  });
+
+  it('calculates the current and immediately preceding AI quality ranges without provider calls', async () => {
+    const repository = buildRepository();
+    const qualityService = {
+      getQualitySummary: jest.fn().mockResolvedValue({
+        range: {
+          startAt: '2026-07-01T00:00:00.000Z',
+          endAt: '2026-07-03T00:00:00.000Z',
+          timezone: 'UTC',
+        },
+        previousRange: {
+          startAt: '2026-06-29T00:00:00.000Z',
+          endAt: '2026-07-01T00:00:00.000Z',
+          timezone: 'UTC',
+        },
+        metrics: {},
+      }),
+    };
+    const service = new AdminService({
+      repository,
+      qualityService,
+      clock: () => now,
+    });
+
+    await service.getAiQuality({
+      startDate: '2026-07-01',
+      endDate: '2026-07-03',
+    });
+
+    expect(qualityService.getQualitySummary).toHaveBeenCalledWith({
+      startAt: '2026-07-01T00:00:00.000Z',
+      endAt: '2026-07-03T00:00:00.000Z',
+    });
+    expect(repository.getOverview).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid AI quality date ranges before reading evaluation results', async () => {
+    const qualityService = {
+      getQualitySummary: jest.fn(),
+    };
+    const service = new AdminService({
+      repository: buildRepository(),
+      qualityService,
+      clock: () => now,
+    });
+
+    await expect(service.getAiQuality({
+      startDate: 'not-a-date',
+      endDate: '2026-07-03',
+    })).rejects.toMatchObject({
+      status: 400,
+      code: 'VALIDATION_ERROR',
+    });
+    await expect(service.getAiQuality({
+      startDate: '2026-07-04',
+      endDate: '2026-07-03',
+    })).rejects.toMatchObject({
+      status: 400,
+      code: 'VALIDATION_ERROR',
+    });
+    expect(qualityService.getQualitySummary).not.toHaveBeenCalled();
   });
 
   it('sanitizes recent failures instead of returning stored error details', async () => {
@@ -206,6 +361,99 @@ describe('AdminService', () => {
     await expect(service.getReservations({ page: '3', limit: '5' })).resolves.toEqual({
       data: [],
       meta: { page: 3, limit: 5, total: 8, totalPages: 2 },
+    });
+  });
+
+  it('adds the observation time to queue statistics', async () => {
+    const repository = buildRepository();
+    const queueHealth = {
+      getStatistics: jest.fn().mockResolvedValue({
+        queues: [{
+          id: 'embeddings',
+          name: 'Embeddings',
+          waiting: 4,
+          active: 2,
+          completed: 120,
+          failed: 0,
+          delayed: 1,
+        }],
+      }),
+    };
+    const service = new AdminService({
+      repository,
+      queueHealth,
+      clock: () => now,
+    });
+
+    await expect(service.getQueueHealth()).resolves.toEqual({
+      observedAt: now.toISOString(),
+      queues: [{
+        id: 'embeddings',
+        name: 'Embeddings',
+        waiting: 4,
+        active: 2,
+        completed: 120,
+        failed: 0,
+        delayed: 1,
+      }],
+    });
+    expect(queueHealth.getStatistics).toHaveBeenCalledTimes(1);
+  });
+
+  it('validates operational error filters and returns object data with pagination metadata', async () => {
+    const repository = buildRepository();
+    const operationalErrors = {
+      getErrors: jest.fn().mockResolvedValue({
+        errors: [{
+          id: 'error-1',
+          timestamp: now.toISOString(),
+          type: 'TOOL_ERROR',
+          user: null,
+          traceId: null,
+          traceUrl: null,
+          message: 'Tool execution failed',
+          status: 'failed',
+        }],
+        total: 26,
+      }),
+    };
+    const service = new AdminService({
+      repository,
+      operationalErrors,
+      clock: () => now,
+    });
+
+    await expect(service.getErrors({
+      page: '2',
+      limit: '25',
+      type: 'TOOL_ERROR',
+    })).resolves.toEqual({
+      data: {
+        errors: [expect.objectContaining({ type: 'TOOL_ERROR' })],
+      },
+      meta: {
+        page: 2,
+        limit: 25,
+        total: 26,
+        totalPages: 2,
+      },
+    });
+    expect(operationalErrors.getErrors).toHaveBeenCalledWith({
+      range: {
+        startAt: '2026-06-28T12:00:00.000Z',
+        endAt: now.toISOString(),
+      },
+      pagination: {
+        page: 2,
+        limit: 25,
+        offset: 25,
+      },
+      type: 'TOOL_ERROR',
+    });
+
+    await expect(service.getErrors({ type: 'NOT_A_TYPE' })).rejects.toMatchObject({
+      status: 400,
+      code: 'VALIDATION_ERROR',
     });
   });
 });

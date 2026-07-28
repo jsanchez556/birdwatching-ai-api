@@ -289,6 +289,12 @@ export async function runLangSmithEvaluation({
             category: evaluationCase.category,
             score,
             ...metrics,
+            answerRelevance: answerEvaluation.relevance,
+            evaluatedToolExecutions: {
+              successful: toolEvaluation.details.actualTools
+                .filter((tool) => tool.success).length,
+              total: toolEvaluation.details.actualTools.length,
+            },
             latencyMs: runResult.latencyMs,
             costUsd: runResult.costUsd,
             tokenUsage: runResult.tokenUsage,

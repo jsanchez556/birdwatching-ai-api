@@ -56,18 +56,241 @@ maximum range of 366 days.
   period data without external provider identifiers.
 - `GET /admin/ai-usage` returns request, distinct-user, and token totals grouped
   by feature for the requested UTC range.
-- `GET /admin/ai-costs` returns estimated USD costs grouped by feature. The
-  response uses `costType: "estimated"` and reports `unpricedRequests`; missing
-  cost data is never treated as a measured zero-cost request.
+- `GET /admin/ai-costs` returns estimated USD costs grouped by model, feature,
+  current subscription plan, and user ID. Each group includes requests, tokens,
+  estimated cost, average estimated cost per priced request, priced requests,
+  and unpriced requests. Optional `userLimit` defaults to `25` and is capped at
+  `100`; missing cost data is never treated as a measured zero-cost request.
+- `GET /admin/ai-quality` returns current and previous-period grounding,
+  answer-relevance, retrieval, and evaluated-tool success metrics from stored
+  offline evaluation artifacts. It never runs an evaluation or contacts an AI
+  or tracing provider.
 - `GET /admin/reservations` returns paginated reservation, tour, participant,
   total-price, and timestamp data without customer contact details or
   confirmation codes.
-- `GET /admin/queue-health` returns live BullMQ counts for registered queues.
-  A queue that cannot be queried is marked `unavailable`, and failed retained
-  jobs put an available queue into `attention` state.
+- `GET /admin/queue-health` returns live BullMQ `waiting`, `active`, `completed`,
+  `failed`, and `delayed` counts for bird identification, embeddings, and
+  document ingestion. BullMQ or Redis failures return the standard masked
+  server error rather than partial or stale queue data. `completed` means jobs
+  currently retained in BullMQ, not the lifetime request or completion total.
 - `GET /admin/failures` returns paginated sanitized background-job and payment
   failure records. It never returns stored exception messages or provider
   payloads.
+- `GET /admin/errors` returns the normalized operational error feed described
+  below. It accepts `page` and `limit` (maximum `100`), the same bounded
+  `startDate`/`endDate` range used by other admin reports, and an optional
+  exact `type` filter.
+- `POST /admin/jobs/:jobId/retry` retries a retained BullMQ job only when both
+  its safe PostgreSQL status and current BullMQ state are `failed`.
+- `POST /admin/users/:userId/suspend` suspends a non-admin user and revokes all
+  active refresh tokens. Admin accounts, including the caller, cannot be
+  suspended through this endpoint.
+- `POST /admin/ai-features/:feature/disable` disables an allowlisted boolean AI
+  feature for a bounded period.
+
+### Safe admin mutations
+
+All three mutation endpoints create an `admin_audit_logs` intent before
+attempting the side effect. Audit metadata contains controlled operation
+status and identifiers only; it never contains job payloads, prompts, user
+content, provider responses, exception text, PII, or secrets. If the audit
+intent cannot be persisted, the operation fails without performing the
+mutation. Responses use the standard `{ success, data, meta }` envelope.
+
+Retry a failed job:
+
+```http
+POST /admin/jobs/:jobId/retry
+Authorization: Bearer <admin token>
+Content-Type: application/json
+
+{}
+```
+
+The job identifier must contain only letters, digits, `:`, `_`, or `-`. A
+missing job returns `404 JOB_NOT_FOUND`; an unknown job type or a job that is
+not currently failed returns `409 JOB_NOT_RETRYABLE`. The endpoint cannot
+replace job data or options.
+
+Suspend a user:
+
+```http
+POST /admin/users/:userId/suspend
+Authorization: Bearer <admin token>
+Content-Type: application/json
+
+{ "reasonCode": "abuse" }
+```
+
+`reasonCode` is optional and defaults to `abuse`; accepted values are `abuse`,
+`spam`, `security`, and `policy_violation`. Only the reason code is retained,
+not free-form evidence or user content. A missing user returns
+`404 USER_NOT_FOUND`, and an attempt to suspend an admin returns
+`409 ADMIN_USER_SUSPENSION_FORBIDDEN`. Suspended users receive
+`403 ACCOUNT_SUSPENDED` on login, refresh, and authenticated production
+requests.
+
+Temporarily disable an AI feature:
+
+```http
+POST /admin/ai-features/voice_ai/disable
+Authorization: Bearer <admin token>
+Content-Type: application/json
+
+{ "durationMinutes": 60 }
+```
+
+`durationMinutes` must be an integer from `1` through `1440`. The allowlist is
+`voice_ai`, `multimodal_bird_identification`, and `agent_booking`. Other
+feature identifiers return `422 FEATURE_NOT_DISABLEABLE`. The database stores
+an absolute `disabled_until` timestamp; the normal feature-flag service checks
+this override before its configured provider and automatically resumes normal
+evaluation after expiry. If the override lookup fails, the affected feature
+fails closed. The PostgreSQL function targets the feature-control primary-key
+constraint by name so its `feature` output parameter cannot make the upsert
+ambiguous.
+
+### `GET /admin/ai-quality`
+
+This admin-only report accepts optional ISO `startDate` and `endDate` query
+parameters through the shared admin range validation. Both the current and
+previous periods use UTC half-open boundaries: `startAt <= timestamp < endAt`.
+The previous period ends at the current `startAt` and has exactly the same
+duration in milliseconds.
+
+The source is `AI_EVAL_OUTPUT_FILE` (default
+`tmp/ai-eval-results.json`, with `AI_EVAL_RESULTS_FILE` supported as a fallback),
+written by the offline `npm run ai:evals` flow or supplied as a compatible
+stored evaluation artifact. Offline output retains up to 100 timestamped runs.
+Dashboard requests only read and aggregate safe
+numeric results; they do not expose prompts, answers, retrieved content, tool
+inputs/outputs, reasoning, PII, secrets, or provider errors.
+
+Metric definitions:
+
+- `groundingScore`: mean usable grounding-quality score.
+- `answerRelevance`: mean usable answer-relevance score.
+- `retrievalQuality`: mean usable retrieval-quality score.
+- `toolSuccessRate`: successful evaluated tool executions divided by all
+  evaluated tool executions. Its sample size is the execution count; the other
+  sample sizes count usable score observations.
+
+All values are normalized to `0–1` and rounded to four decimal places only
+after aggregation. A period without usable observations returns `null` and a
+sample size of `0`. A delta is `current - previous`, and remains `null` when
+either value is unavailable.
+
+```json
+{
+  "success": true,
+  "data": {
+    "range": {
+      "startAt": "2026-07-01T00:00:00.000Z",
+      "endAt": "2026-08-01T00:00:00.000Z",
+      "timezone": "UTC"
+    },
+    "previousRange": {
+      "startAt": "2026-05-31T00:00:00.000Z",
+      "endAt": "2026-07-01T00:00:00.000Z",
+      "timezone": "UTC"
+    },
+    "metrics": {
+      "groundingScore": {
+        "current": 0.86,
+        "previous": 0.82,
+        "delta": 0.04,
+        "currentSampleSize": 120,
+        "previousSampleSize": 110
+      },
+      "answerRelevance": {
+        "current": null,
+        "previous": null,
+        "delta": null,
+        "currentSampleSize": 0,
+        "previousSampleSize": 0
+      },
+      "retrievalQuality": {
+        "current": 0.79,
+        "previous": 0.81,
+        "delta": -0.02,
+        "currentSampleSize": 75,
+        "previousSampleSize": 70
+      },
+      "toolSuccessRate": {
+        "current": 0.96,
+        "previous": 0.93,
+        "delta": 0.03,
+        "currentSampleSize": 48,
+        "previousSampleSize": 42
+      }
+    }
+  },
+  "meta": {}
+}
+```
+
+### `GET /admin/errors`
+
+The admin-only operational error feed combines these sources:
+
+| Source | Normalized type | Durability |
+|---|---|---|
+| failed LLM trace or provider request | `LLM_ERROR` | current process only |
+| `tool_timeout` or `tool_failed` telemetry | `TOOL_ERROR` | current process only |
+| failed `rag_retrieval`/`rag_pipeline` trace or `retrieval_failed` telemetry | `RETRIEVAL_ERROR` | current process only |
+| malformed provider output, `invalid_output`, `invalid_json_output`, or guardrail/hallucination rejection | `INVALID_OUTPUT` | current process only |
+| failed `jobs` row or sanitized BullMQ dead-letter record | `QUEUE_FAILURE` | PostgreSQL or bounded Redis retention |
+| application/AI/provider status `429` or known rate-limit code | `RATE_LIMIT` | current process only |
+| failed checkout/webhook handling or `billing_events.event_name = 'payment_failed'` | `PAYMENT_FAILURE` | current process or PostgreSQL |
+
+Unknown trace types and telemetry events are omitted instead of being assigned
+an approximate type. Checkout and webhook exceptions are recorded in the
+current process; only failures that produce a `payment_failed` billing event
+are durable feed sources.
+
+The response uses object data and pagination metadata:
+
+```json
+{
+  "success": true,
+  "data": {
+    "errors": [{
+      "id": "telemetry-error-123",
+      "timestamp": "2026-07-28T15:42:18.000Z",
+      "type": "TOOL_ERROR",
+      "user": { "id": "42", "label": "User 42" },
+      "traceId": "trace-uuid",
+      "traceUrl": "https://smith.langchain.com/...",
+      "message": "Tool execution failed",
+      "status": "failed"
+    }]
+  },
+  "meta": {
+    "page": 1,
+    "limit": 25,
+    "total": 1,
+    "totalPages": 1
+  }
+}
+```
+
+Messages and statuses come from a server allowlist. The endpoint never selects
+or returns prompts, model output, retrieval content, tool input/output, raw job
+or billing payloads, provider error text, credentials, image URLs, or stack
+traces. Users are represented only by an opaque ID and `User <id>` label.
+
+Results are newest first with ID as a deterministic secondary sort. Persisted
+jobs and dead-letter records sharing an original job ID are deduplicated. The
+aggregator reads at most the newest `1000` records from each source for one
+request; `total` describes the normalized, filtered records inside that bounded
+source window. If PostgreSQL or Redis is unavailable, the endpoint returns the
+standard masked server error and no partial feed.
+
+For records with a trace ID, the backend asks the installed LangSmith SDK for
+the run URL. It never constructs a URL from the trace ID. Only HTTPS URLs on
+the explicit LangSmith UI hostname allowlist are returned; otherwise
+`traceUrl` is `null`. Existing `LANGCHAIN_TRACING`, `LANGCHAIN_PROJECT`, and
+`LANGCHAIN_API_KEY` configuration is sufficient.
 
 Example list metadata:
 
@@ -153,13 +376,22 @@ provider.
 
 AI usage returns `range`, aggregate `totals`, and `byFeature` entries containing
 `feature`, `requests`, distinct `users`, and `tokens`. AI costs returns the same
-range plus `currency`, `costType`, aggregate totals, and per-feature
-`estimatedCost`, `pricedRequests`, and `unpricedRequests`.
+range plus `currency`, `costType`, aggregate totals, `byModel`, `byFeature`,
+`byPlan`, and a bounded `byUser` list. Cost entries contain `requests`, `tokens`,
+`estimatedCost`, `averageCostPerRequest`, `pricedRequests`, and
+`unpricedRequests`. The average divides estimated cost by priced requests so
+unpriced usage does not silently lower the result. User entries expose only the
+internal user ID and current plan, not names or email addresses. Historical plan
+attribution is unavailable because usage events do not snapshot plan state.
 
-Queue health returns `observedAt`, an overall `status`, summary counts, and a
-`queues` array. Each queue contains `name`, `status`, and BullMQ counts when the
-queue is available. If no queues are registered, the overall status is
-`degraded`.
+Queue health returns `observedAt` and a `queues` array. Each queue contains a
+stable UI `id`, display `name`, and the five numeric BullMQ counts. The UI IDs
+`bird-identification`, `embeddings`, and `document-ingestion` map to the actual
+BullMQ queue names `bird-identification`, `embedding`, and `ingestion`.
+Bird-identification producers explicitly store the configured retry and bounded
+retention options on each BullMQ job so a successful completion remains
+countable for up to `BULLMQ_REMOVE_ON_COMPLETE_AGE_SECONDS` while respecting
+`BULLMQ_REMOVE_ON_COMPLETE_COUNT`.
 
 Quota errors use `429` with code `QUOTA_EXCEEDED` and a user-facing message.
 
@@ -1165,3 +1397,20 @@ Request protection includes:
 - Unknown routes return `404` with code `NOT_FOUND`.
 - Empty or malformed AI provider responses return `502` with code `AI_EMPTY_RESPONSE`.
 - Unexpected server errors return `500` with code `INTERNAL_SERVER_ERROR` and do not expose stack traces.
+
+### Feature-control and suspension state
+
+- `GET /admin/ai-features` (admin only) returns `name`, `enabled`, `status`,
+  and ISO UTC `disabledUntil | null` for the three supported AI features.
+- `POST /admin/ai-features/:feature/enable` with `{}` removes the temporary
+  override and returns the audit reference.
+- `GET /admin/users` includes `status`, `suspendedAt`, and
+  `suspensionReasonCode`.
+- `POST /admin/users/:userId/unsuspend` with `{}` clears an eligible user’s
+  suspension and returns the audit reference.
+- `GET /features/availability` is the safe public availability projection.
+
+Enable and unsuspend are idempotent; admin/self protection remains enforced.
+Temporarily disabled requests return the safe
+`FEATURE_TEMPORARILY_DISABLED` code, feature-specific message, and UTC
+expiration (HTTP `503` except where streaming transport has already begun).

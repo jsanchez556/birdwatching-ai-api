@@ -391,12 +391,16 @@ class ChatService {
       const replacement = error.guardrail.response;
       aiTelemetry.recordAiError('hallucination_event', {
         conversationId: activeConversationId,
+        userId,
+        aiTraceId: options.aiTraceId || parentTraceId,
         code: error.guardrail.code,
         reason: error.guardrail.reason,
         stage: 'streaming_output_guardrail',
       });
       aiTelemetry.recordAiError('invalid_output', {
         conversationId: activeConversationId,
+        userId,
+        aiTraceId: options.aiTraceId || parentTraceId,
         code: error.guardrail.code,
         stage: 'streaming_output_guardrail',
       });
@@ -409,12 +413,16 @@ class ChatService {
     if (outputGuardrail.blocked) {
       aiTelemetry.recordAiError('hallucination_event', {
         conversationId: activeConversationId,
+        userId,
+        aiTraceId: options.aiTraceId || parentTraceId,
         code: outputGuardrail.code,
         reason: outputGuardrail.reason,
         stage: 'final_output_guardrail',
       });
       aiTelemetry.recordAiError('invalid_output', {
         conversationId: activeConversationId,
+        userId,
+        aiTraceId: options.aiTraceId || parentTraceId,
         code: outputGuardrail.code,
         stage: 'final_output_guardrail',
       });

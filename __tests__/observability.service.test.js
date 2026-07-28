@@ -15,6 +15,7 @@ const {
   ObservabilityService,
   configureLangSmithEnvironment,
   isTracingEnabled,
+  validateLangSmithUrl,
 } = await import('../src/observability/observability.service.js');
 
 describe('AI observability service', () => {
@@ -36,6 +37,31 @@ describe('AI observability service', () => {
       langChainTracingV2: true,
       langChainProject: 'birdwatching-ai',
     })).toBe(false);
+  });
+
+  it('resolves run URLs through the SDK and allows only HTTPS LangSmith origins', async () => {
+    const langSmithClient = {
+      getRunUrl: jest.fn()
+        .mockResolvedValueOnce('https://smith.langchain.com/o/project/r/trace-1')
+        .mockResolvedValueOnce('https://smith.langchain.com.evil.test/r/trace-1'),
+    };
+    const service = new ObservabilityService({
+      config: {
+        langChainTracingV2: true,
+        langChainApiKey: 'test-key',
+        langChainProject: 'birdwatching-ai',
+      },
+      langSmithClient,
+    });
+
+    await expect(service.getTraceUrl('trace-1')).resolves.toBe(
+      'https://smith.langchain.com/o/project/r/trace-1'
+    );
+    await expect(service.getTraceUrl('trace-2')).resolves.toBeNull();
+    expect(validateLangSmithUrl('http://smith.langchain.com/r/trace')).toBeNull();
+    expect(validateLangSmithUrl('https://example.com/r/trace')).toBeNull();
+    expect(validateLangSmithUrl('https://user:password@smith.langchain.com/r/trace')).toBeNull();
+    expect(validateLangSmithUrl('https://smith.langchain.com:8443/r/trace')).toBeNull();
   });
 
   it('configures LangSmith environment variables without exposing secrets in config', () => {

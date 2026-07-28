@@ -10,6 +10,7 @@ const mockRecordProviderEvent = jest.fn();
 const mockMarkProviderEventProcessed = jest.fn();
 const mockWarn = jest.fn();
 const mockAnalyticsTrack = jest.fn();
+const mockRecordOperationalError = jest.fn();
 
 await jest.unstable_mockModule('../src/analytics/analytics.service.js', () => ({
   default: {
@@ -107,6 +108,12 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
     info: jest.fn(),
     warn: mockWarn,
     error: jest.fn(),
+  },
+}));
+
+await jest.unstable_mockModule('../src/monitoring/aiTelemetry.js', () => ({
+  default: {
+    recordOperationalError: mockRecordOperationalError,
   },
 }));
 
@@ -226,6 +233,11 @@ describe('BillingService provider orchestration', () => {
       provider: 'Stripe',
     });
     expect(global.fetch).not.toHaveBeenCalled();
+    expect(mockRecordOperationalError).toHaveBeenCalledWith({
+      type: 'PAYMENT_FAILURE',
+      userId: 7,
+      sourceEvent: 'billing_checkout_failed',
+    });
   });
 
   it('creates checkout for the GUIDE plan without leaking Stripe identifiers', async () => {

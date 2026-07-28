@@ -46,4 +46,26 @@ describe('feature flag middleware', () => {
       code: 'FEATURE_NOT_AVAILABLE',
     }));
   });
+
+  it('returns a stable provider-safe error for a temporary shutdown', async () => {
+    const next = jest.fn();
+    await requireFeatureFlag(FEATURE_FLAGS.VOICE_AI, {
+      featureFlagService: {
+        getTemporaryDisable: jest.fn().mockResolvedValue({
+          feature: FEATURE_FLAGS.VOICE_AI,
+          disabledUntil: '2026-07-29T17:00:00.000Z',
+        }),
+      },
+    })(request(), {}, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({
+      status: 503,
+      code: 'FEATURE_TEMPORARILY_DISABLED',
+      message: 'Voice messages are temporarily unavailable.',
+      meta: {
+        feature: FEATURE_FLAGS.VOICE_AI,
+        disabledUntil: '2026-07-29T17:00:00.000Z',
+      },
+    }));
+  });
 });

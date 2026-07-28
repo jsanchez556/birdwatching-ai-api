@@ -5,6 +5,10 @@ import jobsQueries from '../db/queries/jobs.queries.js';
 import env from '../config/env.js';
 import { JOB_STATUSES, JOB_TYPES } from '../jobs/jobTypes.js';
 import { registerBirdIdentificationQueue } from '../queues/birdIdentification.queue.js';
+import {
+  buildBullMqJobOptions,
+  getBullMqConfig,
+} from '../queues/bullmq.config.js';
 import logger from '../utils/logger.js';
 import analytics from '../analytics/analytics.service.js';
 import { ANALYTICS_EVENTS } from '../analytics/events.js';
@@ -100,6 +104,7 @@ class BirdIdentificationJobService {
     historyQueries = birdIdentificationQueries,
     imageStorage = birdIdentificationImageStorage,
     queueFactory = registerBirdIdentificationQueue,
+    jobOptions = buildBullMqJobOptions(getBullMqConfig()),
     stallTimeoutMs = env.birdIdentificationJobStallTimeoutMs,
     analyticsClient = analytics,
   } = {}) {
@@ -107,6 +112,7 @@ class BirdIdentificationJobService {
     this.historyQueries = historyQueries;
     this.imageStorage = imageStorage;
     this.queueFactory = queueFactory;
+    this.jobOptions = jobOptions;
     this.stallTimeoutMs = stallTimeoutMs;
     this.analytics = analyticsClient;
   }
@@ -150,6 +156,7 @@ class BirdIdentificationJobService {
           source,
         },
       }, {
+        ...this.jobOptions,
         jobId,
       });
     } catch (error) {

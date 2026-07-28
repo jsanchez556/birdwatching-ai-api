@@ -25,6 +25,26 @@ The AI evaluation runner reads:
 - `src/evaluations/datasets/ai-eval-baseline.json` for baseline score and retrieval quality
 - optional CLI/env overrides: `--dataset`, `--baseline`, `--output`, `--results`, `--write-baseline`, `AI_EVAL_DATASET_FILE`, `AI_EVAL_BASELINE_FILE`, `AI_EVAL_OUTPUT_FILE`, and `AI_EVAL_RESULTS_FILE`
 
+The output artifact includes `generatedAt` and retains up to 100 numeric run
+snapshots for the admin AI-quality period comparison. Missing scorer fields
+remain missing; dashboard aggregation must return `null` with a zero sample
+size rather than infer a value.
+
+Admin AI-quality tests cover authorization, normalized routing, shared range
+validation, equal-duration previous periods, mixed/missing score aggregation,
+evaluated-tool execution ratios, empty periods, null-safe deltas, local artifact
+reads, and the absence of an evaluator/provider dependency in the request path.
+
+Safe admin-operation tests cover missing authentication, non-admin rejection,
+successful admin routing, validator rejection, audit-before-mutation behavior,
+failed-only BullMQ retry checks, safe audit metadata, suspension and refresh
+revocation orchestration, current-token suspension enforcement, temporary
+feature override precedence and expiry behavior, and fail-closed feature-control
+lookup errors. Query tests assert parameterized calls and ensure the retry read
+selects only safe job identity and state fields. Migration regression coverage
+also verifies that the feature-control upsert targets its named primary-key
+constraint instead of the ambiguous `feature` identifier.
+
 Prompt regression results should compare:
 
 - answer quality
@@ -99,3 +119,8 @@ contents as production trace metadata.
 `main` and pushes to `develop`. The workflow fails when aggregate evaluation
 score or retrieval quality drops below the checked-in baseline and uploads
 `tmp/ai-eval-results.json` as an artifact for review.
+
+Feature-control tests cover admin authorization, current state, audited and
+idempotent disable/enable and suspend/unsuspend transitions, protected targets,
+UTC expiration, and provider/queue non-execution. Browser errors are asserted
+to use `FEATURE_TEMPORARILY_DISABLED` without stacks or provider details.

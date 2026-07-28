@@ -15,6 +15,29 @@ function requestFlagContext(req) {
 function requireFeatureFlag(flag, { featureFlagService = featureFlags } = {}) {
   return async function featureFlagMiddleware(req, res, next) {
     try {
+      const temporaryDisable = await featureFlagService.getTemporaryDisable?.(flag);
+      if (temporaryDisable) {
+        if (temporaryDisable.unavailable) {
+          return next(new HttpError(503, 'This feature is temporarily unavailable.', {
+            code: 'FEATURE_CONTROL_UNAVAILABLE',
+            expose: true,
+          }));
+        }
+        const message = {
+          voice_ai: 'Voice messages are temporarily unavailable.',
+          multimodal_bird_identification: 'Bird identification is temporarily unavailable.',
+          agent_booking: 'AI-assisted booking is temporarily unavailable.',
+        }[flag] || 'This feature is temporarily unavailable.';
+        return next(new HttpError(503, message, {
+          code: 'FEATURE_TEMPORARILY_DISABLED',
+          expose: true,
+          meta: {
+            feature: flag,
+            disabledUntil: temporaryDisable.disabledUntil,
+          },
+        }));
+      }
+
       const enabled = await featureFlagService.isEnabled({
         flag,
         ...requestFlagContext(req),
@@ -27,8 +50,12 @@ function requireFeatureFlag(flag, { featureFlagService = featureFlags } = {}) {
       }
 
       return next();
-    } catch {
-      return next();
+    } catch (error) {
+      if (error instanceof HttpError) return next(error);
+      return next(new HttpError(503, 'This feature is temporarily unavailable.', {
+        code: 'FEATURE_CONTROL_UNAVAILABLE',
+        expose: true,
+      }));
     }
   };
 }

@@ -1,5 +1,7 @@
 import HttpError from '../../utils/httpError.js';
 import { verifyAuthToken } from '../../utils/authTokens.js';
+import env from '../../config/env.js';
+import userAccessQueries from '../../db/queries/userAccess.queries.js';
 
 function getBearerToken(req) {
   const header = req.get('authorization');
@@ -16,35 +18,44 @@ function getBearerToken(req) {
   return token;
 }
 
-export function optionalAuth(req, res, next) {
-  const token = getBearerToken(req);
+function createAuthMiddleware({
+  required,
+  accessRepository = env.nodeEnv && env.nodeEnv !== 'test' ? userAccessQueries : null,
+} = {}) {
+  return async function authenticate(req, res, next) {
+    const token = getBearerToken(req);
 
-  if (!token) {
-    return next();
-  }
+    if (!token) {
+      return required
+        ? next(new HttpError(401, 'Authentication is required', { code: 'UNAUTHORIZED' }))
+        : next();
+    }
 
-  try {
-    req.user = verifyAuthToken(token);
-    return next();
-  } catch (error) {
-    return next(error);
-  }
+    try {
+      req.user = verifyAuthToken(token);
+      if (accessRepository) {
+        const access = await accessRepository.getAccessState({ userId: req.user.id });
+        if (!access) {
+          return next(new HttpError(401, 'Authentication is required', {
+            code: 'UNAUTHORIZED',
+          }));
+        }
+        if (access.suspended_at) {
+          return next(new HttpError(403, 'This account is suspended', {
+            code: 'ACCOUNT_SUSPENDED',
+          }));
+        }
+        req.user.role = access.role === 'admin' ? 'admin' : 'customer';
+      }
+      return next();
+    } catch (error) {
+      return next(error);
+    }
+  };
 }
 
-export function requireAuth(req, res, next) {
-  const token = getBearerToken(req);
-
-  if (!token) {
-    return next(new HttpError(401, 'Authentication is required', { code: 'UNAUTHORIZED' }));
-  }
-
-  try {
-    req.user = verifyAuthToken(token);
-    return next();
-  } catch (error) {
-    return next(error);
-  }
-}
+export const optionalAuth = createAuthMiddleware({ required: false });
+export const requireAuth = createAuthMiddleware({ required: true });
 
 export function requireAdmin(req, res, next) {
   if (!req.user) {
@@ -57,3 +68,5 @@ export function requireAdmin(req, res, next) {
 
   return next();
 }
+
+export { createAuthMiddleware };

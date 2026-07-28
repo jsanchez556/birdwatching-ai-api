@@ -41,11 +41,37 @@ src/
 - Query modules own SQL and should use parameterized queries.
 - AI modules own prompt text, prompt versions, schemas, provider calls, retry, and token usage logging.
 - Evaluation modules own offline datasets, quality/retrieval/tool scorers, prompt regression runners, LangSmith-compatible reports, and dashboard summaries.
+- The admin AI-quality read path stays offline:
+  `admin.routes -> admin.controller -> admin.service -> ai-quality.service ->
+  ai-quality.repository`. The repository reads timestamped numeric evaluation
+  artifacts, while the service applies UTC half-open current/previous ranges
+  and aggregates usable scores. No evaluator, OpenAI client, tracing client, or
+  raw evaluation content is imported into the request path.
+- Safe admin mutations follow
+  `admin.routes -> admin.controller -> admin-operations.service ->
+  admin-operations.repository -> adminOperations.queries`. The service creates
+  an audit intent before touching BullMQ or invoking a database mutation.
+  PostgreSQL functions make user suspension and feature-control persistence
+  atomic with successful audit finalization. BullMQ cannot share a PostgreSQL
+  transaction, so retry records its durable intent first and then records the
+  controlled outcome without retaining job data or exception details.
 - Cache modules own Redis connection details and generic get/set behavior; callers decide cache eligibility and fallback behavior.
 - Queue modules own BullMQ queue registration and enqueueing for async background jobs.
 - Worker modules own BullMQ worker startup and processors; processors call services instead of embedding business logic in queue plumbing.
 - The API process registers queues so it can enqueue jobs, but it does not import worker processors or start workers.
 - Middleware owns cross-cutting request behavior before and after controllers.
+- Production authentication resolves the current role and suspension state
+  after JWT verification. This makes account suspension and admin-role changes
+  effective for already-issued access tokens; login and refresh enforce the
+  same suspension state in the auth service.
+
+Temporary AI feature controls are persisted in `ai_feature_controls`. The
+feature-flag service checks an unexpired database override before PostHog or
+local defaults, caches a newly disabled deadline in-process for immediate
+effect, and returns to normal provider evaluation after `disabled_until`.
+The admin disable function targets `ai_feature_controls_pkey` by constraint
+name so its `feature` output parameter cannot conflict with the table column
+during an upsert.
 
 ## Request Lifecycle
 ```text
@@ -319,6 +345,20 @@ The observability layer is split into three small modules:
 - `src/observability/observability.service.js` reads LangSmith/LangChain tracing configuration from environment variables, exposes trace lifecycle helpers, configures the standard `LANGCHAIN_*` process variables when available, and creates/updates sanitized LangSmith runs through the `langsmith` SDK.
 - `src/tracing/aiTracing.middleware.js` provides wrappers for the end-to-end AI execution flow, conversation context assembly, LLM calls, RAG retrieval, RAG grounding, tool execution, and agent orchestration so instrumentation stays out of controllers and response formatting.
 - `src/monitoring/aiTelemetry.js` records centralized latency, token usage, and error telemetry with prompt, response, customer, and secret fields redacted.
+  It also keeps a bounded 250-entry operational-error ring for known
+  LLM/tool/retrieval/invalid-output/rate-limit and checkout/webhook events. This ring is local to one
+  process and is cleared by a restart; worker-process telemetry is not visible
+  to an API replica.
+- `src/admin/operational-errors.service.js` aggregates that bounded ring with
+  safe PostgreSQL job/payment failure projections and sanitized BullMQ
+  dead-letter records. It owns classification, range/type filtering,
+  deterministic ordering, cross-source job deduplication, pagination, safe
+  user normalization, allowlisted messages/statuses, and trace-link resolution.
+  Unknown telemetry events are excluded. A source failure fails the request so
+  stale or incomplete records are not presented as a complete feed.
+- LangSmith navigation uses `Client.getRunUrl({ runId })`; the returned value is
+  accepted only when it is HTTPS and its hostname is on the server allowlist.
+  The UI never derives run URLs from opaque trace IDs.
 
 Chat currently emits a root AI execution trace for each streamed request, with child spans for conversation context assembly, OpenAI tool-resolution completions, final streaming completions, embedding generation, RAG retrieval, RAG/response cache operations, the RAG grounding pipeline, tour tool execution, and the birdwatching agent orchestration run. The root trace records response length, source count, prompt versions, reservation presence, and tool names; the conversation context span records message counts by role. Cache spans record hit, miss, skipped, write status, avoided LLM calls, cache hit rate, and estimated savings without logging raw prompts, embeddings, answers, or secrets. RAG pipeline telemetry includes retrieved chunk IDs, similarity scores, retrieval latency, grounding context size, and prompt-construction metadata; the final answer LLM trace also carries the compact grounding summary. Multi-tool agent telemetry follows the user request through planner output, ordered tool sequence, individual tool spans, failures, skipped steps, retry counts, retry scheduling events, prompt assembly, and the final response. AI error monitoring records stable log events for retrieval failures, tool timeouts, tool failures, malformed JSON tool-call arguments, invalid assistant outputs, and guardrail-detected hallucination events. Offline evaluation tracking compares prompt versions by answer quality, retrieval quality, token usage, latency, estimated cost, and quality-per-dollar without storing prompt text. LangSmith-compatible evaluation reporting models `Run -> Evaluation -> Score -> Comparison` for answer quality, grounding quality, retrieval quality, and tool correctness, while dashboard helpers summarize quality trends, regression detection, and retrieval performance. LangSmith export is enabled when `LANGCHAIN_TRACING=true`, `LANGCHAIN_PROJECT` is set, and `LANGCHAIN_API_KEY` is present; otherwise the same code path continues to run with local telemetry only.
 
@@ -415,3 +455,10 @@ search, chunk metadata/text search, and IVFFlat cosine embedding search.
 - Logging uses Winston and includes OpenAI request IDs and token usage when available.
 - Database SSL is enabled only when `NODE_ENV=production`.
 - `POST /chat` uses optional auth for customer/admin chat and visitor bird-only access; authenticated conversation ownership is enforced before history is loaded.
+
+Persisted emergency feature controls are read through the feature-control query
+layer. Admin controllers parse, the admin-operations service owns audited
+transitions, and repository/query functions perform mutations. Enforcement
+happens before voice uploads, image uploads/queues, and booking tool/model
+execution. The public availability controller exposes only a whitelisted state
+projection.

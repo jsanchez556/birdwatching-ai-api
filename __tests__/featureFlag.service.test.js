@@ -113,4 +113,78 @@ describe('FeatureFlagService', () => {
       },
     });
   });
+
+  it('gives a persisted temporary disable precedence over the provider', async () => {
+    const provider = {
+      getFeatureFlag: jest.fn().mockResolvedValue(true),
+    };
+    const controlRepository = {
+      getActiveDisable: jest.fn().mockResolvedValue({
+        feature: FEATURE_FLAGS.VOICE_AI,
+        disabled_until: '2026-07-29T13:00:00.000Z',
+      }),
+    };
+    const service = new FeatureFlagService({
+      provider,
+      controlRepository,
+      clock: () => new Date('2026-07-29T12:00:00.000Z'),
+    });
+
+    await expect(service.isEnabled({
+      flag: FEATURE_FLAGS.VOICE_AI,
+      userId: 42,
+    })).resolves.toBe(false);
+    expect(provider.getFeatureFlag).not.toHaveBeenCalled();
+  });
+
+  it('resumes normal feature evaluation after a remembered disable expires', async () => {
+    let now = new Date('2026-07-29T12:00:00.000Z');
+    const provider = {
+      getFeatureFlag: jest.fn().mockResolvedValue(true),
+    };
+    const service = new FeatureFlagService({
+      provider,
+      clock: () => now,
+    });
+    service.rememberDisabled(
+      FEATURE_FLAGS.VOICE_AI,
+      '2026-07-29T12:30:00.000Z'
+    );
+
+    await expect(service.isEnabled({
+      flag: FEATURE_FLAGS.VOICE_AI,
+      userId: 42,
+    })).resolves.toBe(false);
+
+    now = new Date('2026-07-29T12:30:00.000Z');
+    await expect(service.isEnabled({
+      flag: FEATURE_FLAGS.VOICE_AI,
+      userId: 42,
+    })).resolves.toBe(true);
+    expect(provider.getFeatureFlag).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed when the emergency feature-control store is unavailable', async () => {
+    const featureFlagLogger = { warn: jest.fn() };
+    const provider = {
+      getFeatureFlag: jest.fn().mockResolvedValue(true),
+    };
+    const service = new FeatureFlagService({
+      provider,
+      controlRepository: {
+        getActiveDisable: jest.fn().mockRejectedValue(new Error('database unavailable')),
+      },
+      featureFlagLogger,
+    });
+
+    await expect(service.isEnabled({
+      flag: FEATURE_FLAGS.AGENT_BOOKING,
+      userId: 42,
+    })).resolves.toBe(false);
+    expect(provider.getFeatureFlag).not.toHaveBeenCalled();
+    expect(featureFlagLogger.warn).toHaveBeenCalledWith(
+      'AI feature control lookup failed',
+      { flag: FEATURE_FLAGS.AGENT_BOOKING }
+    );
+  });
 });

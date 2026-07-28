@@ -128,6 +128,8 @@ export async function executeToolCall(name, args = {}, metadata = {}) {
       aiTelemetry.recordAiError(isTimeoutError(error) ? 'tool_timeout' : 'tool_failed', {
         toolName: name,
         conversationId: metadata.conversationId,
+        userId: metadata.userId,
+        aiTraceId: metadata.aiTraceId,
         role: metadata.role,
         error: {
           name: error.name,

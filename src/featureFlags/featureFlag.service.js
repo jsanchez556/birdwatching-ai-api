@@ -2,6 +2,7 @@ import env from '../config/env.js';
 import logger from '../utils/logger.js';
 import { createPostHogProvider } from '../analytics/posthog.provider.js';
 import { FEATURE_FLAG_DEFAULTS } from './flags.js';
+import featureControlQueries from '../db/queries/featureControl.queries.js';
 
 const BLOCKED_PERSON_PROPERTY_PATTERN = /(authorization|customer|email|message|name|password|prompt|response|secret|session.*id|token)/i;
 
@@ -22,10 +23,71 @@ class FeatureFlagService {
     provider = null,
     defaults = FEATURE_FLAG_DEFAULTS,
     featureFlagLogger = logger,
+    controlRepository = null,
+    clock = () => new Date(),
   } = {}) {
     this.provider = provider;
     this.defaults = defaults;
     this.logger = featureFlagLogger;
+    this.controlRepository = controlRepository;
+    this.clock = clock;
+    this.disabledUntilByFlag = new Map();
+  }
+
+  rememberDisabled(flag, disabledUntil) {
+    const timestamp = new Date(disabledUntil).getTime();
+    if (Object.hasOwn(this.defaults, flag) && Number.isFinite(timestamp)) {
+      this.disabledUntilByFlag.set(flag, timestamp);
+    }
+  }
+
+  rememberEnabled(flag) {
+    this.disabledUntilByFlag.delete(flag);
+  }
+
+  isRememberedDisabled(flag) {
+    const disabledUntil = this.disabledUntilByFlag.get(flag);
+    if (!disabledUntil) return false;
+    if (disabledUntil <= this.clock().getTime()) {
+      this.disabledUntilByFlag.delete(flag);
+      return false;
+    }
+    return true;
+  }
+
+  async isTemporarilyDisabled(flag) {
+    return Boolean(await this.getTemporaryDisable(flag));
+  }
+
+  async getTemporaryDisable(flag) {
+    const rememberedUntil = this.disabledUntilByFlag.get(flag);
+    if (this.isRememberedDisabled(flag)) {
+      return {
+        feature: flag,
+        disabledUntil: new Date(rememberedUntil).toISOString(),
+      };
+    }
+    if (!this.controlRepository) return false;
+
+    try {
+      const control = await this.controlRepository.getActiveDisable({ feature: flag });
+      if (control?.disabled_until) {
+        this.rememberDisabled(flag, control.disabled_until);
+        return {
+          feature: flag,
+          disabledUntil: new Date(control.disabled_until).toISOString(),
+        };
+      }
+      this.disabledUntilByFlag.delete(flag);
+      return null;
+    } catch {
+      this.logger.warn('AI feature control lookup failed', { flag });
+      return {
+        feature: flag,
+        disabledUntil: null,
+        unavailable: true,
+      };
+    }
   }
 
   async getValue({
@@ -37,6 +99,10 @@ class FeatureFlagService {
   } = {}) {
     if (typeof flag !== 'string' || !Object.hasOwn(this.defaults, flag)) {
       return defaultValue;
+    }
+
+    if (await this.isTemporarilyDisabled(flag)) {
+      return false;
     }
 
     const fallback = defaultValue ?? this.defaults[flag];
@@ -90,6 +156,7 @@ function createConfiguredProvider() {
 
 const featureFlags = new FeatureFlagService({
   provider: createConfiguredProvider(),
+  controlRepository: env.nodeEnv === 'test' ? null : featureControlQueries,
 });
 
 export {

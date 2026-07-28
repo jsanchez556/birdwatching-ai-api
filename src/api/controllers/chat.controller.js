@@ -83,9 +83,10 @@ class ChatController {
       });
       sendSseEvent(res, 'error', {
         code: error.code || 'STREAM_ERROR',
-        message: error.status && error.status < 500
+        message: error.expose || (error.status && error.status < 500)
           ? error.message
           : 'Unable to stream chat response right now.',
+        ...(error.meta ? { meta: error.meta } : {}),
       });
     } finally {
       streamCompleted = true;

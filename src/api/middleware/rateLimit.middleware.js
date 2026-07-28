@@ -1,5 +1,6 @@
 import HttpError from '../../utils/httpError.js';
 import env from '../../config/env.js';
+import aiTelemetry from '../../monitoring/aiTelemetry.js';
 
 function defaultKeyGenerator(req) {
   return req.ip || req.connection.remoteAddress || 'unknown';
@@ -41,6 +42,11 @@ function createRateLimit({
     if (bucket.count > limit) {
       const retryAfterSeconds = Math.ceil((bucket.resetAt - now) / 1000);
       res.setHeader('Retry-After', String(Math.max(retryAfterSeconds, 1)));
+      aiTelemetry.recordAiError('rate_limit', {
+        code,
+        userId: req.user?.id,
+        aiTraceId: req.aiTraceId,
+      });
 
       return next(new HttpError(429, message, { code }));
     }

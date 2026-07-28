@@ -43,6 +43,8 @@ class AdminQueries {
         users.role,
         COALESCE(plans.name, 'FREE') AS plan,
         COALESCE(user_subscriptions.status, 'active') AS subscription_status,
+        users.suspended_at,
+        users.suspension_reason_code,
         users.created_at
       FROM users
       LEFT JOIN user_subscriptions ON user_subscriptions.user_id = users.id
@@ -114,10 +116,63 @@ class AdminQueries {
     return result.rows;
   }
 
-  async getAiCosts({ startAt, endAt }) {
-    const result = await pool.query(`
+  async getAiCosts({ startAt, endAt, userLimit }) {
+    const rangeParameters = [startAt, endAt];
+    const [modelResult, featureResult, planResult, userResult] = await Promise.all([
+      pool.query(`
+      WITH filtered_usage AS (
+        SELECT id, tokens, estimated_cost, model_usage
+        FROM usage_events
+        WHERE created_at >= $1
+          AND created_at < $2
+      ),
+      expanded_models AS (
+        SELECT
+          filtered_usage.id,
+          COALESCE(NULLIF(model_entry.value->>'model', ''), 'unknown') AS model,
+          CASE
+            WHEN model_entry.value IS NULL OR model_entry.value = 'null'::jsonb
+              THEN filtered_usage.tokens
+            WHEN model_entry.value->>'totalTokens' ~ '^[0-9]+$'
+              THEN (model_entry.value->>'totalTokens')::BIGINT
+            ELSE 0
+          END AS tokens,
+          CASE
+            WHEN model_entry.value IS NULL OR model_entry.value = 'null'::jsonb
+              THEN filtered_usage.estimated_cost
+            WHEN model_entry.value->>'estimatedCostUsd' ~ '^[0-9]+([.][0-9]+)?$'
+              THEN (model_entry.value->>'estimatedCostUsd')::NUMERIC
+            ELSE NULL
+          END AS estimated_cost
+        FROM filtered_usage
+        LEFT JOIN LATERAL jsonb_array_elements(
+          CASE
+            WHEN jsonb_typeof(filtered_usage.model_usage) = 'array' THEN
+              CASE
+                WHEN jsonb_array_length(filtered_usage.model_usage) > 0
+                  THEN filtered_usage.model_usage
+                ELSE '[null]'::jsonb
+              END
+            ELSE '[null]'::jsonb
+          END
+        ) AS model_entry(value) ON TRUE
+      )
+      SELECT
+        model,
+        COUNT(DISTINCT id)::BIGINT AS requests,
+        COALESCE(SUM(tokens), 0)::BIGINT AS tokens,
+        COALESCE(SUM(estimated_cost), 0)::NUMERIC AS estimated_cost,
+        COUNT(DISTINCT id) FILTER (WHERE estimated_cost IS NOT NULL)::BIGINT AS priced_requests,
+        COUNT(DISTINCT id) FILTER (WHERE estimated_cost IS NULL)::BIGINT AS unpriced_requests
+      FROM expanded_models
+      GROUP BY model
+      ORDER BY estimated_cost DESC, model ASC
+      `, rangeParameters),
+      pool.query(`
       SELECT
         feature,
+        COUNT(*)::BIGINT AS requests,
+        COALESCE(SUM(tokens), 0)::BIGINT AS tokens,
         COALESCE(SUM(estimated_cost), 0)::NUMERIC AS estimated_cost,
         COUNT(*) FILTER (WHERE estimated_cost IS NOT NULL)::BIGINT AS priced_requests,
         COUNT(*) FILTER (WHERE estimated_cost IS NULL)::BIGINT AS unpriced_requests
@@ -125,10 +180,54 @@ class AdminQueries {
       WHERE created_at >= $1
         AND created_at < $2
       GROUP BY feature
-      ORDER BY feature ASC
-    `, [startAt, endAt]);
+      ORDER BY estimated_cost DESC, feature ASC
+      `, rangeParameters),
+      pool.query(`
+      SELECT
+        COALESCE(plans.name, 'FREE') AS plan,
+        COUNT(*)::BIGINT AS requests,
+        COALESCE(SUM(usage_events.tokens), 0)::BIGINT AS tokens,
+        COALESCE(SUM(usage_events.estimated_cost), 0)::NUMERIC AS estimated_cost,
+        COUNT(*) FILTER (WHERE usage_events.estimated_cost IS NOT NULL)::BIGINT AS priced_requests,
+        COUNT(*) FILTER (WHERE usage_events.estimated_cost IS NULL)::BIGINT AS unpriced_requests
+      FROM usage_events
+      LEFT JOIN user_subscriptions
+        ON user_subscriptions.user_id = usage_events.user_id
+      LEFT JOIN plans
+        ON plans.id = user_subscriptions.plan_id
+      WHERE usage_events.created_at >= $1
+        AND usage_events.created_at < $2
+      GROUP BY COALESCE(plans.name, 'FREE')
+      ORDER BY estimated_cost DESC, plan ASC
+      `, rangeParameters),
+      pool.query(`
+      SELECT
+        usage_events.user_id,
+        COALESCE(plans.name, 'FREE') AS plan,
+        COUNT(*)::BIGINT AS requests,
+        COALESCE(SUM(usage_events.tokens), 0)::BIGINT AS tokens,
+        COALESCE(SUM(usage_events.estimated_cost), 0)::NUMERIC AS estimated_cost,
+        COUNT(*) FILTER (WHERE usage_events.estimated_cost IS NOT NULL)::BIGINT AS priced_requests,
+        COUNT(*) FILTER (WHERE usage_events.estimated_cost IS NULL)::BIGINT AS unpriced_requests
+      FROM usage_events
+      LEFT JOIN user_subscriptions
+        ON user_subscriptions.user_id = usage_events.user_id
+      LEFT JOIN plans
+        ON plans.id = user_subscriptions.plan_id
+      WHERE usage_events.created_at >= $1
+        AND usage_events.created_at < $2
+      GROUP BY usage_events.user_id, COALESCE(plans.name, 'FREE')
+      ORDER BY estimated_cost DESC, usage_events.user_id ASC
+      LIMIT $3
+      `, [startAt, endAt, userLimit]),
+    ]);
 
-    return result.rows;
+    return {
+      byModel: modelResult.rows,
+      byFeature: featureResult.rows,
+      byPlan: planResult.rows,
+      byUser: userResult.rows,
+    };
   }
 
   async getReservations({ limit, offset }) {
@@ -203,6 +302,50 @@ class AdminQueries {
       rows: result.rows,
       total: countResult.rows[0]?.total_count || 0,
     };
+  }
+
+  async getOperationalErrors({ startAt, endAt, limit }) {
+    const result = await pool.query(`
+      WITH operational_errors AS (
+        SELECT
+          jobs.job_id::TEXT AS source_id,
+          'job'::TEXT AS source_type,
+          jobs.updated_at AS occurred_at,
+          jobs.user_id,
+          NULLIF(jobs.result_meta->>'aiTraceId', '')::TEXT AS trace_id
+        FROM jobs
+        WHERE jobs.status = 'failed'
+          AND jobs.updated_at >= $1
+          AND jobs.updated_at < $2
+
+        UNION ALL
+
+        SELECT
+          billing_events.id::TEXT AS source_id,
+          'billing'::TEXT AS source_type,
+          billing_events.created_at AS occurred_at,
+          user_subscriptions.user_id,
+          NULL::TEXT AS trace_id
+        FROM billing_events
+        LEFT JOIN user_subscriptions
+          ON user_subscriptions.billing_provider = billing_events.provider
+          AND user_subscriptions.provider_customer_id = billing_events.provider_customer_id
+        WHERE billing_events.event_name = 'payment_failed'
+          AND billing_events.created_at >= $1
+          AND billing_events.created_at < $2
+      )
+      SELECT
+        source_id,
+        source_type,
+        occurred_at,
+        user_id,
+        trace_id
+      FROM operational_errors
+      ORDER BY occurred_at DESC, source_type DESC, source_id DESC
+      LIMIT $3
+    `, [startAt, endAt, limit]);
+
+    return result.rows;
   }
 }
 

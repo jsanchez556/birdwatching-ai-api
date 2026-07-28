@@ -112,6 +112,9 @@ const env = {
   langChainApiKey: process.env.LANGCHAIN_API_KEY,
   langChainTracingV2: process.env.LANGCHAIN_TRACING === 'true',
   langChainProject: process.env.LANGCHAIN_PROJECT || 'birdwatching-ai',
+  aiEvalResultsFile: process.env.AI_EVAL_OUTPUT_FILE
+    || process.env.AI_EVAL_RESULTS_FILE
+    || 'tmp/ai-eval-results.json',
   databaseUrl: process.env.DATABASE_URL,
   jwtSecret: nodeEnv === 'test' ? 'test-jwt-secret' : process.env.JWT_SECRET,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',

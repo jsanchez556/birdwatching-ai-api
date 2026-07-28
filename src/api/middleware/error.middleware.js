@@ -26,5 +26,5 @@ export default function errorMiddleware(err, req, res, next) {
     stack: isServerError ? err.stack : undefined,
   });
 
-  return sendError(res, error, status);
+  return sendError(res, error, status, err.meta || {});
 }

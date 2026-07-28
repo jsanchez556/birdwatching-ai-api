@@ -39,6 +39,14 @@ function safeUser(user) {
   };
 }
 
+function assertActiveUser(user) {
+  if (user?.suspendedAt) {
+    throw new HttpError(403, 'This account is suspended', {
+      code: 'ACCOUNT_SUSPENDED',
+    });
+  }
+}
+
 export function normalizeEmail(email) {
   return email.trim().toLowerCase();
 }
@@ -63,6 +71,7 @@ class AuthService {
   }
 
   async issueSession(user) {
+    assertActiveUser(user);
     const token = signAuthToken(user);
     const refreshToken = generateRefreshToken();
     const refreshExpiresAt = refreshTokenExpiresAt();
@@ -131,6 +140,7 @@ class AuthService {
         code: 'INVALID_CREDENTIALS',
       });
     }
+    assertActiveUser(user);
 
     const subscription = await planService.ensureDefaultSubscription(user.id);
 
@@ -158,6 +168,7 @@ class AuthService {
         code: 'SESSION_EXPIRED',
       });
     }
+    assertActiveUser(user);
 
     await refreshTokenQueries.revokeByHash(tokenRecord.tokenHash);
     const subscription = await planService.ensureDefaultSubscription(user.id);
@@ -258,5 +269,6 @@ export {
   PROFILE_IMAGE_MAX_BYTES,
   profileImageUrl,
   safeUser,
+  assertActiveUser,
 };
 export default new AuthService();

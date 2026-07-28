@@ -11,6 +11,7 @@ import ingestionRoutes from './ingestion.routes.js';
 import jobRoutes from './job.routes.js';
 import mediaRoutes from './media.routes.js';
 import voiceChatRoutes from './voiceChat.routes.js';
+import featureAvailabilityRoutes from './featureAvailability.routes.js';
 
 const router = express.Router();
 
@@ -24,6 +25,7 @@ router.use('/ingestions', ingestionRoutes);
 router.use('/cart', cartRoutes);
 router.use('/chat', chatRoutes);
 router.use('/voice-chat', voiceChatRoutes);
+router.use('/features', featureAvailabilityRoutes);
 router.use(homepageRoutes);
 router.use(mediaRoutes);
 

@@ -16,6 +16,30 @@ function configureLangSmithEnvironment(config = env) {
   if (config.langChainApiKey) process.env.LANGCHAIN_API_KEY ||= config.langChainApiKey;
 }
 
+const ALLOWED_LANGSMITH_HOSTS = new Set([
+  'smith.langchain.com',
+  'eu.smith.langchain.com',
+  'aws.smith.langchain.com',
+  'apac.smith.langchain.com',
+]);
+
+function validateLangSmithUrl(value) {
+  if (typeof value !== 'string') return null;
+
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:'
+      && url.port === ''
+      && url.username === ''
+      && url.password === ''
+      && ALLOWED_LANGSMITH_HOSTS.has(url.hostname)
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 class ObservabilityService {
   constructor({
     config = env,
@@ -243,11 +267,26 @@ class ObservabilityService {
       });
     }
   }
+
+  async getTraceUrl(traceId) {
+    if (!this.langSmithClient || !isTracingEnabled(this.config) || typeof traceId !== 'string') {
+      return null;
+    }
+
+    try {
+      const traceUrl = await this.langSmithClient.getRunUrl({ runId: traceId });
+      return validateLangSmithUrl(traceUrl);
+    } catch {
+      return null;
+    }
+  }
 }
 
 export {
+  ALLOWED_LANGSMITH_HOSTS,
   configureLangSmithEnvironment,
   isTracingEnabled,
   ObservabilityService,
+  validateLangSmithUrl,
 };
 export default new ObservabilityService();

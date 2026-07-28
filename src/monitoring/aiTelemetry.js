@@ -1,10 +1,36 @@
+import { randomUUID } from 'crypto';
 import logger from '../utils/logger.js';
+import {
+  OPERATIONAL_ERROR_TYPE_SET,
+  mapAiEventType,
+  mapTraceFailureType,
+} from './operationalErrors.js';
 
 const SENSITIVE_KEY_PATTERN = /(password|secret|token|apiKey|authorization|databaseUrl|customerEmail|customerName|email|phone|content|prompt|message|input|output|^answer$|answerText|assistantAnswer|finalAnswer|text|args|arguments|customer)/i;
 const SAFE_TELEMETRY_KEY_PATTERN = /^(promptVersion|promptVersions|promptTokens|completionTokens|totalTokens|inputTokens|outputTokens|requestTokens|prompt_tokens|completion_tokens|total_tokens|input_tokens|output_tokens|tokenUsage)$/;
 const MAX_ARRAY_ITEMS = 8;
 const MAX_OBJECT_KEYS = 24;
 const MAX_STRING_LENGTH = 240;
+const MAX_OPERATIONAL_ERRORS = 250;
+const SAFE_IDENTIFIER_PATTERN = /^[A-Za-z0-9._:-]+$/;
+
+function safeIdentifier(value) {
+  if (!['number', 'string'].includes(typeof value)) return null;
+  const normalized = String(value);
+  return normalized.length > 0
+    && normalized.length <= 160
+    && SAFE_IDENTIFIER_PATTERN.test(normalized)
+    ? normalized
+    : null;
+}
+
+function firstSafeIdentifier(...values) {
+  for (const value of values) {
+    const normalized = safeIdentifier(value);
+    if (normalized) return normalized;
+  }
+  return null;
+}
 
 function sanitizeTelemetryValue(value, depth = 0) {
   if (value === null || value === undefined) return value;
@@ -47,8 +73,16 @@ function normalizeTokenUsage(usage = {}) {
 }
 
 class AiTelemetry {
-  constructor({ log = logger } = {}) {
+  constructor({
+    log = logger,
+    clock = Date,
+    idFactory = randomUUID,
+    maxOperationalErrors = MAX_OPERATIONAL_ERRORS,
+  } = {}) {
     this.logger = log;
+    this.clock = clock;
+    this.idFactory = idFactory;
+    this.maxOperationalErrors = Math.max(1, Number(maxOperationalErrors) || MAX_OPERATIONAL_ERRORS);
     this.reset();
   }
 
@@ -65,6 +99,37 @@ class AiTelemetry {
       totalTokens: 0,
     };
     this.latencies = [];
+    this.operationalErrors = [];
+  }
+
+  recordOperationalError({
+    type,
+    userId,
+    traceId,
+    sourceEvent,
+    sourceId,
+    timestamp,
+  } = {}) {
+    if (!OPERATIONAL_ERROR_TYPE_SET.has(type)) return null;
+
+    const occurredAt = timestamp ? new Date(timestamp) : new Date(this.clock.now());
+    const record = {
+      id: firstSafeIdentifier(sourceId) || `telemetry-${this.idFactory()}`,
+      timestamp: Number.isNaN(occurredAt.getTime())
+        ? new Date(this.clock.now()).toISOString()
+        : occurredAt.toISOString(),
+      type,
+      userId: firstSafeIdentifier(userId),
+      traceId: firstSafeIdentifier(traceId),
+      sourceEvent: firstSafeIdentifier(sourceEvent),
+    };
+
+    this.operationalErrors.unshift(record);
+    this.operationalErrors.length = Math.min(
+      this.operationalErrors.length,
+      this.maxOperationalErrors
+    );
+    return { ...record };
   }
 
   recordTraceStarted(trace = {}) {
@@ -129,6 +194,16 @@ class AiTelemetry {
       }),
       metadata: sanitizeTelemetryValue(metadata),
     });
+
+    const type = mapTraceFailureType(trace, error);
+    if (type) {
+      this.recordOperationalError({
+        type,
+        userId: metadata.userId ?? trace.metadata?.userId,
+        traceId: trace.id,
+        sourceEvent: 'ai_trace_failed',
+      });
+    }
   }
 
   recordAiError(event, details = {}) {
@@ -137,6 +212,16 @@ class AiTelemetry {
       event,
       ...sanitizeTelemetryValue(details),
     });
+
+    const type = mapAiEventType(event);
+    if (type) {
+      this.recordOperationalError({
+        type,
+        userId: details.userId,
+        traceId: details.aiTraceId ?? details.traceId,
+        sourceEvent: event,
+      });
+    }
   }
 
   recordAiEvaluation(event, details = {}) {
@@ -153,7 +238,17 @@ class AiTelemetry {
       latencies: [...this.latencies],
     };
   }
+
+  getOperationalErrors() {
+    return this.operationalErrors.map((entry) => ({ ...entry }));
+  }
 }
 
-export { AiTelemetry, normalizeTokenUsage, sanitizeTelemetryValue };
+export {
+  AiTelemetry,
+  MAX_OPERATIONAL_ERRORS,
+  normalizeTokenUsage,
+  safeIdentifier,
+  sanitizeTelemetryValue,
+};
 export default new AiTelemetry();

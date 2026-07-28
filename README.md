@@ -80,6 +80,7 @@ psql "$DATABASE_URL" -f src/db/migrations/021_create_billing_dashboard.sql
 psql "$DATABASE_URL" -f src/db/migrations/022_fix_subscription_sync.sql
 psql "$DATABASE_URL" -f src/db/migrations/023_create_experiment_assignments.sql
 psql "$DATABASE_URL" -f src/db/migrations/024_create_ai_feature_economics.sql
+psql "$DATABASE_URL" -f src/db/migrations/025_create_admin_operations.sql
 ```
 
 ## Billing & Monetization
@@ -112,6 +113,13 @@ or equivalent identifiers when adding providers such as TiloPay.
 - Cost Governance: model usage, estimated cost, cache savings, and evaluation
   quality-per-dollar metrics give operators a way to manage AI spend without
   exposing provider internals to clients.
+- Admin AI Quality: `GET /admin/ai-quality` summarizes stored offline
+  grounding, answer relevance, retrieval quality, and evaluated-tool success
+  for current and equal-duration previous UTC periods without executing AI.
+- Safe Admin Operations: authenticated admins can retry a currently failed
+  BullMQ job, suspend a non-admin abusive account, or disable an allowlisted
+  boolean AI feature for up to 24 hours. Every accepted operation creates an
+  `admin_audit_logs` record before its side effect is attempted.
 - Stripe Integration: Stripe is the first hosted checkout, webhook, and billing
   management adapter; it remains behind the provider abstraction so additional
   payment providers can be added without changing the public billing domain.
@@ -273,6 +281,10 @@ npm test       # Jest ESM test runner
 - `POST /billing/portal`
 - `GET /billing/usage`
 - `GET /billing/admin/dashboard`
+- `GET /admin/ai-quality`
+- `POST /admin/jobs/:jobId/retry`
+- `POST /admin/users/:userId/suspend`
+- `POST /admin/ai-features/:feature/disable`
 - `POST /billing/admin/simulate-payment`
 - `POST /billing/webhook`
 - `POST /billing/webhook/:provider`

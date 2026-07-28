@@ -1,6 +1,11 @@
 import adminRepository from './admin.repository.js';
+import { AiCostAnalyticsService } from './ai-cost-analytics.service.js';
 import adminBillingDashboardService from '../services/billing/adminDashboard.service.js';
+import queueHealthService from '../services/queueHealth.service.js';
 import aiTelemetry from '../monitoring/aiTelemetry.js';
+import operationalErrorsService from './operational-errors.service.js';
+import aiQualityService from './ai-quality.service.js';
+import { OPERATIONAL_ERROR_TYPE_SET } from '../monitoring/operationalErrors.js';
 import HttpError from '../utils/httpError.js';
 
 const DEFAULT_PAGE_SIZE = 25;
@@ -40,6 +45,17 @@ function normalizePagination(query = {}) {
     limit,
     offset: (page - 1) * limit,
   };
+}
+
+function normalizeErrorType(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string' || !OPERATIONAL_ERROR_TYPE_SET.has(value)) {
+    throw validationError(
+      'type',
+      `type must be one of: ${[...OPERATIONAL_ERROR_TYPE_SET].join(', ')}.`
+    );
+  }
+  return value;
 }
 
 function normalizeDate(value, field, fallback) {
@@ -182,6 +198,9 @@ function mapUser(row) {
     role: row.role,
     plan: row.plan,
     subscriptionStatus: row.subscription_status,
+    status: row.suspended_at ? 'suspended' : 'active',
+    suspendedAt: row.suspended_at ? new Date(row.suspended_at).toISOString() : null,
+    suspensionReasonCode: row.suspension_reason_code || null,
     createdAt: row.created_at,
   };
 }
@@ -231,13 +250,21 @@ function mapFailure(row) {
 class AdminService {
   constructor({
     repository = adminRepository,
+    costAnalytics = null,
     billingDashboard = adminBillingDashboardService,
+    queueHealth = queueHealthService,
     telemetry = aiTelemetry,
+    operationalErrors = operationalErrorsService,
+    qualityService = aiQualityService,
     clock = () => new Date(),
   } = {}) {
     this.repository = repository;
+    this.costAnalytics = costAnalytics || new AiCostAnalyticsService({ repository });
     this.billingDashboard = billingDashboard;
+    this.queueHealth = queueHealth;
     this.telemetry = telemetry;
+    this.operationalErrors = operationalErrors;
+    this.qualityService = qualityService;
     this.clock = clock;
   }
 
@@ -300,28 +327,14 @@ class AdminService {
 
   async getAiCosts(query) {
     const range = normalizeRange(query, this.clock());
-    const rows = await this.repository.getAiCosts(range);
-    const totals = rows.reduce((result, row) => ({
-      estimatedCost: result.estimatedCost + money(row.estimated_cost),
-      pricedRequests: result.pricedRequests + number(row.priced_requests),
-      unpricedRequests: result.unpricedRequests + number(row.unpriced_requests),
-    }), { estimatedCost: 0, pricedRequests: 0, unpricedRequests: 0 });
+    const userLimit = normalizePositiveInteger(query?.userLimit, 'userLimit', 25, MAX_PAGE_SIZE);
 
-    return {
-      range: { ...range, timezone: 'UTC' },
-      currency: 'USD',
-      costType: 'estimated',
-      totals: {
-        ...totals,
-        estimatedCost: money(totals.estimatedCost),
-      },
-      byFeature: rows.map((row) => ({
-        feature: row.feature,
-        estimatedCost: money(row.estimated_cost),
-        pricedRequests: number(row.priced_requests),
-        unpricedRequests: number(row.unpriced_requests),
-      })),
-    };
+    return this.costAnalytics.getAnalytics({ range, userLimit });
+  }
+
+  async getAiQuality(query = {}) {
+    const range = normalizeRange(query, this.clock());
+    return this.qualityService.getQualitySummary(range);
   }
 
   async getReservations(query) {
@@ -330,42 +343,10 @@ class AdminService {
     return paginated(rows, pagination, mapReservation);
   }
 
-  mapQueueHealth(rows) {
-    const queues = (Array.isArray(rows) ? rows : []).map((row) => {
-      const counts = row.counts
-        ? Object.fromEntries(Object.entries(row.counts).map(([key, value]) => [key, number(value)]))
-        : null;
-      const status = !row.available ? 'unavailable' : number(counts?.failed) > 0 ? 'attention' : 'healthy';
-
-      return {
-        name: row.name,
-        status,
-        counts,
-      };
-    });
-
-    const unavailable = queues.filter((queue) => queue.status === 'unavailable').length;
-    const attention = queues.filter((queue) => queue.status === 'attention').length;
-    const status = queues.length === 0 || unavailable > 0
-      ? 'degraded'
-      : attention > 0 ? 'attention' : 'healthy';
-
-    return {
-      status,
-      summary: {
-        registered: queues.length,
-        unavailable,
-        attention,
-      },
-      queues,
-    };
-  }
-
   async getQueueHealth() {
-    const rows = await this.repository.getQueueHealth();
     return {
       observedAt: this.clock().toISOString(),
-      ...this.mapQueueHealth(rows),
+      ...await this.queueHealth.getStatistics(),
     };
   }
 
@@ -374,12 +355,29 @@ class AdminService {
     const rows = await this.repository.getFailures(pagination);
     return paginated(rows, pagination, mapFailure);
   }
+
+  async getErrors(query = {}) {
+    const pagination = normalizePagination(query);
+    const range = normalizeRange(query, this.clock());
+    const type = normalizeErrorType(query.type);
+    const result = await this.operationalErrors.getErrors({
+      range,
+      pagination,
+      type,
+    });
+
+    return {
+      data: { errors: result.errors },
+      meta: paginationMeta(pagination, result.total),
+    };
+  }
 }
 
 export {
   AdminService,
   MAX_PAGE_SIZE,
   normalizeOverviewRange,
+  normalizeErrorType,
   normalizePagination,
   normalizeRange,
   summarizeTelemetry,

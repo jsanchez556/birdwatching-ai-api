@@ -3,10 +3,20 @@ import webhookService from './billing/webhook.service.js';
 import adminDashboardService from './billing/adminDashboard.service.js';
 import paymentSimulatorService from './billing/paymentSimulator.service.js';
 import featureEconomicsService from './billing/featureEconomics.service.js';
+import aiTelemetry from '../monitoring/aiTelemetry.js';
 
 class BillingService {
   async createCheckoutSession(options) {
-    return checkoutService.createCheckoutSession(options);
+    try {
+      return await checkoutService.createCheckoutSession(options);
+    } catch (error) {
+      aiTelemetry.recordOperationalError({
+        type: 'PAYMENT_FAILURE',
+        userId: options?.authUser?.id,
+        sourceEvent: 'billing_checkout_failed',
+      });
+      throw error;
+    }
   }
 
   async createCustomerPortalSession(options) {
@@ -18,7 +28,15 @@ class BillingService {
   }
 
   async handleWebhook(options) {
-    return webhookService.handleWebhook(options);
+    try {
+      return await webhookService.handleWebhook(options);
+    } catch (error) {
+      aiTelemetry.recordOperationalError({
+        type: 'PAYMENT_FAILURE',
+        sourceEvent: 'billing_webhook_failed',
+      });
+      throw error;
+    }
   }
 
   async getAdminDashboard(options) {

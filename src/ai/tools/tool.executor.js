@@ -351,6 +351,8 @@ function monitorToolFailure(toolName, metadata = {}, failure = {}, details = {})
   aiTelemetry.recordAiError(isTimeoutFailure(failure) ? 'tool_timeout' : 'tool_failed', {
     toolName,
     conversationId: metadata.conversationId,
+    userId: metadata.userId,
+    aiTraceId: metadata.aiTraceId,
     role: metadata.role,
     planStatus: metadata.agentPlan?.status,
     failure: sanitizeTraceValue(failure),

@@ -26,6 +26,21 @@ describe('BirdIdentificationJobService', () => {
       queries,
       imageStorage,
       queueFactory: () => ({ add }),
+      jobOptions: {
+        attempts: 4,
+        backoff: {
+          type: 'exponential',
+          delay: 2_500,
+        },
+        removeOnComplete: {
+          age: 3_600,
+          count: 100,
+        },
+        removeOnFail: {
+          age: 86_400,
+          count: 500,
+        },
+      },
       analyticsClient,
     });
     const imageUpload = {
@@ -74,6 +89,19 @@ describe('BirdIdentificationJobService', () => {
         },
       },
       {
+        attempts: 4,
+        backoff: {
+          type: 'exponential',
+          delay: 2_500,
+        },
+        removeOnComplete: {
+          age: 3_600,
+          count: 100,
+        },
+        removeOnFail: {
+          age: 86_400,
+          count: 500,
+        },
         jobId: result.jobId,
       }
     );

@@ -214,6 +214,27 @@ describe('auth endpoints', () => {
     expect(mockAnalyticsTrack).not.toHaveBeenCalled();
   });
 
+  it('rejects login for a suspended account after validating its credentials', async () => {
+    const passwordHash = await bcrypt.hash('correct-password', 4);
+    mockFindByEmail.mockResolvedValue({
+      id: 'user-1',
+      email: 'ana@example.com',
+      passwordHash,
+      suspendedAt: '2026-07-29T12:00:00.000Z',
+    });
+
+    const res = await request(app)
+      .post('/auth/login')
+      .send({
+        email: 'ana@example.com',
+        password: 'correct-password',
+      });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body.error.code).toBe('ACCOUNT_SUSPENDED');
+    expect(mockCreateRefreshToken).not.toHaveBeenCalled();
+  });
+
   it('refreshes a session and rotates the refresh token', async () => {
     mockFindActiveRefreshToken.mockResolvedValue({
       userId: 'user-1',

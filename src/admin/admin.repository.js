@@ -1,13 +1,10 @@
 import adminQueries from '../db/queries/admin.queries.js';
-import queueManager from '../queues/index.js';
 
 class AdminRepository {
   constructor({
     queries = adminQueries,
-    queues = queueManager,
   } = {}) {
     this.queries = queries;
-    this.queues = queues;
   }
 
   getOverview(range) {
@@ -38,35 +35,10 @@ class AdminRepository {
     return this.queries.getFailures(pagination);
   }
 
-  async getQueueHealth() {
-    const queues = Array.from(this.queues.queues.entries());
-
-    return Promise.all(queues.map(async ([name, queue]) => {
-      try {
-        const counts = await queue.getJobCounts(
-          'waiting',
-          'active',
-          'completed',
-          'failed',
-          'delayed',
-          'paused',
-          'waiting-children'
-        );
-
-        return {
-          name,
-          available: true,
-          counts,
-        };
-      } catch {
-        return {
-          name,
-          available: false,
-          counts: null,
-        };
-      }
-    }));
+  getOperationalErrors(options) {
+    return this.queries.getOperationalErrors(options);
   }
+
 }
 
 export { AdminRepository };

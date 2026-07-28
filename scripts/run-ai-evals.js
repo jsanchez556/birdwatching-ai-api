@@ -38,6 +38,15 @@ async function readJson(path) {
   return JSON.parse(await readFile(resolve(rootDir, path), 'utf8'));
 }
 
+async function readJsonOrDefault(path, defaultValue) {
+  try {
+    return await readJson(path);
+  } catch (error) {
+    if (error.code === 'ENOENT') return defaultValue;
+    throw error;
+  }
+}
+
 async function writeJson(path, data) {
   const destination = resolve(rootDir, path);
 
@@ -114,11 +123,14 @@ async function computeGoldenDatasetResults(datasetPath) {
       id: evaluationCase.id,
       category: evaluationCase.category,
       score: quality.score,
+      groundingScore: retrieval.groundingQuality,
+      answerRelevance: quality.relevance,
       retrievalQuality: retrieval.score,
     };
   });
 
   return {
+    generatedAt: new Date().toISOString(),
     score: roundScore(average(results.map((result) => result.score))),
     retrievalQuality: roundScore(average(results.map((result) => result.retrievalQuality))),
     caseCount: results.length,
@@ -145,11 +157,24 @@ function assertNoRegression(current, baseline) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const current = args.results
+  const measured = args.results
     ? normalizeExternalResults(await readJson(args.results))
     : await computeGoldenDatasetResults(args.dataset);
+  const current = {
+    ...measured,
+    generatedAt: measured.generatedAt || new Date().toISOString(),
+  };
+  const existing = await readJsonOrDefault(args.output, null);
+  const history = Array.isArray(existing?.runs)
+    ? existing.runs
+    : existing?.generatedAt
+      ? [existing]
+      : [];
 
-  await writeJson(args.output, current);
+  await writeJson(args.output, {
+    ...current,
+    runs: [...history, current].slice(-100),
+  });
 
   if (args.writeBaseline) {
     await writeJson(args.baseline, {

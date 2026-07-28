@@ -5,6 +5,7 @@ export default class HttpError extends Error {
     this.status = status;
     this.code = options.code || 'REQUEST_ERROR';
     this.details = options.details;
+    this.meta = options.meta;
     this.expose = options.expose === true;
   }
 }

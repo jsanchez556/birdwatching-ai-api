@@ -187,6 +187,20 @@ LANGCHAIN_PROJECT=birdwatching-ai
 LANGCHAIN_API_KEY=<langsmith-api-key>
 ```
 
+The admin operational error feed needs no additional tracing variable. When
+the existing LangSmith configuration is complete, `GET /admin/errors` resolves
+trace navigation through the SDK. Without it, error rows remain available and
+return `traceUrl: null`.
+
+The feed is not a single durable audit log. Failed `jobs` and
+`billing_events.payment_failed` records survive restarts in PostgreSQL;
+dead-letter records follow bounded BullMQ/Redis retention; AI, tool, retrieval,
+invalid-output, rate-limit, checkout, and webhook records are held in a 250-entry ring in the
+current API process. In a multi-replica deployment, an admin request sees only
+that replica's in-memory records, and it does not see the worker process's
+telemetry unless the failure is also represented by PostgreSQL or the
+dead-letter queue.
+
 Current AI trace boundaries:
 - Root streamed chat AI execution flow, including response length, source count, prompt versions, reservations, and tool names
 - Conversation context assembly, including prompt/memory message counts by role
@@ -263,6 +277,12 @@ Both services should receive the same application variables, including
 `DATABASE_URL`, `REDIS_URL`, `OPENAI_API_KEY`, and `LANGCHAIN_API_KEY` when
 tracing is enabled. The worker service does not need `PORT` unless the platform
 requires one for service configuration.
+
+The API and worker must also use the same `BULLMQ_KEY_PREFIX` (or the same
+`REDIS_KEY_PREFIX` fallback) and Redis database index. Queue-health counts are
+read from that shared BullMQ keyspace. Completed jobs are retained for a bounded
+age/count using the `BULLMQ_REMOVE_ON_COMPLETE_*` settings; the count is not a
+durable or lifetime analytics total.
 
 For Railway object storage, create or attach a bucket, then copy the region,
 bucket name, access key ID, and secret access key into the variables above.
