@@ -3,7 +3,7 @@ import { sendSuccess } from '../utils/apiResponse.js';
 
 class AdminController {
   async getOverview(req, res) {
-    return sendSuccess(res, await adminService.getOverview());
+    return sendSuccess(res, await adminService.getOverview(req.query));
   }
 
   async getUsers(req, res) {

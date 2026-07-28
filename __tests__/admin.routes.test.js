@@ -116,6 +116,17 @@ describe('admin routes', () => {
     }));
   });
 
+  it('forwards date ranges through the overview controller', async () => {
+    await request(buildApp())
+      .get('/admin/overview?startDate=2026-07-01&endDate=2026-07-02')
+      .set('Authorization', authHeader('admin'));
+
+    expect(adminServiceMock.getOverview).toHaveBeenCalledWith(expect.objectContaining({
+      startDate: '2026-07-01',
+      endDate: '2026-07-02',
+    }));
+  });
+
   it('masks unexpected service failures', async () => {
     adminServiceMock.getOverview.mockRejectedValue(new Error('database password=secret'));
 

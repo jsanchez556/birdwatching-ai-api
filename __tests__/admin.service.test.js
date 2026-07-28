@@ -1,8 +1,10 @@
 import { jest } from '@jest/globals';
 import {
   AdminService,
+  normalizeOverviewRange,
   normalizePagination,
   normalizeRange,
+  summarizeTelemetry,
 } from '../src/admin/admin.service.js';
 
 function buildRepository() {
@@ -47,44 +49,70 @@ describe('AdminService', () => {
     }, now)).toThrow(expect.objectContaining({ code: 'VALIDATION_ERROR' }));
   });
 
-  it('aggregates overview data and live queue state', async () => {
+  it('defaults the platform overview range to the current UTC day', () => {
+    expect(normalizeOverviewRange({}, now)).toEqual({
+      startAt: '2026-07-28T00:00:00.000Z',
+      endAt: now.toISOString(),
+    });
+  });
+
+  it('aggregates the platform overview from persistence, billing, and live AI telemetry', async () => {
     const repository = buildRepository();
     repository.getOverview.mockResolvedValue({
-      total_users: '12',
-      new_users: '3',
-      admin_users: '1',
-      active_subscriptions: '11',
-      paid_active_subscriptions: '4',
-      past_due_subscriptions: '1',
-      cancelled_subscriptions: '2',
-      ai_requests: '20',
-      ai_tokens: '4000',
-      ai_estimated_cost: '1.234567',
-      ai_unpriced_requests: '2',
-      total_reservations: '8',
-      recent_reservations: '3',
-      reservation_revenue: '145.50',
-      recent_failures: '2',
+      active_users: '147',
+      completed_reservations: '42',
+      ai_requests: '1294',
+      ai_estimated_cost: '18.724567',
     });
-    repository.getQueueHealth.mockResolvedValue([
-      { name: 'ingestion', available: true, counts: { waiting: 1, failed: 0 } },
-    ]);
-    const service = new AdminService({ repository, clock: () => now });
+    const billingDashboard = {
+      getDashboard: jest.fn().mockResolvedValue({
+        activeSubscriptions: 63,
+        mrr: 1890,
+      }),
+    };
+    const telemetry = {
+      getSnapshot: jest.fn().mockReturnValue({
+        counters: {
+          tracesCompleted: 979,
+          tracesFailed: 21,
+        },
+        latencies: [
+          { durationMs: 1800 },
+          { durationMs: 1880 },
+        ],
+      }),
+    };
+    const service = new AdminService({
+      repository,
+      billingDashboard,
+      telemetry,
+      clock: () => now,
+    });
 
-    await expect(service.getOverview()).resolves.toMatchObject({
-      generatedAt: now.toISOString(),
-      users: { total: 12, new: 3, admins: 1 },
-      ai: {
-        requests: 20,
-        tokens: 4000,
-        estimatedCost: 1.234567,
-        unpricedRequests: 2,
-        currency: 'USD',
-      },
-      queueHealth: {
-        status: 'healthy',
-        queues: { registered: 1, unavailable: 0, attention: 0 },
-      },
+    await expect(service.getOverview()).resolves.toEqual({
+      activeUsers: 147,
+      activeSubscriptions: 63,
+      mrr: 1890,
+      reservations: 42,
+      aiRequestsToday: 1294,
+      aiCostToday: 18.72,
+      averageLatencyMs: 1840,
+      errorRate: 0.021,
+    });
+
+    expect(repository.getOverview).toHaveBeenCalledWith({
+      startAt: '2026-07-28T00:00:00.000Z',
+      endAt: now.toISOString(),
+    });
+    expect(billingDashboard.getDashboard).toHaveBeenCalledWith({
+      monthStart: '2026-07-01T00:00:00.000Z',
+    });
+  });
+
+  it('returns stable zero telemetry metrics before this process observes AI traffic', () => {
+    expect(summarizeTelemetry({ counters: {}, latencies: [] })).toEqual({
+      averageLatencyMs: 0,
+      errorRate: 0,
     });
   });
 

@@ -1,35 +1,34 @@
 import pool from '../pool.js';
 
 class AdminQueries {
-  async getOverview() {
+  async getOverview({ startAt, endAt }) {
     const result = await pool.query(`
       SELECT
-        (SELECT COUNT(*) FROM users)::BIGINT AS total_users,
-        (SELECT COUNT(*) FROM users WHERE created_at >= NOW() - INTERVAL '30 days')::BIGINT AS new_users,
-        (SELECT COUNT(*) FROM users WHERE role = 'admin')::BIGINT AS admin_users,
-        (SELECT COUNT(*) FROM user_subscriptions WHERE status = 'active')::BIGINT AS active_subscriptions,
+        (
+          SELECT COUNT(DISTINCT user_id)
+          FROM usage_events
+          WHERE created_at >= $1
+            AND created_at < $2
+        )::BIGINT AS active_users,
         (
           SELECT COUNT(*)
-          FROM user_subscriptions
-          INNER JOIN plans ON plans.id = user_subscriptions.plan_id
-          WHERE user_subscriptions.status = 'active'
-            AND plans.name <> 'FREE'
-        )::BIGINT AS paid_active_subscriptions,
-        (SELECT COUNT(*) FROM user_subscriptions WHERE status = 'past_due')::BIGINT AS past_due_subscriptions,
-        (SELECT COUNT(*) FROM user_subscriptions WHERE status = 'cancelled')::BIGINT AS cancelled_subscriptions,
-        (SELECT COUNT(*) FROM usage_events WHERE created_at >= NOW() - INTERVAL '30 days')::BIGINT AS ai_requests,
-        (SELECT COALESCE(SUM(tokens), 0) FROM usage_events WHERE created_at >= NOW() - INTERVAL '30 days')::BIGINT AS ai_tokens,
-        (SELECT COALESCE(SUM(estimated_cost), 0) FROM usage_events WHERE created_at >= NOW() - INTERVAL '30 days')::NUMERIC AS ai_estimated_cost,
-        (SELECT COUNT(*) FROM usage_events WHERE created_at >= NOW() - INTERVAL '30 days' AND estimated_cost IS NULL)::BIGINT AS ai_unpriced_requests,
-        (SELECT COUNT(*) FROM reservations)::BIGINT AS total_reservations,
-        (SELECT COUNT(*) FROM reservations WHERE created_at >= NOW() - INTERVAL '30 days')::BIGINT AS recent_reservations,
-        (SELECT COALESCE(SUM(total_price), 0) FROM reservations WHERE created_at >= NOW() - INTERVAL '30 days')::NUMERIC AS reservation_revenue,
+          FROM reservations
+          WHERE created_at >= $1
+            AND created_at < $2
+        )::BIGINT AS completed_reservations,
         (
-          (SELECT COUNT(*) FROM jobs WHERE status = 'failed' AND updated_at >= NOW() - INTERVAL '30 days')
-          +
-          (SELECT COUNT(*) FROM billing_events WHERE event_name = 'payment_failed' AND created_at >= NOW() - INTERVAL '30 days')
-        )::BIGINT AS recent_failures
-    `);
+          SELECT COUNT(*)
+          FROM usage_events
+          WHERE created_at >= $1
+            AND created_at < $2
+        )::BIGINT AS ai_requests,
+        (
+          SELECT COALESCE(SUM(estimated_cost), 0)
+          FROM usage_events
+          WHERE created_at >= $1
+            AND created_at < $2
+        )::NUMERIC AS ai_estimated_cost
+    `, [startAt, endAt]);
 
     return result.rows[0] || null;
   }

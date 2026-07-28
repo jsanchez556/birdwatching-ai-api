@@ -45,9 +45,11 @@ List endpoints accept `page` (default `1`) and `limit` (default `25`, maximum
 values, use an exclusive end date, default to the previous 30 days, and allow a
 maximum range of 366 days.
 
-- `GET /admin/overview` returns a concise 30-day summary of users,
-  subscriptions, AI usage and estimated cost, reservations, recent failures,
-  and live queue health.
+- `GET /admin/overview` returns the platform overview cards. It accepts optional
+  ISO `startDate` and exclusive `endDate` values. With neither value supplied,
+  range-backed metrics cover the current UTC day. The response contains active
+  users, active subscriptions, MRR, completed reservations, AI requests,
+  estimated AI cost, average live AI latency, and the live AI error rate.
 - `GET /admin/users` returns paginated safe user profiles and current plan
   status.
 - `GET /admin/subscriptions` returns paginated plan, status, provider name, and
@@ -87,33 +89,14 @@ Representative `data` shapes:
 ```json
 {
   "overview": {
-    "generatedAt": "2026-07-28T12:00:00.000Z",
-    "period": { "label": "last_30_days", "timezone": "UTC" },
-    "users": { "total": 120, "new": 8, "admins": 2 },
-    "subscriptions": {
-      "active": 110,
-      "paidActive": 35,
-      "pastDue": 2,
-      "cancelled": 8
-    },
-    "ai": {
-      "requests": 900,
-      "tokens": 450000,
-      "estimatedCost": 32.5,
-      "unpricedRequests": 3,
-      "currency": "USD"
-    },
-    "reservations": {
-      "total": 70,
-      "recent": 12,
-      "recentRevenue": 1350,
-      "currency": "USD"
-    },
-    "recentFailures": 2,
-    "queueHealth": {
-      "status": "healthy",
-      "queues": { "registered": 4, "unavailable": 0, "attention": 0 }
-    }
+    "activeUsers": 147,
+    "activeSubscriptions": 63,
+    "mrr": 1890,
+    "reservations": 42,
+    "aiRequestsToday": 1294,
+    "aiCostToday": 18.72,
+    "averageLatencyMs": 1840,
+    "errorRate": 0.021
   },
   "user": {
     "id": "7",
@@ -153,6 +136,20 @@ Representative `data` shapes:
   }
 }
 ```
+
+For the overview, `activeUsers` is the number of distinct authenticated users
+with persisted AI usage in the selected range. Every persisted reservation is a
+completed confirmation because the current reservation schema has no draft
+state. `aiRequestsToday` and `aiCostToday` retain dashboard-compatible names but
+use the selected range when dates are supplied. MRR and active subscriptions
+reuse the billing dashboard for the calendar month containing the range's
+exclusive end.
+
+Latency and error rate come from sanitized in-process AI telemetry. They cover
+traffic observed by the current API process since startup and are not historical
+or cross-instance metrics. Durable date-range latency/error reporting will
+require persisting these telemetry samples or querying the configured tracing
+provider.
 
 AI usage returns `range`, aggregate `totals`, and `byFeature` entries containing
 `feature`, `requests`, distinct `users`, and `tokens`. AI costs returns the same

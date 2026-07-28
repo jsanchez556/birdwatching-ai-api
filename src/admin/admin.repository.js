@@ -10,8 +10,8 @@ class AdminRepository {
     this.queues = queues;
   }
 
-  getOverview() {
-    return this.queries.getOverview();
+  getOverview(range) {
+    return this.queries.getOverview(range);
   }
 
   getUsers(pagination) {

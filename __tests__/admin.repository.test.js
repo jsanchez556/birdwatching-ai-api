@@ -14,6 +14,39 @@ describe('admin persistence', () => {
     jest.clearAllMocks();
   });
 
+  it('uses a parameterized range for the platform overview aggregation', async () => {
+    mockQuery.mockResolvedValue({ rows: [{}] });
+    const range = {
+      startAt: '2026-07-28T00:00:00.000Z',
+      endAt: '2026-07-29T00:00:00.000Z',
+    };
+
+    await adminQueries.getOverview(range);
+
+    const [sql, parameters] = mockQuery.mock.calls[0];
+    expect(parameters).toEqual([range.startAt, range.endAt]);
+    expect(sql).toContain('COUNT(DISTINCT user_id)');
+    expect(sql).toContain('created_at >= $1');
+    expect(sql).toContain('created_at < $2');
+  });
+
+  it('forwards the overview range through the repository boundary', async () => {
+    const range = {
+      startAt: '2026-07-28T00:00:00.000Z',
+      endAt: '2026-07-29T00:00:00.000Z',
+    };
+    const queries = {
+      getOverview: jest.fn().mockResolvedValue({ active_users: '1' }),
+    };
+    const repository = new AdminRepository({
+      queries,
+      queues: { queues: new Map() },
+    });
+
+    await expect(repository.getOverview(range)).resolves.toEqual({ active_users: '1' });
+    expect(queries.getOverview).toHaveBeenCalledWith(range);
+  });
+
   it('uses parameterized pagination and omits sensitive subscription provider identifiers', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [] })

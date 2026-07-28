@@ -1,4 +1,6 @@
 import adminRepository from './admin.repository.js';
+import adminBillingDashboardService from '../services/billing/adminDashboard.service.js';
+import aiTelemetry from '../monitoring/aiTelemetry.js';
 import HttpError from '../utils/httpError.js';
 
 const DEFAULT_PAGE_SIZE = 25;
@@ -79,6 +81,34 @@ function normalizeRange(query = {}, now = new Date()) {
   };
 }
 
+function normalizeOverviewRange(query = {}, now = new Date()) {
+  const endAt = normalizeDate(query.endDate, 'endDate', now);
+  const hasExplicitEnd = query.endDate !== undefined
+    && query.endDate !== null
+    && query.endDate !== '';
+  const defaultStart = hasExplicitEnd
+    ? new Date(endAt.getTime() - (30 * 24 * 60 * 60 * 1000))
+    : new Date(Date.UTC(
+      endAt.getUTCFullYear(),
+      endAt.getUTCMonth(),
+      endAt.getUTCDate()
+    ));
+  const startAt = normalizeDate(query.startDate, 'startDate', defaultStart);
+
+  if (startAt >= endAt) {
+    throw validationError('startDate', 'startDate must be before endDate.');
+  }
+
+  if (endAt.getTime() - startAt.getTime() > MAX_RANGE_MS) {
+    throw validationError('startDate', 'The reporting range must not exceed 366 days.');
+  }
+
+  return {
+    startAt: startAt.toISOString(),
+    endAt: endAt.toISOString(),
+  };
+}
+
 function number(value) {
   const normalized = Number(value);
   return Number.isFinite(normalized) ? normalized : 0;
@@ -86,6 +116,38 @@ function number(value) {
 
 function money(value) {
   return Number(number(value).toFixed(6));
+}
+
+function platformMoney(value) {
+  return Number(number(value).toFixed(2));
+}
+
+function billingMonthStart(endAt) {
+  const inclusiveEnd = new Date(new Date(endAt).getTime() - 1);
+  return new Date(Date.UTC(
+    inclusiveEnd.getUTCFullYear(),
+    inclusiveEnd.getUTCMonth(),
+    1
+  )).toISOString();
+}
+
+function summarizeTelemetry(snapshot = {}) {
+  const latencies = Array.isArray(snapshot.latencies)
+    ? snapshot.latencies
+      .map((entry) => number(entry?.durationMs))
+      .filter((durationMs) => durationMs >= 0)
+    : [];
+  const counters = snapshot.counters || {};
+  const completed = number(counters.tracesCompleted);
+  const failed = number(counters.tracesFailed);
+  const attempts = completed + failed;
+
+  return {
+    averageLatencyMs: latencies.length === 0
+      ? 0
+      : Number((latencies.reduce((total, value) => total + value, 0) / latencies.length).toFixed(2)),
+    errorRate: attempts === 0 ? 0 : Number((failed / attempts).toFixed(4)),
+  };
 }
 
 function paginationMeta({ page, limit }, total) {
@@ -169,54 +231,35 @@ function mapFailure(row) {
 class AdminService {
   constructor({
     repository = adminRepository,
+    billingDashboard = adminBillingDashboardService,
+    telemetry = aiTelemetry,
     clock = () => new Date(),
   } = {}) {
     this.repository = repository;
+    this.billingDashboard = billingDashboard;
+    this.telemetry = telemetry;
     this.clock = clock;
   }
 
-  async getOverview() {
-    const [row, queueRows] = await Promise.all([
-      this.repository.getOverview(),
-      this.repository.getQueueHealth(),
+  async getOverview(query = {}) {
+    const range = normalizeOverviewRange(query, this.clock());
+    const [row, billing] = await Promise.all([
+      this.repository.getOverview(range),
+      this.billingDashboard.getDashboard({
+        monthStart: billingMonthStart(range.endAt),
+      }),
     ]);
-    const queueHealth = this.mapQueueHealth(queueRows);
+    const telemetry = summarizeTelemetry(this.telemetry.getSnapshot());
 
     return {
-      generatedAt: this.clock().toISOString(),
-      period: {
-        label: 'last_30_days',
-        timezone: 'UTC',
-      },
-      users: {
-        total: number(row?.total_users),
-        new: number(row?.new_users),
-        admins: number(row?.admin_users),
-      },
-      subscriptions: {
-        active: number(row?.active_subscriptions),
-        paidActive: number(row?.paid_active_subscriptions),
-        pastDue: number(row?.past_due_subscriptions),
-        cancelled: number(row?.cancelled_subscriptions),
-      },
-      ai: {
-        requests: number(row?.ai_requests),
-        tokens: number(row?.ai_tokens),
-        estimatedCost: money(row?.ai_estimated_cost),
-        unpricedRequests: number(row?.ai_unpriced_requests),
-        currency: 'USD',
-      },
-      reservations: {
-        total: number(row?.total_reservations),
-        recent: number(row?.recent_reservations),
-        recentRevenue: Number(number(row?.reservation_revenue).toFixed(2)),
-        currency: 'USD',
-      },
-      recentFailures: number(row?.recent_failures),
-      queueHealth: {
-        status: queueHealth.status,
-        queues: queueHealth.summary,
-      },
+      activeUsers: number(row?.active_users),
+      activeSubscriptions: number(billing?.activeSubscriptions),
+      mrr: platformMoney(billing?.mrr),
+      reservations: number(row?.completed_reservations),
+      aiRequestsToday: number(row?.ai_requests),
+      aiCostToday: platformMoney(row?.ai_estimated_cost),
+      averageLatencyMs: telemetry.averageLatencyMs,
+      errorRate: telemetry.errorRate,
     };
   }
 
@@ -336,7 +379,9 @@ class AdminService {
 export {
   AdminService,
   MAX_PAGE_SIZE,
+  normalizeOverviewRange,
   normalizePagination,
   normalizeRange,
+  summarizeTelemetry,
 };
 export default new AdminService();
