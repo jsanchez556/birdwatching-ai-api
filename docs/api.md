@@ -31,6 +31,139 @@ Errors use:
 }
 ```
 
+## Admin Operations
+
+All `/admin/*` endpoints require a valid JWT bearer token with the server-issued
+`admin` role. Missing or invalid authentication returns `401 UNAUTHORIZED`;
+authenticated non-admin users receive `403 FORBIDDEN`. Responses intentionally
+omit password hashes, provider customer/subscription identifiers, raw job errors,
+stack traces, and billing event payloads.
+
+List endpoints accept `page` (default `1`) and `limit` (default `25`, maximum
+`100`) and return pagination fields in `meta`: `page`, `limit`, `total`, and
+`totalPages`. Reporting endpoints accept optional ISO `startDate` and `endDate`
+values, use an exclusive end date, default to the previous 30 days, and allow a
+maximum range of 366 days.
+
+- `GET /admin/overview` returns a concise 30-day summary of users,
+  subscriptions, AI usage and estimated cost, reservations, recent failures,
+  and live queue health.
+- `GET /admin/users` returns paginated safe user profiles and current plan
+  status.
+- `GET /admin/subscriptions` returns paginated plan, status, provider name, and
+  period data without external provider identifiers.
+- `GET /admin/ai-usage` returns request, distinct-user, and token totals grouped
+  by feature for the requested UTC range.
+- `GET /admin/ai-costs` returns estimated USD costs grouped by feature. The
+  response uses `costType: "estimated"` and reports `unpricedRequests`; missing
+  cost data is never treated as a measured zero-cost request.
+- `GET /admin/reservations` returns paginated reservation, tour, participant,
+  total-price, and timestamp data without customer contact details or
+  confirmation codes.
+- `GET /admin/queue-health` returns live BullMQ counts for registered queues.
+  A queue that cannot be queried is marked `unavailable`, and failed retained
+  jobs put an available queue into `attention` state.
+- `GET /admin/failures` returns paginated sanitized background-job and payment
+  failure records. It never returns stored exception messages or provider
+  payloads.
+
+Example list metadata:
+
+```json
+{
+  "success": true,
+  "data": [],
+  "meta": {
+    "page": 1,
+    "limit": 25,
+    "total": 0,
+    "totalPages": 0
+  }
+}
+```
+
+Representative `data` shapes:
+
+```json
+{
+  "overview": {
+    "generatedAt": "2026-07-28T12:00:00.000Z",
+    "period": { "label": "last_30_days", "timezone": "UTC" },
+    "users": { "total": 120, "new": 8, "admins": 2 },
+    "subscriptions": {
+      "active": 110,
+      "paidActive": 35,
+      "pastDue": 2,
+      "cancelled": 8
+    },
+    "ai": {
+      "requests": 900,
+      "tokens": 450000,
+      "estimatedCost": 32.5,
+      "unpricedRequests": 3,
+      "currency": "USD"
+    },
+    "reservations": {
+      "total": 70,
+      "recent": 12,
+      "recentRevenue": 1350,
+      "currency": "USD"
+    },
+    "recentFailures": 2,
+    "queueHealth": {
+      "status": "healthy",
+      "queues": { "registered": 4, "unavailable": 0, "attention": 0 }
+    }
+  },
+  "user": {
+    "id": "7",
+    "email": "operator@example.com",
+    "name": "Operator",
+    "role": "admin",
+    "plan": "PRO",
+    "subscriptionStatus": "active",
+    "createdAt": "2026-07-01T00:00:00.000Z"
+  },
+  "subscription": {
+    "userId": "7",
+    "email": "operator@example.com",
+    "plan": "PRO",
+    "status": "active",
+    "billingProvider": "Stripe",
+    "currentPeriodEnd": "2026-08-01T00:00:00.000Z",
+    "createdAt": "2026-07-01T00:00:00.000Z",
+    "updatedAt": "2026-07-20T00:00:00.000Z"
+  },
+  "reservation": {
+    "id": 42,
+    "userId": "7",
+    "tour": { "id": 3, "name": "Monteverde Cloud Forest" },
+    "participants": 2,
+    "totalPrice": 180,
+    "currency": "USD",
+    "createdAt": "2026-07-20T00:00:00.000Z"
+  },
+  "failure": {
+    "id": "job-123",
+    "category": "background_job",
+    "type": "embedding",
+    "status": "failed",
+    "occurredAt": "2026-07-27T00:00:00.000Z",
+    "error": { "code": "JOB_FAILED", "message": "Background job failed" }
+  }
+}
+```
+
+AI usage returns `range`, aggregate `totals`, and `byFeature` entries containing
+`feature`, `requests`, distinct `users`, and `tokens`. AI costs returns the same
+range plus `currency`, `costType`, aggregate totals, and per-feature
+`estimatedCost`, `pricedRequests`, and `unpricedRequests`.
+
+Queue health returns `observedAt`, an overall `status`, summary counts, and a
+`queues` array. Each queue contains `name`, `status`, and BullMQ counts when the
+queue is available. If no queues are registered, the overall status is
+`degraded`.
+
 Quota errors use `429` with code `QUOTA_EXCEEDED` and a user-facing message.
 
 ## Auth Profile

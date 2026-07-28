@@ -1,4 +1,5 @@
 import express from 'express';
+import adminRoutes from '../../admin/admin.routes.js';
 import authRoutes from './auth.routes.js';
 import billingRoutes from './billing.routes.js';
 import birdIdentificationRoutes from './birdIdentification.routes.js';
@@ -14,6 +15,7 @@ import voiceChatRoutes from './voiceChat.routes.js';
 const router = express.Router();
 
 router.use('/health', healthRoutes);
+router.use('/admin', adminRoutes);
 router.use('/auth', authRoutes);
 router.use('/billing', billingRoutes);
 router.use(birdIdentificationRoutes);
