@@ -24,7 +24,7 @@ const normalizeEstimatedCost = normalizePositiveNumber;
 function buildResponseCacheKey(messages, metadata = {}) {
   const payload = {
     messages,
-    promptVersion: CHAT_SYSTEM_PROMPT_VERSION,
+    promptVersion: metadata.promptVersion || CHAT_SYSTEM_PROMPT_VERSION,
     role: metadata.role,
     responseMode: metadata.responseMode,
   };
@@ -33,7 +33,7 @@ function buildResponseCacheKey(messages, metadata = {}) {
 
 function buildSemanticScope(metadata = {}) {
   return Object.fromEntries(Object.entries({
-    promptVersion: CHAT_SYSTEM_PROMPT_VERSION,
+    promptVersion: metadata.promptVersion || CHAT_SYSTEM_PROMPT_VERSION,
     role: metadata.role,
     responseMode: metadata.responseMode,
   }).filter(([, value]) => value !== undefined));
@@ -291,7 +291,7 @@ class OpenAIService {
     try {
       await this.responseCache.set(cacheKey, {
         response,
-        promptVersion: CHAT_SYSTEM_PROMPT_VERSION,
+        promptVersion: metadata.promptVersion || CHAT_SYSTEM_PROMPT_VERSION,
         estimatedCostUsd: normalizeEstimatedCost(metadata.openAiUsage?.estimatedCostUsd),
       }, {
         ttlSeconds: this.redisConfig.responseCacheTtlSeconds,
@@ -389,7 +389,7 @@ class OpenAIService {
       const id = createStableHash({
         question,
         scope: buildSemanticScope(metadata),
-        promptVersion: CHAT_SYSTEM_PROMPT_VERSION,
+        promptVersion: metadata.promptVersion || CHAT_SYSTEM_PROMPT_VERSION,
       });
       const nextEntries = [
         {
@@ -398,7 +398,7 @@ class OpenAIService {
           embedding,
           response,
           estimatedCostUsd: normalizeEstimatedCost(metadata.openAiUsage?.estimatedCostUsd),
-          promptVersion: CHAT_SYSTEM_PROMPT_VERSION,
+          promptVersion: metadata.promptVersion || CHAT_SYSTEM_PROMPT_VERSION,
           createdAt: now,
           expiresAt: now + (ttlSeconds * 1000),
         },
@@ -435,7 +435,7 @@ class OpenAIService {
     this.logger.info('Chat response generated', {
       ip: metadata.clientIP,
       conversationId: metadata.conversationId,
-      promptVersion: CHAT_SYSTEM_PROMPT_VERSION,
+      promptVersion: metadata.promptVersion || CHAT_SYSTEM_PROMPT_VERSION,
       promptMessageCount: messages.length,
       responseLength: response.length,
       cacheStatus: cacheMetadata.cacheStatus,

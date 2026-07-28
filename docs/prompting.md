@@ -17,6 +17,13 @@ Back to [Project Context](../CONTEXT.md). See [Memory](./memory.md) for how chat
 
 Prompt modules export both content and a semantic prompt version. Keep version changes intentional and loggable.
 
+Tour recommendation response framing has two versioned prompt assets in
+`src/ai/prompts/tourRecommendation.prompt.js`. The
+`tour_recommendation_prompt` feature flag selects
+`recommendation_prompt_v1` or `recommendation_prompt_v2` when the planner emits
+a recommendation-mode `searchTours` step. The selected prompt is injected only
+for that final response and is recorded in LangSmith metadata.
+
 ## Bird Identification Prompt Flow
 Bird identification uses three model-facing stages, all returning JSON through strict response schemas:
 

@@ -5,6 +5,7 @@ import { DEFAULT_CURRENCY } from '../constants/business.js';
 import logger from '../utils/logger.js';
 import analytics from '../analytics/analytics.service.js';
 import { ANALYTICS_EVENTS } from '../analytics/events.js';
+import { getTourRecommendationEventProperties } from '../experiments/tourRecommendation.experiment.js';
 import {
   normalizeComparableText,
   normalizeOptionalText,
@@ -263,6 +264,7 @@ class ReservationService {
         conversationId: metadata.conversationId,
         source: metadata.source || 'chat',
         tourId: result.tourId,
+        ...getTourRecommendationEventProperties(metadata),
       },
     });
     analytics.track({
@@ -359,6 +361,7 @@ class ReservationService {
         plan: metadata.authUser?.plan,
         source: metadata.source || 'chat',
         tourId: normalizedTourId,
+        ...getTourRecommendationEventProperties(metadata),
       },
     });
 
@@ -405,6 +408,7 @@ class ReservationService {
             participants: reservationResult.participants,
             amount: reservationResult.totalPrice,
             currency: reservationResult.currency,
+            ...getTourRecommendationEventProperties(metadata),
           },
         });
         return reservationResult;

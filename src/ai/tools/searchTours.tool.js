@@ -1,6 +1,7 @@
 import tourService from '../../services/tour.service.js';
 import analytics from '../../analytics/analytics.service.js';
 import { ANALYTICS_EVENTS } from '../../analytics/events.js';
+import { getTourRecommendationEventProperties } from '../../experiments/tourRecommendation.experiment.js';
 
 function buildRecommendationIdempotencyKey(conversationId, tours = []) {
   if (!conversationId) {
@@ -58,6 +59,7 @@ async function searchTours(args = {}, metadata = {}) {
         recommendationCount: result.tours.length,
         recommendationType: args.recommend === true ? 'recommendation' : 'tour_search',
         source: metadata.source || 'chat',
+        ...getTourRecommendationEventProperties(metadata),
       },
     });
   }

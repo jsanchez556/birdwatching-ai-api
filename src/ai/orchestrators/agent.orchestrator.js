@@ -7,6 +7,12 @@ import {
 } from '../../tracing/aiTracing.middleware.js';
 import featureFlags from '../../featureFlags/featureFlag.service.js';
 import { FEATURE_FLAGS } from '../../featureFlags/flags.js';
+import experimentAssignmentService from '../../services/experimentAssignment.service.js';
+import {
+  TOUR_RECOMMENDATION_EXPERIMENT,
+  normalizeTourRecommendationAssignment,
+} from '../../experiments/tourRecommendation.experiment.js';
+import { getTourRecommendationPrompt } from '../prompts/tourRecommendation.prompt.js';
 
 const BOOKING_TOOLS = new Set([
   'createReservation',
@@ -86,6 +92,53 @@ function buildPlannerMessage(plan) {
       'Ask for the missing confirmation or details clearly and do not claim a reservation was created unless createReservation succeeded.',
     ].join('\n'),
   };
+}
+
+function buildTourRecommendationPromptMessage(metadata = {}) {
+  const version = metadata.activeTourRecommendationPromptVersion;
+
+  if (!version) {
+    return null;
+  }
+
+  return {
+    role: 'system',
+    content: getTourRecommendationPrompt(version),
+  };
+}
+
+function hasRecommendationStep(plan = {}) {
+  return (plan.steps || []).some((step) => (
+    step.tool === 'searchTours'
+    && step.args?.recommend === true
+  ));
+}
+
+function hasRecommendationOutcomeStep(plan = {}) {
+  return (plan.steps || []).some((step) => (
+    step.tool === 'checkAvailability'
+    || step.tool === 'createReservation'
+  ));
+}
+
+function attachTourRecommendationAssignment(metadata, assignment, { activePrompt = false } = {}) {
+  if (!assignment) return;
+
+  metadata.experimentAssignments = {
+    ...(metadata.experimentAssignments || {}),
+    [TOUR_RECOMMENDATION_EXPERIMENT.metadataKey]: assignment,
+  };
+  metadata.experiment = assignment.experiment;
+  metadata.experimentVariant = assignment.variant;
+
+  if (activePrompt) {
+    metadata.activeTourRecommendationPromptVersion = assignment.variant;
+    metadata.promptVersion = assignment.variant;
+    metadata.promptVersions = {
+      ...(metadata.promptVersions || {}),
+      tourRecommendation: assignment.variant,
+    };
+  }
 }
 
 function buildVisitorScopeMessage(metadata = {}) {
@@ -183,11 +236,13 @@ export class AgentOrchestrator {
     agent = birdwatchingAgent,
     aiClient = openaiClient,
     featureFlagService = featureFlags,
+    experimentAssignments = experimentAssignmentService,
     log = logger,
   } = {}) {
     this.agent = agent;
     this.aiClient = aiClient;
     this.featureFlags = featureFlagService;
+    this.experimentAssignments = experimentAssignments;
     this.logger = log;
   }
 
@@ -210,6 +265,11 @@ export class AgentOrchestrator {
     const onChunk = options.onChunk || (() => {});
     const userMessage = getLatestUserMessage(messages);
     const conversationContext = buildConversationContext(messages, metadata);
+    let activeExperimentAssignment = normalizeTourRecommendationAssignment(
+      metadata.conversationContext?.recentAssistantMetadata
+    );
+
+    attachTourRecommendationAssignment(metadata, activeExperimentAssignment);
 
     this.logger.info('Birdwatching agent orchestration started', {
       conversationId: metadata.conversationId,
@@ -239,6 +299,32 @@ export class AgentOrchestrator {
         message: userMessage,
         context: conversationContext,
       })));
+
+    if (hasRecommendationStep(plan)) {
+      activeExperimentAssignment = activeExperimentAssignment || await this.experimentAssignments.resolve({
+        userId: metadata.userId,
+        anonymousId: metadata.conversationId,
+        experiment: TOUR_RECOMMENDATION_EXPERIMENT.key,
+        flag: TOUR_RECOMMENDATION_EXPERIMENT.flag,
+        variants: TOUR_RECOMMENDATION_EXPERIMENT.variants,
+        defaultVariant: TOUR_RECOMMENDATION_EXPERIMENT.defaultVariant,
+        personProperties: {
+          plan: metadata.authUser?.plan,
+          role: metadata.role,
+        },
+      });
+
+      attachTourRecommendationAssignment(metadata, activeExperimentAssignment, {
+        activePrompt: true,
+      });
+    } else if (!activeExperimentAssignment && hasRecommendationOutcomeStep(plan)) {
+      activeExperimentAssignment = await this.experimentAssignments.getPersisted({
+        userId: metadata.userId,
+        experiment: TOUR_RECOMMENDATION_EXPERIMENT.key,
+        variants: TOUR_RECOMMENDATION_EXPERIMENT.variants,
+      });
+      attachTourRecommendationAssignment(metadata, activeExperimentAssignment);
+    }
 
     const hasBookingSteps = (plan.steps || []).some((step) => BOOKING_TOOLS.has(step.tool));
 
@@ -307,12 +393,14 @@ export class AgentOrchestrator {
     const knownBookingContextMessage = buildKnownBookingContextMessage(metadata);
     const reservationFailureMessage = buildReservationFailureMessage(toolResults);
     const plannerMessage = buildPlannerMessage(plan);
+    const tourRecommendationPromptMessage = buildTourRecommendationPromptMessage(metadata);
     const finalMessages = [
       ...messages,
       visitorScopeMessage,
       toolContextMessage,
       knownBookingContextMessage,
       reservationFailureMessage,
+      tourRecommendationPromptMessage,
       plannerMessage,
     ].filter(Boolean);
 
@@ -321,6 +409,7 @@ export class AgentOrchestrator {
       hasToolContext: Boolean(toolContextMessage),
       hasKnownBookingContext: Boolean(knownBookingContextMessage),
       hasReservationFailure: Boolean(reservationFailureMessage),
+      hasTourRecommendationPrompt: Boolean(tourRecommendationPromptMessage),
       hasPlannerMessage: Boolean(plannerMessage),
     });
     this.logger.info('Birdwatching agent final prompt assembled', {
@@ -329,6 +418,7 @@ export class AgentOrchestrator {
       hasToolContext: Boolean(toolContextMessage),
       hasKnownBookingContext: Boolean(knownBookingContextMessage),
       hasReservationFailure: Boolean(reservationFailureMessage),
+      hasTourRecommendationPrompt: Boolean(tourRecommendationPromptMessage),
       hasPlannerMessage: Boolean(plannerMessage),
     });
 

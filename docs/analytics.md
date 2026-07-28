@@ -17,11 +17,11 @@ operation.
 | `chat_message_sent` | Chat service after a text or voice message is successfully processed and persisted | `conversationId`, `source`, `role` |
 | `bird_identification_started` | Bird-identification job service after a job is persisted and queued | `source` |
 | `bird_identification_completed` | Worker-side job service after the result is persisted | `source`, `status` |
-| `tour_recommended` | `searchTours` after a structured tour result succeeds with at least one tour; identical tour sets are deduplicated per conversation | `conversationId`, `plan`, `source`, `recommendationType`, `recommendationCount` |
-| `tour_selected` | Availability service after a specific tour is resolved; deduplicated per conversation and tour | `conversationId`, `source`, `tourId` |
+| `tour_recommended` | `searchTours` after a structured tour result succeeds with at least one tour; identical tour sets are deduplicated per conversation | `conversationId`, `plan`, `source`, `recommendationType`, `recommendationCount`, optional `experiment`, `variant` |
+| `tour_selected` | Availability service after a specific tour is resolved; deduplicated per conversation and tour; represents recommendation acceptance when experiment metadata is present | `conversationId`, `source`, `tourId`, optional `experiment`, `variant` |
 | `availability_checked` | Reservation service after a structured availability lookup succeeds | `conversationId`, `source`, `tourId`, `participants`, `availabilityResult`, `availableSlots` |
-| `reservation_started` | Reservation service after required inputs and the selected tour are validated; deduplicated per conversation, tour, and participant count | `conversationId`, `plan`, `source`, `tourId`, `participants` |
-| `reservation_completed` | Reservation service after PostgreSQL persists the reservation; deduplicated by persisted reservation ID | `conversationId`, `plan`, `source`, `tourId`, `participants`, `amount`, `currency` |
+| `reservation_started` | Reservation service after required inputs and the selected tour are validated; deduplicated per conversation, tour, and participant count | `conversationId`, `plan`, `source`, `tourId`, `participants`, optional `experiment`, `variant` |
+| `reservation_completed` | Reservation service after PostgreSQL persists the reservation; deduplicated by persisted reservation ID | `conversationId`, `plan`, `source`, `tourId`, `participants`, `amount`, `currency`, optional `experiment`, `variant` |
 | `checkout_started` | Checkout service after the hosted checkout session is created | `plan`, `source`, `billingProvider` |
 | `subscription_activated` | Webhook service after a verified event produces an authoritative paid, entitled subscription | `plan`, `source`, `billingProvider`, `status`, `amount`, `currency` |
 
@@ -77,3 +77,8 @@ Automated tests inject fake providers and do not send real events.
   diagnostics.
 
 Do not export LangSmith traces or application-log payloads to PostHog.
+
+For prompt experiments, PostHog receives only the safe experiment key and
+variant needed to compare recommendation acceptance and reservation conversion.
+LangSmith retains prompt version, evaluation score, latency, token usage, and
+estimated cost.

@@ -78,4 +78,30 @@ describe('searchTours analytics', () => {
 
     expect(mockAnalyticsTrack).not.toHaveBeenCalled();
   });
+
+  it('attributes recommendation exposure to the assigned experiment variant', async () => {
+    mockRecommendTours.mockResolvedValue({
+      success: true,
+      tours: [{ tourId: 1 }],
+    });
+
+    await searchTours({ recommend: true }, {
+      userId: 7,
+      conversationId: 'conversation-variant',
+      experimentAssignments: {
+        tourRecommendation: {
+          experiment: 'tour_recommendation_prompt',
+          variant: 'recommendation_prompt_v2',
+        },
+      },
+    });
+
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'tour_recommended',
+      properties: expect.objectContaining({
+        experiment: 'tour_recommendation_prompt',
+        variant: 'recommendation_prompt_v2',
+      }),
+    }));
+  });
 });

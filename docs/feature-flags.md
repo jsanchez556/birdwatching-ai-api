@@ -16,6 +16,7 @@ product behavior when PostHog is disabled or unavailable.
 | `advanced_rag` | Multivariate | `current_retrieval` | Selects `current_retrieval` or `new_retrieval`; the new profile expands candidates and adjusts hybrid ranking |
 | `multimodal_bird_identification` | Boolean | Enabled | Gates both bird-identification endpoints |
 | `agent_booking` | Boolean | Enabled | Prevents reservation-related agent tools from executing |
+| `tour_recommendation_prompt` | Multivariate | `recommendation_prompt_v1` | Assigns the tour recommendation response prompt; the first assignment is persisted per user |
 
 Authenticated checks use the stable user ID plus safe `plan` and `role`
 targeting properties. Anonymous voice checks use `X-Conversation-ID` when
@@ -32,6 +33,11 @@ Configure `advanced_rag` as a multivariate flag:
 
 - `new_retrieval`: 10%
 - `current_retrieval`: 90%
+
+Configure `tour_recommendation_prompt` as a multivariate flag with
+`recommendation_prompt_v1` and `recommendation_prompt_v2`. See
+[Product experiments](./experiments.md) for assignment persistence and metric
+ownership.
 
 PostHog assigns a stable variant from the distinct ID, and the API includes the
 variant in the RAG trace metadata so LangSmith can compare AI-system behavior.

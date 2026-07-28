@@ -16,3 +16,7 @@ export {
   buildLangSmithEvaluationDashboards,
   LANGSMITH_EVALUATION_DASHBOARDS,
 } from './dashboards/index.js';
+
+export {
+  runTourRecommendationPromptExperiment,
+} from './experiments/tourRecommendation.experiment.js';

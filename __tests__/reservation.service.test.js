@@ -60,6 +60,12 @@ describe('ReservationService', () => {
       agentPlan: {
         status: 'select_tour',
       },
+      experimentAssignments: {
+        tourRecommendation: {
+          experiment: 'tour_recommendation_prompt',
+          variant: 'recommendation_prompt_v2',
+        },
+      },
     })).resolves.toMatchObject({
       success: true,
       tourId: 1,
@@ -76,6 +82,8 @@ describe('ReservationService', () => {
         conversationId: 'conversation-123',
         source: 'voice',
         tourId: 1,
+        experiment: 'tour_recommendation_prompt',
+        variant: 'recommendation_prompt_v2',
       },
     });
     expect(mockAnalyticsTrack).toHaveBeenCalledWith({
@@ -158,6 +166,12 @@ describe('ReservationService', () => {
       model: 'gpt-test',
       ragTrace: { retrievedChunkCount: 2 },
       source: 'voice',
+      experimentAssignments: {
+        tourRecommendation: {
+          experiment: 'tour_recommendation_prompt',
+          variant: 'recommendation_prompt_v2',
+        },
+      },
     });
 
     expect(result).toMatchObject({
@@ -199,6 +213,8 @@ describe('ReservationService', () => {
         plan: 'PRO',
         source: 'voice',
         tourId: 1,
+        experiment: 'tour_recommendation_prompt',
+        variant: 'recommendation_prompt_v2',
       },
     });
     expect(mockAnalyticsTrack).toHaveBeenCalledWith({
@@ -214,6 +230,8 @@ describe('ReservationService', () => {
         participants: 2,
         amount: 240,
         currency: 'USD',
+        experiment: 'tour_recommendation_prompt',
+        variant: 'recommendation_prompt_v2',
       },
     });
   });

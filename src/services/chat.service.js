@@ -70,10 +70,11 @@ function throwIfAborted(signal) {
   }
 }
 
-function buildPromptMeta() {
+function buildPromptMeta(metadata = {}) {
   return {
     promptVersions: {
       chat: CHAT_SYSTEM_PROMPT_VERSION,
+      ...(metadata.promptVersions || {}),
     },
   };
 }
@@ -165,7 +166,7 @@ function buildToolMeta(metadata = {}) {
   const recentMetadata = metadata.conversationContext?.recentAssistantMetadata || {};
 
   return {
-    ...buildPromptMeta(),
+    ...buildPromptMeta(metadata),
     ...(metadata.responseMode ? { responseMode: metadata.responseMode } : {}),
     ...(recentMetadata.conversationType ? { conversationType: recentMetadata.conversationType } : {}),
     ...(recentMetadata.conversationSource ? { conversationSource: recentMetadata.conversationSource } : {}),
@@ -177,6 +178,7 @@ function buildToolMeta(metadata = {}) {
     ...(metadata.transportationDeclined ? { transportationDeclined: metadata.transportationDeclined } : {}),
     ...(metadata.pricing ? { pricing: metadata.pricing } : {}),
     ...(metadata.uiAction ? { uiAction: metadata.uiAction } : {}),
+    ...(metadata.experimentAssignments ? { experimentAssignments: metadata.experimentAssignments } : {}),
   };
 }
 
@@ -195,6 +197,7 @@ function buildConversationMeta(metadata = {}) {
     ...(metadata.requestedTransportation ? { requestedTransportation: metadata.requestedTransportation } : {}),
     ...(metadata.selectedTransportation ? { selectedTransportation: metadata.selectedTransportation } : {}),
     ...(metadata.participants ? { participants: metadata.participants } : {}),
+    ...(metadata.experimentAssignments ? { experimentAssignments: metadata.experimentAssignments } : {}),
   };
 }
 
@@ -341,6 +344,9 @@ class ChatService {
       ...(responseMode ? { responseMode } : {}),
       model: env.openAiModel,
       promptVersion: CHAT_SYSTEM_PROMPT_VERSION,
+      promptVersions: {
+        chat: CHAT_SYSTEM_PROMPT_VERSION,
+      },
       source: resolveChatSource(options),
       ...(userId ? { userId } : {}),
       ...(authUser ? { authUser } : {}),

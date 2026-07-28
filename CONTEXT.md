@@ -31,6 +31,7 @@ This repository is a Node.js backend for Costa Rica birdwatching assistance, spl
 - Deployment and environment: [docs/deployment.md](./docs/deployment.md)
 - Product analytics and event ownership: [docs/analytics.md](./docs/analytics.md)
 - Product feature flags and rollout ownership: [docs/feature-flags.md](./docs/feature-flags.md)
+- Product experiments and measurement ownership: [docs/experiments.md](./docs/experiments.md)
 - Backend implementation rules: [docs/backend-guidelines.md](./docs/backend-guidelines.md)
 - Testing, AI evaluations, and CI gates: [docs/testing.md](./docs/testing.md)
 

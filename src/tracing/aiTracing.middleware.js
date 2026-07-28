@@ -46,6 +46,7 @@ function traceAiExecutionFlow(name, metadata, operation) {
       hasReservation: Boolean(result.meta?.reservation),
       toolsCalled: result.meta?.toolsCalled || [],
       promptVersions: result.meta?.promptVersions,
+      experimentAssignments: result.meta?.experimentAssignments,
     }),
   }, operation);
 }
