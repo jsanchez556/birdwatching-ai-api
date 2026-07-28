@@ -24,7 +24,9 @@ class VoiceChatService {
         audioMimeType: audioUpload.mimeType,
         audioBytes: audioUpload.buffer.length,
         parentTraceId: context.parentTraceId,
+        aiTraceId: context.aiTraceId,
       },
+      traceId: context.aiTraceId,
       parentTraceId: context.parentTraceId,
       outputMetadata: (result = {}) => ({
         conversationId: result.conversationId,
@@ -60,6 +62,7 @@ class VoiceChatService {
           responseMode: context.responseMode,
           source: 'voice',
           parentTraceId: trace.id,
+          aiTraceId: context.aiTraceId || trace.id,
         }
       );
 

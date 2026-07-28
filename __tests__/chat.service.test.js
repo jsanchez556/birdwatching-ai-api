@@ -63,6 +63,7 @@ describe('ChatService streaming orchestration', () => {
   });
 
   it('streams chunks and stores the completed assistant response', async () => {
+    const aiTraceId = '11111111-1111-4111-8111-111111111111';
     const events = {
       onStart: jest.fn(),
       onChunk: jest.fn(),
@@ -84,7 +85,8 @@ describe('ChatService streaming orchestration', () => {
       'Where can I see toucans?',
       'conversation-123',
       '127.0.0.1',
-      events
+      events,
+      { aiTraceId }
     );
 
     expect(events.onStart).toHaveBeenCalledWith({
@@ -108,7 +110,8 @@ describe('ChatService streaming orchestration', () => {
         clientIP: '127.0.0.1',
         conversationId: 'conversation-123',
         role: 'visitor',
-        parentTraceId: expect.any(String),
+        parentTraceId: aiTraceId,
+        aiTraceId,
       }),
       {
         onChunk: expect.any(Function),
@@ -138,8 +141,24 @@ describe('ChatService streaming orchestration', () => {
         conversationId: 'conversation-123',
         role: 'visitor',
         source: 'text',
+        aiTraceId,
       },
     });
+    expect(mockBuildContext).toHaveBeenCalledWith(
+      conversationMessages,
+      'Where can I see toucans?',
+      expect.objectContaining({
+        parentTraceId: aiTraceId,
+        aiTraceId,
+      })
+    );
+    expect(mockRecordOpenAiUsage).toHaveBeenCalledWith(
+      undefined,
+      undefined,
+      expect.objectContaining({
+        traceId: aiTraceId,
+      })
+    );
   });
 
   it('sends RAG-augmented messages to OpenAI and returns sources', async () => {

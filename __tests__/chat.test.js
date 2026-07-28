@@ -92,6 +92,9 @@ describe('POST /chat', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toContain('text/event-stream');
+    expect(res.headers['x-ai-trace-id']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
     expect(res.text).toContain('event: start');
     expect(res.text).toContain('data: {"conversationId":"conversation-123","sources":[]');
     expect(res.text).toContain('event: chunk');
@@ -110,6 +113,7 @@ describe('POST /chat', () => {
       }),
       expect.objectContaining({
         signal: expect.any(AbortSignal),
+        aiTraceId: res.headers['x-ai-trace-id'],
       })
     );
   });

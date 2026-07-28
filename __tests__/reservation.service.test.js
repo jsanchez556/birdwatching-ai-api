@@ -166,6 +166,7 @@ describe('ReservationService', () => {
       model: 'gpt-test',
       ragTrace: { retrievedChunkCount: 2 },
       source: 'voice',
+      aiTraceId: '11111111-1111-4111-8111-111111111111',
       experimentAssignments: {
         tourRecommendation: {
           experiment: 'tour_recommendation_prompt',
@@ -213,6 +214,7 @@ describe('ReservationService', () => {
         plan: 'PRO',
         source: 'voice',
         tourId: 1,
+        aiTraceId: '11111111-1111-4111-8111-111111111111',
         experiment: 'tour_recommendation_prompt',
         variant: 'recommendation_prompt_v2',
       },
@@ -230,6 +232,7 @@ describe('ReservationService', () => {
         participants: 2,
         amount: 240,
         currency: 'USD',
+        aiTraceId: '11111111-1111-4111-8111-111111111111',
         experiment: 'tour_recommendation_prompt',
         variant: 'recommendation_prompt_v2',
       },

@@ -88,4 +88,39 @@ describe('AnalyticsService', () => {
     );
     expect(analyticsLogger.warn).toHaveBeenNthCalledWith(2, 'Analytics shutdown failed');
   });
+
+  it('allows the core operation to complete when event delivery fails', () => {
+    const analytics = new AnalyticsService({
+      provider: {
+        capture: jest.fn(() => {
+          throw new Error('PostHog unavailable');
+        }),
+      },
+      analyticsLogger: {
+        warn: jest.fn(),
+      },
+    });
+    const completeReservation = () => {
+      const reservation = {
+        id: 42,
+        status: 'confirmed',
+      };
+
+      analytics.track({
+        userId: 7,
+        event: 'reservation_completed',
+        properties: {
+          tourId: 3,
+          participants: 2,
+        },
+      });
+
+      return reservation;
+    };
+
+    expect(completeReservation()).toEqual({
+      id: 42,
+      status: 'confirmed',
+    });
+  });
 });

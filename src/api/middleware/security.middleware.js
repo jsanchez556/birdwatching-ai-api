@@ -35,6 +35,7 @@ export function corsProtection(req, res, next) {
   res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Headers', env.corsAllowedHeaders.join(', '));
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Expose-Headers', 'X-AI-Trace-Id');
 
   if (allowedOrigin) {
     res.setHeader('Access-Control-Allow-Origin', allowedOrigin);

@@ -11,12 +11,15 @@ class BirdIdentificationController {
       metadata: {
         clientIP: req.ip || req.connection.remoteAddress,
         parentTraceId: req.headers['x-ai-trace-id'],
+        aiTraceId: req.aiTraceId,
         usageEventId: req.usageQuota?.usageEventId,
         debug,
       },
     });
 
-    return sendSuccess(res, result, {}, 202);
+    return sendSuccess(res, result, {
+      aiTraceId: req.aiTraceId,
+    }, 202);
   }
 }
 

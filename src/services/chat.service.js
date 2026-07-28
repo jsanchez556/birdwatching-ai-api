@@ -230,6 +230,7 @@ class ChatService {
       hasConversationContext: Boolean(options.conversationContext),
       responseMode: normalizeResponseMode(options.responseMode),
       parentTraceId: options.parentTraceId,
+      aiTraceId: options.aiTraceId,
     }, (trace) => this.processMessageStreamUntraced(
       message,
       activeConversationId,
@@ -237,10 +238,13 @@ class ChatService {
       events,
       {
         ...options,
+        aiTraceId: options.aiTraceId || trace.id,
         aiExecutionTraceId: trace.id,
         aiExecutionTrace: trace,
       }
-    ));
+    ), {
+      traceId: options.aiTraceId,
+    });
   }
 
   async processMessageStreamUntraced(message, activeConversationId, clientIP, events = {}, options = {}) {
@@ -290,6 +294,7 @@ class ChatService {
           conversationId: activeConversationId,
           role,
           source: resolveChatSource(options),
+          aiTraceId: options.aiTraceId || parentTraceId,
         },
       });
 
@@ -327,6 +332,7 @@ class ChatService {
       role,
       ...(authUser ? { authUser } : {}),
       parentTraceId,
+      aiTraceId: options.aiTraceId || parentTraceId,
       source: resolveChatSource(options),
     });
 
@@ -354,6 +360,7 @@ class ChatService {
       ...(options.conversationContext ? { conversationContext: options.conversationContext } : {}),
       ...(ragContext.ragTrace ? { ragTrace: ragContext.ragTrace } : {}),
       ...(parentTraceId ? { parentTraceId } : {}),
+      aiTraceId: options.aiTraceId || parentTraceId,
     };
 
     events.onStart?.({
@@ -456,6 +463,7 @@ class ChatService {
         conversationId: activeConversationId,
         role,
         source: openAiMetadata.source,
+        aiTraceId: openAiMetadata.aiTraceId,
       },
     });
 

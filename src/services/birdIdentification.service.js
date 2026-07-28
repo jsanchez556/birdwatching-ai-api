@@ -991,7 +991,9 @@ class BirdIdentificationService {
         userId,
         parentTraceId: trace.id,
       },
-    }));
+    }), {
+      traceId: metadata.aiTraceId,
+    });
   }
 
   async identifyFromImageUntraced({ imageUrl, metadata = {}, userId }) {

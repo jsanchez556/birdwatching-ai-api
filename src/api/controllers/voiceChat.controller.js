@@ -11,6 +11,7 @@ class VoiceChatController {
         authUser: req.user,
         usageEventId: req.usageQuota?.usageEventId,
         parentTraceId: req.headers['x-ai-trace-id'],
+        aiTraceId: req.aiTraceId,
       },
     });
 
@@ -20,6 +21,7 @@ class VoiceChatController {
       audioResponseUrl: result.audioResponseUrl,
     }, {
       conversationId: result.conversationId,
+      aiTraceId: req.aiTraceId,
     });
   }
 }

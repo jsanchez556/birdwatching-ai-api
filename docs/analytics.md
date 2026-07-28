@@ -14,14 +14,14 @@ operation.
 |---|---|---|
 | `user_signed_up` | Auth service after the user and session are created | `plan`, `source`, `role` |
 | `chat_started` | Frontend when a chat surface is opened | `plan`, `source`, `userType` |
-| `chat_message_sent` | Chat service after a text or voice message is successfully processed and persisted | `conversationId`, `source`, `role` |
-| `bird_identification_started` | Bird-identification job service after a job is persisted and queued | `source` |
-| `bird_identification_completed` | Worker-side job service after the result is persisted | `source`, `status` |
-| `tour_recommended` | `searchTours` after a structured tour result succeeds with at least one tour; identical tour sets are deduplicated per conversation | `conversationId`, `plan`, `source`, `recommendationType`, `recommendationCount`, optional `experiment`, `variant` |
-| `tour_selected` | Availability service after a specific tour is resolved; deduplicated per conversation and tour; represents recommendation acceptance when experiment metadata is present | `conversationId`, `source`, `tourId`, optional `experiment`, `variant` |
-| `availability_checked` | Reservation service after a structured availability lookup succeeds | `conversationId`, `source`, `tourId`, `participants`, `availabilityResult`, `availableSlots` |
-| `reservation_started` | Reservation service after required inputs and the selected tour are validated; deduplicated per conversation, tour, and participant count | `conversationId`, `plan`, `source`, `tourId`, `participants`, optional `experiment`, `variant` |
-| `reservation_completed` | Reservation service after PostgreSQL persists the reservation; deduplicated by persisted reservation ID | `conversationId`, `plan`, `source`, `tourId`, `participants`, `amount`, `currency`, optional `experiment`, `variant` |
+| `chat_message_sent` | Chat service after a text or voice message is successfully processed and persisted | `conversationId`, `source`, `role`, `aiTraceId` |
+| `bird_identification_started` | Bird-identification job service after a job is persisted and queued | `source`, `aiTraceId` |
+| `bird_identification_completed` | Worker-side job service after the result is persisted | `source`, `status`, `aiTraceId` |
+| `tour_recommended` | `searchTours` after a structured tour result succeeds with at least one tour; identical tour sets are deduplicated per conversation | `conversationId`, `plan`, `source`, `recommendationType`, `recommendationCount`, `aiTraceId`, optional `experiment`, `variant` |
+| `tour_selected` | Availability service after a specific tour is resolved; deduplicated per conversation and tour; represents recommendation acceptance when experiment metadata is present | `conversationId`, `source`, `tourId`, `aiTraceId`, optional `experiment`, `variant` |
+| `availability_checked` | Reservation service after a structured availability lookup succeeds | `conversationId`, `source`, `tourId`, `participants`, `availabilityResult`, `availableSlots`, `aiTraceId` |
+| `reservation_started` | Reservation service after required inputs and the selected tour are validated; deduplicated per conversation, tour, and participant count | `conversationId`, `plan`, `source`, `tourId`, `participants`, `aiTraceId`, optional `experiment`, `variant` |
+| `reservation_completed` | Reservation service after PostgreSQL persists the reservation; deduplicated by persisted reservation ID | `conversationId`, `plan`, `source`, `tourId`, `participants`, `amount`, `currency`, `aiTraceId`, optional `experiment`, `variant` |
 | `checkout_started` | Checkout service after the hosted checkout session is created | `plan`, `source`, `billingProvider` |
 | `subscription_activated` | Webhook service after a verified event produces an authoritative paid, entitled subscription | `plan`, `source`, `billingProvider`, `status`, `amount`, `currency` |
 
@@ -76,7 +76,10 @@ Automated tests inject fake providers and do not send real events.
 - Application logs own technical execution, failures, retries, and operational
   diagnostics.
 
-Do not export LangSmith traces or application-log payloads to PostHog.
+Do not export LangSmith trace payloads or application-log payloads to PostHog.
+The only shared observability field is the opaque server-generated `aiTraceId`
+UUID. It links a product event to its LangSmith root run without copying
+prompts, responses, model telemetry, errors, or trace contents into PostHog.
 
 For prompt experiments, PostHog receives only the safe experiment key and
 variant needed to compare recommendation acceptance and reservation conversion.

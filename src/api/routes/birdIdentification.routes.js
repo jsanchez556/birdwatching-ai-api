@@ -9,6 +9,7 @@ import { validateBirdIdentificationBody } from '../validators/birdIdentification
 import { validateIdentificationQuota } from '../validators/usage.validator.js';
 import { requireFeatureFlag } from '../middleware/featureFlag.middleware.js';
 import { FEATURE_FLAGS } from '../../featureFlags/flags.js';
+import { assignAiTrace } from '../middleware/aiTrace.middleware.js';
 
 const router = express.Router();
 
@@ -39,6 +40,7 @@ router.post(
   imageUpload,
   validateBirdIdentificationRequest,
   validateIdentificationQuota,
+  assignAiTrace,
   asyncHandler(birdIdentificationController.handleIdentifyBird.bind(birdIdentificationController))
 );
 
@@ -50,6 +52,7 @@ router.post(
   imageUpload,
   validateBirdIdentificationRequest,
   validateIdentificationQuota,
+  assignAiTrace,
   asyncHandler(birdIdentificationController.handleIdentifyBird.bind(birdIdentificationController))
 );
 

@@ -154,6 +154,8 @@ src/db/migrations/019_add_user_profile_image.sql
 src/db/migrations/020_create_billing_events.sql
 src/db/migrations/021_create_billing_dashboard.sql
 src/db/migrations/022_fix_subscription_sync.sql
+src/db/migrations/023_create_experiment_assignments.sql
+src/db/migrations/024_create_ai_feature_economics.sql
 ```
 
 Run migrations in order with `psql`, Railway shell, or your deployment platform's database tooling before using chat memory, reservations, users, refresh-token sessions, usage logging, tour-location metadata, cart/reservation entry flows, bird-identification records, job polling, subscription plans, provider billing, profile images, or pgvector-backed RAG.
@@ -202,6 +204,11 @@ Verify traces by running a chat request with the variables above set, then check
 the `birdwatching-ai` project in LangSmith. Application logs also include
 `ai_trace_started`, `ai_trace_completed`, `ai_trace_failed`, and `ai_token_usage`
 events with redacted metadata.
+
+For end-to-end correlation, copy the response `X-AI-Trace-Id` value, locate the
+LangSmith root run with that ID, and filter PostHog product events by the
+matching `aiTraceId`. Only the opaque UUID is shared; trace payloads remain in
+LangSmith.
 
 AI error monitoring emits `AI error monitored` log entries with stable event names:
 - `retrieval_failed` for failed RAG retrievals

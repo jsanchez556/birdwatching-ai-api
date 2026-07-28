@@ -45,9 +45,9 @@ class ObservabilityService {
     };
   }
 
-  startTrace({ type, name, metadata = {}, parentTraceId } = {}) {
+  startTrace({ type, name, metadata = {}, parentTraceId, traceId } = {}) {
     const trace = {
-      id: this.idFactory(),
+      id: traceId || this.idFactory(),
       parentTraceId,
       type: type || 'ai',
       name: name || 'unnamed',
@@ -94,8 +94,22 @@ class ObservabilityService {
     return publicTrace;
   }
 
-  async trace({ type, name, metadata = {}, parentTraceId, tokenUsage, outputMetadata }, operation) {
-    const trace = this.startTrace({ type, name, metadata, parentTraceId });
+  async trace({
+    type,
+    name,
+    metadata = {},
+    parentTraceId,
+    traceId,
+    tokenUsage,
+    outputMetadata,
+  }, operation) {
+    const trace = this.startTrace({
+      type,
+      name,
+      metadata,
+      parentTraceId,
+      traceId,
+    });
 
     try {
       await this.createLangSmithRun(trace);

@@ -99,6 +99,7 @@ export async function executeToolCall(name, args = {}, metadata = {}) {
     conversationId: metadata.conversationId,
     role: metadata.role,
     hasArguments: Boolean(args && Object.keys(args).length),
+    aiTraceId: metadata.aiTraceId,
   }, async () => {
     const handler = registry.handlers.get(name);
 

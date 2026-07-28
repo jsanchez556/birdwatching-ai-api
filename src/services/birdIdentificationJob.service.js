@@ -144,6 +144,7 @@ class BirdIdentificationJobService {
         userId: normalizedUserId,
         metadata: {
           parentTraceId: metadata.parentTraceId,
+          aiTraceId: metadata.aiTraceId,
           usageEventId: metadata.usageEventId,
           debug: Boolean(metadata.debug),
           source,
@@ -168,6 +169,7 @@ class BirdIdentificationJobService {
       idempotencyKey: jobId,
       properties: {
         source,
+        aiTraceId: metadata.aiTraceId,
       },
     });
 
@@ -278,6 +280,7 @@ class BirdIdentificationJobService {
       properties: {
         source: metadata.source || 'unknown',
         status: result.status,
+        aiTraceId: metadata.aiTraceId,
       },
     });
 

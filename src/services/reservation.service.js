@@ -264,6 +264,7 @@ class ReservationService {
         conversationId: metadata.conversationId,
         source: metadata.source || 'chat',
         tourId: result.tourId,
+        aiTraceId: metadata.aiTraceId,
         ...getTourRecommendationEventProperties(metadata),
       },
     });
@@ -280,6 +281,7 @@ class ReservationService {
         participants: participants ? Number(participants) : undefined,
         availabilityResult: result.isAvailable,
         availableSlots: result.availableSlots,
+        aiTraceId: metadata.aiTraceId,
       },
     });
     return result;
@@ -361,6 +363,7 @@ class ReservationService {
         plan: metadata.authUser?.plan,
         source: metadata.source || 'chat',
         tourId: normalizedTourId,
+        aiTraceId: metadata.aiTraceId,
         ...getTourRecommendationEventProperties(metadata),
       },
     });
@@ -408,6 +411,7 @@ class ReservationService {
             participants: reservationResult.participants,
             amount: reservationResult.totalPrice,
             currency: reservationResult.currency,
+            aiTraceId: metadata.aiTraceId,
             ...getTourRecommendationEventProperties(metadata),
           },
         });

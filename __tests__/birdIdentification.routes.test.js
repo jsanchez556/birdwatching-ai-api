@@ -69,7 +69,9 @@ describe('bird identification endpoint', () => {
       imageUrl: 'https://example.test/bird.jpg',
       imageUpload: undefined,
       userId: '7',
-      metadata: expect.objectContaining({}),
+      metadata: expect.objectContaining({
+        aiTraceId: res.headers['x-ai-trace-id'],
+      }),
     }));
     expect(res.body).toEqual({
       success: true,
@@ -77,8 +79,13 @@ describe('bird identification endpoint', () => {
         jobId: 'job-123',
         status: 'queued',
       },
-      meta: {},
+      meta: {
+        aiTraceId: res.headers['x-ai-trace-id'],
+      },
     });
+    expect(res.headers['x-ai-trace-id']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
   });
 
   it('exposes the requested bird-identification alias', async () => {

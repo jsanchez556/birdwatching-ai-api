@@ -201,6 +201,43 @@ describe('AI observability service', () => {
     });
   });
 
+  it('uses the API correlation ID as the LangSmith root run ID', async () => {
+    const langSmithClient = {
+      createRun: jest.fn().mockResolvedValue(undefined),
+      updateRun: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new ObservabilityService({
+      config: {
+        langChainTracingV2: true,
+        langChainApiKey: 'test-key',
+        langChainProject: 'birdwatching-ai',
+      },
+      telemetry: new AiTelemetry({ log: mockLogger }),
+      idFactory: jest.fn(() => 'unexpected-generated-id'),
+      langSmithClient,
+    });
+    const aiTraceId = '11111111-1111-4111-8111-111111111111';
+
+    await service.trace({
+      type: 'ai_execution_flow',
+      name: 'chat_stream_ai_execution_flow',
+      traceId: aiTraceId,
+      metadata: {
+        aiTraceId,
+      },
+    }, async () => ({ success: true }));
+
+    expect(service.idFactory).not.toHaveBeenCalled();
+    expect(langSmithClient.createRun).toHaveBeenCalledWith(expect.objectContaining({
+      id: aiTraceId,
+      extra: {
+        metadata: expect.objectContaining({
+          aiTraceId,
+        }),
+      },
+    }));
+  });
+
   it('keeps model cost telemetry in LangSmith completion metadata', async () => {
     const langSmithClient = {
       createRun: jest.fn().mockResolvedValue(undefined),

@@ -10,6 +10,7 @@ import { validateChatQuota } from '../validators/usage.validator.js';
 import { validateVoiceChatContext } from '../validators/voiceChat.validator.js';
 import { requireFeatureFlag } from '../middleware/featureFlag.middleware.js';
 import { FEATURE_FLAGS } from '../../featureFlags/flags.js';
+import { assignAiTrace } from '../middleware/aiTrace.middleware.js';
 
 const router = express.Router();
 const roleAwareAiRateLimit = (req, res, next) => (
@@ -42,6 +43,7 @@ router.post(
   audioUpload,
   validateVoiceChatRequest,
   validateChatQuota,
+  assignAiTrace,
   asyncHandler(voiceChatController.handleVoiceChat.bind(voiceChatController))
 );
 

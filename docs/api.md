@@ -12,6 +12,12 @@ All responses use:
 }
 ```
 
+Successful AI interaction requests expose a server-generated
+`X-AI-Trace-Id` response header. The same UUID identifies the LangSmith root
+run and is included as `aiTraceId` on correlated server-side product events.
+Browsers may read this header through CORS. Client-supplied trace headers do
+not override the server-generated correlation ID.
+
 Errors use:
 
 ```json
@@ -190,6 +196,68 @@ Success data:
   ]
 }
 ```
+
+### `GET /billing/admin/feature-economics`
+
+Requires JWT bearer authentication with an admin role. Aggregates AI feature
+usage, token volume, estimated AI cost, recognized subscription revenue, and
+estimated contribution margin in UTC daily or monthly buckets.
+
+Optional query parameters are `granularity=daily|monthly`, `startDate`, and
+`endDate`. Dates must be valid ISO date strings; `endDate` is exclusive.
+
+Success data:
+
+```json
+{
+  "granularity": "daily",
+  "timezone": "UTC",
+  "currency": "USD",
+  "range": {
+    "startAt": "2026-07-01T00:00:00.000Z",
+    "endAt": "2026-07-03T00:00:00.000Z"
+  },
+  "allocationMethod": "per_user_feature_usage_share",
+  "totals": {
+    "usage": 10,
+    "tokens": 10000,
+    "aiCost": 3,
+    "subscriptionRevenue": 40,
+    "estimatedContributionMargin": 37,
+    "estimatedContributionMarginPercent": 92.5,
+    "allocatedSubscriptionRevenue": 25,
+    "unallocatedSubscriptionRevenue": 15
+  },
+  "buckets": [
+    {
+      "periodStart": "2026-07-01T00:00:00.000Z",
+      "usage": 10,
+      "tokens": 10000,
+      "aiCost": 3,
+      "subscriptionRevenue": 30,
+      "estimatedContributionMargin": 27,
+      "estimatedContributionMarginPercent": 90,
+      "allocatedSubscriptionRevenue": 25,
+      "unallocatedSubscriptionRevenue": 5,
+      "features": [
+        {
+          "feature": "chat",
+          "usage": 8,
+          "tokens": 8000,
+          "aiCost": 2,
+          "allocatedSubscriptionRevenue": 20,
+          "estimatedContributionMargin": 18,
+          "estimatedContributionMarginPercent": 90
+        }
+      ]
+    }
+  ]
+}
+```
+
+Per-feature subscription revenue is an allocation estimate based on each
+paying user's feature-usage share within the period. Revenue for subscribers
+without AI usage remains unallocated.
 
 ### `POST /billing/admin/simulate-payment`
 Requires JWT bearer authentication with an admin role. Simulates provider-neutral
@@ -636,7 +704,8 @@ Success data:
 Success meta:
 ```json
 {
-  "conversationId": "conversation-123"
+  "conversationId": "conversation-123",
+  "aiTraceId": "11111111-1111-4111-8111-111111111111"
 }
 ```
 

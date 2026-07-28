@@ -48,6 +48,16 @@ class BillingController {
     return sendSuccess(res, result);
   }
 
+  async getFeatureEconomics(req, res) {
+    const result = await billingService.getFeatureEconomics({
+      granularity: req.query?.granularity,
+      startDate: req.query?.startDate,
+      endDate: req.query?.endDate,
+    });
+
+    return sendSuccess(res, result);
+  }
+
   async simulatePayment(req, res) {
     const result = await billingService.simulatePayment(req.body || {});
 

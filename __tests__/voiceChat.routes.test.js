@@ -114,6 +114,7 @@ describe('voice chat endpoint', () => {
         authUser: undefined,
         role: undefined,
         parentTraceId: expect.any(String),
+        aiTraceId: res.headers['x-ai-trace-id'],
       })
     );
     expect(mockSynthesizeSpeech).toHaveBeenCalledWith({
@@ -127,8 +128,12 @@ describe('voice chat endpoint', () => {
       },
       meta: {
         conversationId: 'conversation-123',
+        aiTraceId: res.headers['x-ai-trace-id'],
       },
     });
+    expect(res.headers['x-ai-trace-id']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
     expect(mockUploadSpeechResponse).toHaveBeenCalledWith({
       audio: Buffer.from('voice mp3'),
       contentType: 'audio/mpeg',

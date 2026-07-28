@@ -29,6 +29,7 @@ app.use((req, res, next) => {
       statusCode: res.statusCode,
       durationMs: Date.now() - startedAt,
       ip: req.ip || req.connection.remoteAddress,
+      aiTraceId: req.aiTraceId,
     });
   });
 

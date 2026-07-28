@@ -469,6 +469,7 @@ class RagService {
         ? {} : { keywordWeight: options.keywordWeight }),
       userId: options.userId,
       parentTraceId: options.parentTraceId,
+      aiTraceId: options.aiTraceId,
     };
     const cacheKey = buildRetrievalCacheKey(question, retrievalOptions);
     const cacheLookup = await traceCacheOperation('rag_retrieval_cache_lookup', {
@@ -476,6 +477,7 @@ class RagService {
       conversationId: options.conversationId,
       cacheName: 'rag_retrieval',
       topK,
+      aiTraceId: options.aiTraceId,
     }, async () => {
       const cachedDocuments = await this.getCachedRetrieval(cacheKey, options);
 
@@ -507,6 +509,7 @@ class RagService {
       queryLength: question?.length || 0,
       topK,
       filters,
+      aiTraceId: options.aiTraceId,
     }, () => this.retriever.retrieve(question, retrievalOptions));
 
     await traceCacheOperation('rag_retrieval_cache_write', {
@@ -514,6 +517,7 @@ class RagService {
       conversationId: options.conversationId,
       cacheName: 'rag_retrieval',
       topK,
+      aiTraceId: options.aiTraceId,
     }, async () => {
       const status = await this.setCachedRetrieval(cacheKey, documents, options);
 
@@ -566,6 +570,7 @@ class RagService {
       queryLength: question?.length || 0,
       inputMessageCount: Array.isArray(messages) ? messages.length : 0,
       topK: metadata.topK || DEFAULT_TOP_K,
+      aiTraceId: metadata.aiTraceId,
     }, async () => this.buildContextUntraced(messages, question, metadata), {
       outputMetadata: (result) => result.ragTrace || {
         retrievedChunkCount: 0,

@@ -152,4 +152,71 @@ describe('AgentOrchestrator feature flags', () => {
       })
     );
   });
+
+  it('selects the baseline prompt for the default experiment assignment', async () => {
+    const metadata = {
+      conversationId: 'conversation-default',
+      userId: 'user-2',
+      role: 'customer',
+      authUser: { plan: 'FREE' },
+    };
+    const aiClient = {
+      streamChatCompletion: jest.fn().mockResolvedValue('I found matching tours.'),
+    };
+    const orchestrator = new AgentOrchestrator({
+      agent: {
+        planner: {
+          plan: jest.fn().mockResolvedValue({
+            status: 'recommendations',
+            steps: [{
+              tool: 'searchTours',
+              args: { recommend: true, limit: 3 },
+            }],
+          }),
+        },
+        executor: {
+          executePlan: jest.fn().mockResolvedValue({
+            success: true,
+            steps: [{
+              tool: 'searchTours',
+              result: { success: true, tours: [{ tourId: 1 }] },
+            }],
+            errors: [],
+          }),
+        },
+      },
+      aiClient,
+      experimentAssignments: {
+        resolve: jest.fn().mockResolvedValue({
+          experiment: 'tour_recommendation_prompt',
+          variant: 'recommendation_prompt_v1',
+        }),
+      },
+      log: {
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+      },
+    });
+
+    await orchestrator.generateResponseUntraced([
+      { role: 'user', content: 'Recommend a tour.' },
+    ], metadata);
+
+    expect(metadata.promptVersion).toBe('recommendation_prompt_v1');
+    expect(aiClient.streamChatCompletion).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'system',
+          content: expect.stringContaining('baseline variant'),
+        }),
+      ]),
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          promptVersion: 'recommendation_prompt_v1',
+          experimentVariant: 'recommendation_prompt_v1',
+        }),
+      })
+    );
+  });
 });

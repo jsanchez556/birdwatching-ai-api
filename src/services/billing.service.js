@@ -2,6 +2,7 @@ import checkoutService from './billing/checkout.service.js';
 import webhookService from './billing/webhook.service.js';
 import adminDashboardService from './billing/adminDashboard.service.js';
 import paymentSimulatorService from './billing/paymentSimulator.service.js';
+import featureEconomicsService from './billing/featureEconomics.service.js';
 
 class BillingService {
   async createCheckoutSession(options) {
@@ -22,6 +23,10 @@ class BillingService {
 
   async getAdminDashboard(options) {
     return adminDashboardService.getDashboard(options);
+  }
+
+  async getFeatureEconomics(options) {
+    return featureEconomicsService.getEconomics(options);
   }
 
   async simulatePayment(options) {

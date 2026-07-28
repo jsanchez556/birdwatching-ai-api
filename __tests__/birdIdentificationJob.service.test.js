@@ -39,6 +39,7 @@ describe('BirdIdentificationJobService', () => {
       userId: '7',
       metadata: {
         parentTraceId: 'trace-1',
+        aiTraceId: '11111111-1111-4111-8111-111111111111',
         debug: true,
       },
     });
@@ -67,6 +68,7 @@ describe('BirdIdentificationJobService', () => {
         userId: 7,
         metadata: {
           parentTraceId: 'trace-1',
+          aiTraceId: '11111111-1111-4111-8111-111111111111',
           debug: true,
           source: 'upload',
         },
@@ -83,6 +85,7 @@ describe('BirdIdentificationJobService', () => {
       idempotencyKey: result.jobId,
       properties: {
         source: 'upload',
+        aiTraceId: '11111111-1111-4111-8111-111111111111',
       },
     });
   });
@@ -279,6 +282,7 @@ describe('BirdIdentificationJobService', () => {
       },
       metadata: {
         source: 'upload',
+        aiTraceId: '11111111-1111-4111-8111-111111111111',
       },
     });
     await service.failJob({ jobId: 'job-1' });
@@ -332,6 +336,7 @@ describe('BirdIdentificationJobService', () => {
       properties: {
         source: 'upload',
         status: 'identified',
+        aiTraceId: '11111111-1111-4111-8111-111111111111',
       },
     });
   });

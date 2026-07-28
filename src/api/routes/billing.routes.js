@@ -31,6 +31,13 @@ router.get(
   asyncHandler(billingController.getAdminDashboard.bind(billingController))
 );
 
+router.get(
+  '/admin/feature-economics',
+  requireAuth,
+  requireAdmin,
+  asyncHandler(billingController.getFeatureEconomics.bind(billingController))
+);
+
 router.post(
   '/admin/simulate-payment',
   requireAuth,

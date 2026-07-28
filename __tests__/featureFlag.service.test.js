@@ -73,4 +73,44 @@ describe('FeatureFlagService', () => {
       'Feature flag provider shutdown failed'
     );
   });
+
+  it('evaluates boolean and multivariate flags for the same stable identity', async () => {
+    const provider = {
+      getFeatureFlag: jest.fn()
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(RETRIEVAL_VARIANTS.NEW),
+    };
+    const service = new FeatureFlagService({ provider });
+    const identity = {
+      userId: 42,
+      personProperties: {
+        plan: 'PRO',
+      },
+    };
+
+    await expect(service.isEnabled({
+      ...identity,
+      flag: FEATURE_FLAGS.VOICE_AI,
+    })).resolves.toBe(true);
+    await expect(service.getVariant({
+      ...identity,
+      flag: FEATURE_FLAGS.ADVANCED_RAG,
+      defaultValue: RETRIEVAL_VARIANTS.CURRENT,
+    })).resolves.toBe(RETRIEVAL_VARIANTS.NEW);
+
+    expect(provider.getFeatureFlag).toHaveBeenNthCalledWith(1, {
+      distinctId: '42',
+      flag: FEATURE_FLAGS.VOICE_AI,
+      personProperties: {
+        plan: 'PRO',
+      },
+    });
+    expect(provider.getFeatureFlag).toHaveBeenNthCalledWith(2, {
+      distinctId: '42',
+      flag: FEATURE_FLAGS.ADVANCED_RAG,
+      personProperties: {
+        plan: 'PRO',
+      },
+    });
+  });
 });

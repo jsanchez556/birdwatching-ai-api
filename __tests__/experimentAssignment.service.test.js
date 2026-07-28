@@ -94,4 +94,40 @@ describe('ExperimentAssignmentService', () => {
       { experiment: experiment.experiment }
     );
   });
+
+  it('reuses the persisted assignment on later requests for the same user', async () => {
+    const persistedAssignment = {
+      experiment: experiment.experiment,
+      variant: 'recommendation_prompt_v2',
+    };
+    const queries = {
+      get: jest.fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(persistedAssignment),
+      assign: jest.fn().mockResolvedValue(persistedAssignment),
+    };
+    const featureFlagService = {
+      getVariant: jest.fn().mockResolvedValue('recommendation_prompt_v2'),
+    };
+    const service = new ExperimentAssignmentService({
+      queries,
+      featureFlagService,
+    });
+
+    await expect(service.resolve({
+      userId: 7,
+      ...experiment,
+    })).resolves.toEqual(persistedAssignment);
+    await expect(service.resolve({
+      userId: 7,
+      ...experiment,
+    })).resolves.toEqual(persistedAssignment);
+
+    expect(featureFlagService.getVariant).toHaveBeenCalledTimes(1);
+    expect(queries.assign).toHaveBeenCalledTimes(1);
+    expect(queries.get).toHaveBeenNthCalledWith(2, {
+      userId: 7,
+      experiment: experiment.experiment,
+    });
+  });
 });

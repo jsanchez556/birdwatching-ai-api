@@ -143,6 +143,11 @@ Billing uses a provider-neutral domain boundary:
 5. The admin-only payment simulator records internal provider-neutral billing
    events with provider `Other` and reuses subscription lifecycle services; it
    does not call provider adapters or external APIs.
+6. The admin feature-economics report aggregates `usage_events` and recognized
+   subscription-renewal revenue into UTC daily or monthly buckets. PostgreSQL
+   allocates each paying user's period revenue across features by that user's
+   feature-usage share, while the service exposes unallocated revenue and
+   estimated contribution margin explicitly.
 6. Future providers such as TiloPay should register an adapter and map provider
    products, prices, SKUs, or equivalent identifiers through
    `plan_provider_mappings`.
@@ -316,6 +321,14 @@ The observability layer is split into three small modules:
 - `src/monitoring/aiTelemetry.js` records centralized latency, token usage, and error telemetry with prompt, response, customer, and secret fields redacted.
 
 Chat currently emits a root AI execution trace for each streamed request, with child spans for conversation context assembly, OpenAI tool-resolution completions, final streaming completions, embedding generation, RAG retrieval, RAG/response cache operations, the RAG grounding pipeline, tour tool execution, and the birdwatching agent orchestration run. The root trace records response length, source count, prompt versions, reservation presence, and tool names; the conversation context span records message counts by role. Cache spans record hit, miss, skipped, write status, avoided LLM calls, cache hit rate, and estimated savings without logging raw prompts, embeddings, answers, or secrets. RAG pipeline telemetry includes retrieved chunk IDs, similarity scores, retrieval latency, grounding context size, and prompt-construction metadata; the final answer LLM trace also carries the compact grounding summary. Multi-tool agent telemetry follows the user request through planner output, ordered tool sequence, individual tool spans, failures, skipped steps, retry counts, retry scheduling events, prompt assembly, and the final response. AI error monitoring records stable log events for retrieval failures, tool timeouts, tool failures, malformed JSON tool-call arguments, invalid assistant outputs, and guardrail-detected hallucination events. Offline evaluation tracking compares prompt versions by answer quality, retrieval quality, token usage, latency, estimated cost, and quality-per-dollar without storing prompt text. LangSmith-compatible evaluation reporting models `Run -> Evaluation -> Score -> Comparison` for answer quality, grounding quality, retrieval quality, and tool correctness, while dashboard helpers summarize quality trends, regression detection, and retrieval performance. LangSmith export is enabled when `LANGCHAIN_TRACING=true`, `LANGCHAIN_PROJECT` is set, and `LANGCHAIN_API_KEY` is present; otherwise the same code path continues to run with local telemetry only.
+
+Accepted AI API requests receive one server-generated `aiTraceId`. The API
+returns it in `X-AI-Trace-Id`, uses it as the LangSmith root run ID, propagates
+it through RAG and agent metadata, stores it with AI usage accounting, and adds
+it to AI-driven PostHog product events. Child LangSmith spans retain their own
+run IDs and parent relationships. Queued bird-identification jobs carry the
+same correlation ID into the worker. Client-supplied trace headers may provide
+an external parent but never replace the server-owned `aiTraceId`.
 
 Voice chat creates a parent `voice_chat` AI execution trace and nests the
 workflow spans under it: OpenAI audio transcription, conversation context,

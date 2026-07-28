@@ -79,6 +79,7 @@ psql "$DATABASE_URL" -f src/db/migrations/020_create_billing_events.sql
 psql "$DATABASE_URL" -f src/db/migrations/021_create_billing_dashboard.sql
 psql "$DATABASE_URL" -f src/db/migrations/022_fix_subscription_sync.sql
 psql "$DATABASE_URL" -f src/db/migrations/023_create_experiment_assignments.sql
+psql "$DATABASE_URL" -f src/db/migrations/024_create_ai_feature_economics.sql
 ```
 
 ## Billing & Monetization

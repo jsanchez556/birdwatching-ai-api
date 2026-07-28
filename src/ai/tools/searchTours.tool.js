@@ -59,6 +59,7 @@ async function searchTours(args = {}, metadata = {}) {
         recommendationCount: result.tours.length,
         recommendationType: args.recommend === true ? 'recommendation' : 'tour_search',
         source: metadata.source || 'chat',
+        aiTraceId: metadata.aiTraceId,
         ...getTourRecommendationEventProperties(metadata),
       },
     });

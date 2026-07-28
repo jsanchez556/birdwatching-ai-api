@@ -297,6 +297,7 @@ describe('birdIdentificationService', () => {
       userId: '7',
       metadata: {
         parentTraceId: 'trace-1',
+        aiTraceId: '11111111-1111-4111-8111-111111111111',
       },
     });
 
@@ -314,7 +315,10 @@ describe('birdIdentificationService', () => {
         hasImageUrl: true,
         userIdPresent: true,
       }),
-      expect.any(Function)
+      expect.any(Function),
+      {
+        traceId: '11111111-1111-4111-8111-111111111111',
+      }
     );
     expect(mockTraceImageInput).toHaveBeenCalledWith(
       'bird_identification_image_input',

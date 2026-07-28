@@ -254,6 +254,7 @@ export class AgentOrchestrator {
       messageCount: messages.length,
       hasCustomerContext: Boolean(metadata.customerContext),
       hasConversationContext: Boolean(metadata.conversationContext),
+      aiTraceId: metadata.aiTraceId,
     }, (trace) => {
       metadata.agentTraceId = trace.id;
       return this.generateResponseUntraced(messages, metadata, options);
@@ -278,6 +279,7 @@ export class AgentOrchestrator {
       hasSelectedTransportation: Boolean(conversationContext.selectedTransportation),
       transportationDeclined: Boolean(conversationContext.transportationDeclined),
       recentToolCount: conversationContext.recentToolsCalled.length,
+      aiTraceId: metadata.aiTraceId,
     });
 
     let plan = await traceAgentPlanning('birdwatching_agent_planner', {

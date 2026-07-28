@@ -59,6 +59,7 @@ class ChatController {
           role,
           responseMode,
           source: 'text',
+          aiTraceId: req.aiTraceId,
         }
       );
 

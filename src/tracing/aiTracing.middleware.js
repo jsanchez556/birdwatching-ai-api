@@ -13,12 +13,20 @@ function tokenUsageFromCompletion(completion = {}) {
   return completion.usage;
 }
 
-function withAiTrace({ type, name, metadata = {}, tokenUsage, outputMetadata } = {}, operation) {
+function withAiTrace({
+  type,
+  name,
+  metadata = {},
+  traceId,
+  tokenUsage,
+  outputMetadata,
+} = {}, operation) {
   return observabilityService.trace({
     type,
     name,
     metadata,
     parentTraceId: metadata.parentTraceId,
+    traceId,
     tokenUsage,
     outputMetadata,
   }, operation);
@@ -34,11 +42,12 @@ function traceLlmCall(name, metadata, operation, options = {}) {
   }, operation);
 }
 
-function traceAiExecutionFlow(name, metadata, operation) {
+function traceAiExecutionFlow(name, metadata, operation, options = {}) {
   return withAiTrace({
     type: 'ai_execution_flow',
     name,
     metadata,
+    traceId: options.traceId,
     outputMetadata: (result = {}) => ({
       conversationId: result.conversationId,
       responseLength: result.response?.length || 0,
@@ -51,11 +60,12 @@ function traceAiExecutionFlow(name, metadata, operation) {
   }, operation);
 }
 
-function traceBirdIdentificationPipeline(name, metadata, operation) {
+function traceBirdIdentificationPipeline(name, metadata, operation, options = {}) {
   return withAiTrace({
     type: 'bird_identification_pipeline',
     name,
     metadata,
+    traceId: options.traceId,
     outputMetadata: (result = {}) => ({
       hasImageObservations: Boolean(result.imageObservations),
       summaryLength: result.summary?.length || 0,

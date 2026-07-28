@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import request from 'supertest';
 
 const mockSimulatePayment = jest.fn();
+const mockGetFeatureEconomics = jest.fn();
 
 await jest.unstable_mockModule('../src/config/env.js', () => ({
   default: {
@@ -18,6 +19,7 @@ await jest.unstable_mockModule('../src/services/billing.service.js', () => ({
     createCustomerPortalSession: jest.fn(),
     handleWebhook: jest.fn(),
     getAdminDashboard: jest.fn(),
+    getFeatureEconomics: mockGetFeatureEconomics,
     simulatePayment: mockSimulatePayment,
   },
 }));
@@ -72,6 +74,16 @@ describe('billing routes', () => {
       userId: 7,
       plan: 'PRO',
       status: 'active',
+    });
+    mockGetFeatureEconomics.mockResolvedValue({
+      granularity: 'daily',
+      totals: {
+        usage: 10,
+        aiCost: 3,
+        subscriptionRevenue: 40,
+        estimatedContributionMargin: 37,
+      },
+      buckets: [],
     });
   });
 
@@ -132,5 +144,36 @@ describe('billing routes', () => {
       meta: {},
     });
     expect(mockSimulatePayment).toHaveBeenCalledWith(payload);
+  });
+
+  it('restricts feature economics to admins and forwards aggregation filters', async () => {
+    const customerResponse = await request(buildApp())
+      .get('/billing/admin/feature-economics?granularity=daily')
+      .set('Authorization', authHeader('customer'));
+
+    expect(customerResponse.status).toBe(403);
+    expect(mockGetFeatureEconomics).not.toHaveBeenCalled();
+
+    const adminResponse = await request(buildApp())
+      .get('/billing/admin/feature-economics')
+      .query({
+        granularity: 'daily',
+        startDate: '2026-07-01T00:00:00.000Z',
+        endDate: '2026-07-03T00:00:00.000Z',
+      })
+      .set('Authorization', authHeader('admin'));
+
+    expect(adminResponse.status).toBe(200);
+    expect(adminResponse.body.data).toMatchObject({
+      granularity: 'daily',
+      totals: {
+        estimatedContributionMargin: 37,
+      },
+    });
+    expect(mockGetFeatureEconomics).toHaveBeenCalledWith({
+      granularity: 'daily',
+      startDate: '2026-07-01T00:00:00.000Z',
+      endDate: '2026-07-03T00:00:00.000Z',
+    });
   });
 });

@@ -40,6 +40,7 @@ describe('searchTours analytics', () => {
       source: 'voice',
       authUser: { plan: 'PRO' },
       ragTrace: { retrievedChunkCount: 3 },
+      aiTraceId: '11111111-1111-4111-8111-111111111111',
     })).resolves.toMatchObject({
       success: true,
       tours: [{ tourId: 1 }, { tourId: 2 }],
@@ -56,6 +57,7 @@ describe('searchTours analytics', () => {
         recommendationCount: 2,
         recommendationType: 'recommendation',
         source: 'voice',
+        aiTraceId: '11111111-1111-4111-8111-111111111111',
       },
     });
   });
