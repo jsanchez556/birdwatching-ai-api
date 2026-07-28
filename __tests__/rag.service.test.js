@@ -827,4 +827,44 @@ describe('RagService', () => {
       'noduck',
     ]);
   });
+
+  it('uses the advanced retrieval profile only for the new_retrieval variant', async () => {
+    const retriever = {
+      retrieve: jest.fn().mockResolvedValue([]),
+    };
+    const service = new RagService({
+      retriever,
+      retrievalCache: {
+        get: jest.fn().mockResolvedValue(null),
+        set: jest.fn().mockResolvedValue(undefined),
+      },
+      redisConfig: { retrievalCacheTtlSeconds: 60 },
+      featureFlagService: {
+        getVariant: jest.fn().mockResolvedValue('new_retrieval'),
+      },
+      log: logger,
+    });
+
+    const context = await service.buildContext(
+      [{ role: 'user', content: 'Where can I see quetzals?' }],
+      'Where can I see quetzals?',
+      {
+        conversationId: 'conversation-variant',
+        userId: 'user-variant',
+        authUser: { plan: 'PRO' },
+        role: 'customer',
+      }
+    );
+
+    expect(retriever.retrieve).toHaveBeenCalledWith(
+      'Where can I see quetzals?',
+      expect.objectContaining({
+        candidateMultiplier: 6,
+        semanticWeight: 0.7,
+        keywordWeight: 0.3,
+        maxChunksPerDocument: 2,
+      })
+    );
+    expect(context.ragTrace.retrievalVariant).toBe('new_retrieval');
+  });
 });

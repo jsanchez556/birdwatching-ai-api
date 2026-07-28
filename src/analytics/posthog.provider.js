@@ -17,6 +17,17 @@ class PostHogProvider {
     });
   }
 
+  async getFeatureFlag({ distinctId, flag, personProperties = {}, groups = {} }) {
+    const snapshot = await this.client.evaluateFlags(String(distinctId), {
+      flagKeys: [flag],
+      personProperties,
+      groups,
+      sendFeatureFlagEvents: true,
+    });
+
+    return snapshot.getFlag(flag);
+  }
+
   async shutdown() {
     await this.client._shutdown();
   }

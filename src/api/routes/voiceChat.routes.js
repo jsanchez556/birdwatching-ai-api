@@ -8,6 +8,8 @@ import HttpError from '../../utils/httpError.js';
 import { validateAudioUpload } from '../validators/audio.validator.js';
 import { validateChatQuota } from '../validators/usage.validator.js';
 import { validateVoiceChatContext } from '../validators/voiceChat.validator.js';
+import { requireFeatureFlag } from '../middleware/featureFlag.middleware.js';
+import { FEATURE_FLAGS } from '../../featureFlags/flags.js';
 
 const router = express.Router();
 const roleAwareAiRateLimit = (req, res, next) => (
@@ -35,6 +37,7 @@ function validateVoiceChatRequest(req, res, next) {
 router.post(
   '/',
   optionalAuth,
+  requireFeatureFlag(FEATURE_FLAGS.VOICE_AI),
   roleAwareAiRateLimit,
   audioUpload,
   validateVoiceChatRequest,

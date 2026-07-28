@@ -8,10 +8,18 @@ import { traceCacheOperation, traceRagPipeline, traceRagRetrieval } from '../tra
 import aiTelemetry from '../monitoring/aiTelemetry.js';
 import createRetrievalCache from '../cache/retrievalCache.js';
 import { getRedisConfig } from '../cache/redisClient.js';
+import featureFlags from '../featureFlags/featureFlag.service.js';
+import { FEATURE_FLAGS, RETRIEVAL_VARIANTS } from '../featureFlags/flags.js';
 
 const DEFAULT_TOP_K = 3;
 const DEFAULT_BIRD_MATCH_LIMIT = 6;
 const DEFAULT_BIRD_MATCH_CANDIDATE_LIMIT = 8;
+const ADVANCED_RETRIEVAL_OPTIONS = Object.freeze({
+  candidateMultiplier: 6,
+  semanticWeight: 0.7,
+  keywordWeight: 0.3,
+  maxChunksPerDocument: 2,
+});
 const FIELD_MATCH_WEIGHTS = {
   commonName: 500,
   scientificName: 400,
@@ -136,6 +144,10 @@ function buildRetrievalCacheKey(question, options = {}) {
     minScore: options.minScore,
     minSemanticScore: options.minSemanticScore,
     maxChunksPerDocument: options.maxChunksPerDocument,
+    candidateMultiplier: options.candidateMultiplier,
+    semanticWeight: options.semanticWeight,
+    keywordWeight: options.keywordWeight,
+    retrievalVariant: options.retrievalVariant,
   };
 
   return buildHashKey('rag-retrieval', payload);
@@ -419,11 +431,13 @@ class RagService {
     retriever = retrievalService,
     retrievalCache = createRetrievalCache(),
     redisConfig = getRedisConfig(),
+    featureFlagService = featureFlags,
     log = logger,
   } = {}) {
     this.retriever = retriever;
     this.retrievalCache = retrievalCache;
     this.redisConfig = redisConfig;
+    this.featureFlags = featureFlagService;
     this.logger = log;
   }
 
@@ -447,6 +461,12 @@ class RagService {
       minScore: options.minScore,
       minSemanticScore: options.minSemanticScore,
       maxChunksPerDocument: options.maxChunksPerDocument,
+      ...(options.candidateMultiplier === undefined
+        ? {} : { candidateMultiplier: options.candidateMultiplier }),
+      ...(options.semanticWeight === undefined
+        ? {} : { semanticWeight: options.semanticWeight }),
+      ...(options.keywordWeight === undefined
+        ? {} : { keywordWeight: options.keywordWeight }),
       userId: options.userId,
       parentTraceId: options.parentTraceId,
     };
@@ -557,13 +577,33 @@ class RagService {
   }
 
   async buildContextUntraced(messages, question, metadata = {}) {
+    let retrievalVariant = RETRIEVAL_VARIANTS.CURRENT;
+
     try {
-      let documents = await this.retrieveContext(question, metadata);
+      const evaluatedVariant = await this.featureFlags.getVariant({
+        flag: FEATURE_FLAGS.ADVANCED_RAG,
+        userId: metadata.userId,
+        anonymousId: metadata.conversationId,
+        personProperties: {
+          plan: metadata.authUser?.plan,
+          role: metadata.role,
+        },
+        defaultValue: RETRIEVAL_VARIANTS.CURRENT,
+      });
+      retrievalVariant = evaluatedVariant === RETRIEVAL_VARIANTS.NEW
+        ? RETRIEVAL_VARIANTS.NEW
+        : RETRIEVAL_VARIANTS.CURRENT;
+      const retrievalMetadata = {
+        ...metadata,
+        retrievalVariant,
+        ...(retrievalVariant === RETRIEVAL_VARIANTS.NEW ? ADVANCED_RETRIEVAL_OPTIONS : {}),
+      };
+      let documents = await this.retrieveContext(question, retrievalMetadata);
       const supplementalFamily = getSupplementalBirdFamily(documents, question);
 
       if (supplementalFamily && documents.length < DEFAULT_BIRD_MATCH_CANDIDATE_LIMIT) {
         const supplementalDocuments = await this.retrieveContext(question, {
-          ...metadata,
+          ...retrievalMetadata,
           topK: DEFAULT_BIRD_MATCH_CANDIDATE_LIMIT,
           category: supplementalFamily,
         });
@@ -589,12 +629,15 @@ class RagService {
           messages,
           sources: [],
           birdMatches: [],
-          ragTrace: buildGroundingTrace({
-            documents: [],
-            sources: [],
-            promptMessages: messages,
-            originalMessageCount: messages.length,
-          }),
+          ragTrace: {
+            ...buildGroundingTrace({
+              documents: [],
+              sources: [],
+              promptMessages: messages,
+              originalMessageCount: messages.length,
+            }),
+            retrievalVariant,
+          },
         };
       }
 
@@ -607,6 +650,7 @@ class RagService {
         promptMessages: groundedMessages,
         originalMessageCount: messages.length,
       });
+      ragTrace.retrievalVariant = retrievalVariant;
 
       this.logger.info('RAG context retrieved for chat', {
         conversationId: metadata.conversationId,
@@ -660,6 +704,7 @@ class RagService {
           sourceCount: 0,
           groundedMessageCount: messages.length,
           error: 'rag_retrieval_failed',
+          retrievalVariant,
         },
       };
     }

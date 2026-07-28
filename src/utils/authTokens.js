@@ -8,6 +8,7 @@ export function signAuthToken(user) {
       email: user.email,
       ...(user.name ? { name: user.name } : {}),
       role: user.role || 'customer',
+      ...(user.plan ? { plan: user.plan } : {}),
     },
     env.jwtSecret,
     {
@@ -40,6 +41,7 @@ export function verifyAuthToken(token) {
       email: payload.email,
       name: typeof payload.name === 'string' ? payload.name : null,
       role: payload.role === 'admin' ? 'admin' : 'customer',
+      plan: typeof payload.plan === 'string' ? payload.plan : undefined,
     };
   } catch {
     throw new HttpError(401, 'Authentication is required', { code: 'UNAUTHORIZED' });

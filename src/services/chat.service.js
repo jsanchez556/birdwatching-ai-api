@@ -321,6 +321,8 @@ class ChatService {
       clientIP,
       conversationId: activeConversationId,
       userId,
+      role,
+      ...(authUser ? { authUser } : {}),
       parentTraceId,
       source: resolveChatSource(options),
     });

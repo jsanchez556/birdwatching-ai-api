@@ -5,6 +5,12 @@ import {
   traceAgentOrchestration,
   traceAgentPlanning,
 } from '../../tracing/aiTracing.middleware.js';
+import featureFlags from '../../featureFlags/featureFlag.service.js';
+import { FEATURE_FLAGS } from '../../featureFlags/flags.js';
+
+const BOOKING_TOOLS = new Set([
+  'createReservation',
+]);
 
 function safeJson(value) {
   return JSON.stringify(value, null, 2);
@@ -176,10 +182,12 @@ export class AgentOrchestrator {
   constructor({
     agent = birdwatchingAgent,
     aiClient = openaiClient,
+    featureFlagService = featureFlags,
     log = logger,
   } = {}) {
     this.agent = agent;
     this.aiClient = aiClient;
+    this.featureFlags = featureFlagService;
     this.logger = log;
   }
 
@@ -212,7 +220,7 @@ export class AgentOrchestrator {
       recentToolCount: conversationContext.recentToolsCalled.length,
     });
 
-    const plan = await traceAgentPlanning('birdwatching_agent_planner', {
+    let plan = await traceAgentPlanning('birdwatching_agent_planner', {
       parentTraceId: metadata.agentTraceId,
       conversationId: metadata.conversationId,
       role: metadata.role,
@@ -231,6 +239,28 @@ export class AgentOrchestrator {
         message: userMessage,
         context: conversationContext,
       })));
+
+    const hasBookingSteps = (plan.steps || []).some((step) => BOOKING_TOOLS.has(step.tool));
+
+    if (hasBookingSteps) {
+      const bookingEnabled = await this.featureFlags.isEnabled({
+        flag: FEATURE_FLAGS.AGENT_BOOKING,
+        userId: metadata.userId,
+        anonymousId: metadata.conversationId,
+        personProperties: {
+          plan: metadata.authUser?.plan,
+          role: metadata.role,
+        },
+      });
+
+      if (!bookingEnabled) {
+        plan = {
+          status: 'booking_feature_unavailable',
+          steps: [],
+          message: 'Tour booking is temporarily unavailable. Explain this briefly and do not attempt booking tools.',
+        };
+      }
+    }
 
     metadata.agentPlan = {
       status: plan.status,

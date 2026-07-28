@@ -7,6 +7,8 @@ import { asyncHandler } from '../../utils/async.utils.js';
 import HttpError from '../../utils/httpError.js';
 import { validateBirdIdentificationBody } from '../validators/birdIdentification.validator.js';
 import { validateIdentificationQuota } from '../validators/usage.validator.js';
+import { requireFeatureFlag } from '../middleware/featureFlag.middleware.js';
+import { FEATURE_FLAGS } from '../../featureFlags/flags.js';
 
 const router = express.Router();
 
@@ -32,6 +34,7 @@ function validateBirdIdentificationRequest(req, res, next) {
 router.post(
   '/birds/identify',
   requireAuth,
+  requireFeatureFlag(FEATURE_FLAGS.MULTIMODAL_BIRD_IDENTIFICATION),
   aiRateLimit,
   imageUpload,
   validateBirdIdentificationRequest,
@@ -42,6 +45,7 @@ router.post(
 router.post(
   '/bird-identification',
   requireAuth,
+  requireFeatureFlag(FEATURE_FLAGS.MULTIMODAL_BIRD_IDENTIFICATION),
   aiRateLimit,
   imageUpload,
   validateBirdIdentificationRequest,
