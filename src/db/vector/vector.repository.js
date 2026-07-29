@@ -205,6 +205,7 @@ class VectorRepository {
       INSERT INTO knowledge_documents (
         external_id,
         title,
+        content,
         source,
         document_type,
         category,
@@ -215,10 +216,11 @@ class VectorRepository {
         active,
         updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7::text[], $8::jsonb, $9, $10, CURRENT_TIMESTAMP)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::text[], $9::jsonb, $10, $11, CURRENT_TIMESTAMP)
       ON CONFLICT (external_id) DO UPDATE
       SET
         title = EXCLUDED.title,
+        content = EXCLUDED.content,
         source = EXCLUDED.source,
         document_type = EXCLUDED.document_type,
         category = EXCLUDED.category,
@@ -234,6 +236,7 @@ class VectorRepository {
     const result = await pool.query(query, [
       document.externalId,
       document.title,
+      document.content || null,
       document.source || null,
       document.documentType || null,
       document.category || null,
@@ -251,6 +254,15 @@ class VectorRepository {
     const result = await pool.query(
       'SELECT * FROM knowledge_documents WHERE external_id = $1',
       [externalId]
+    );
+
+    return result.rows[0] || null;
+  }
+
+  async findDocumentById(documentId) {
+    const result = await pool.query(
+      'SELECT * FROM knowledge_documents WHERE id = $1',
+      [documentId]
     );
 
     return result.rows[0] || null;

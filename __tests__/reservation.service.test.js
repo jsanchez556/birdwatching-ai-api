@@ -4,6 +4,13 @@ const mockGetTourById = jest.fn();
 const mockGetAvailableTours = jest.fn();
 const mockCreateReservation = jest.fn();
 const mockGetLatestByConversationId = jest.fn();
+const mockAnalyticsTrack = jest.fn();
+
+await jest.unstable_mockModule('../src/analytics/analytics.service.js', () => ({
+  default: {
+    track: mockAnalyticsTrack,
+  },
+}));
 
 await jest.unstable_mockModule('../src/db/queries/reservation.queries.js', () => ({
   default: {
@@ -45,13 +52,53 @@ describe('ReservationService', () => {
       difficulty: 'moderate',
     });
 
-    await expect(reservationService.checkTourAvailability({ tourId: 1 })).resolves.toMatchObject({
+    await expect(reservationService.checkTourAvailability({ tourId: 1 }, {
+      userId: 7,
+      conversationId: 'conversation-123',
+      model: 'gpt-test',
+      source: 'voice',
+      agentPlan: {
+        status: 'select_tour',
+      },
+      experimentAssignments: {
+        tourRecommendation: {
+          experiment: 'tour_recommendation_prompt',
+          variant: 'recommendation_prompt_v2',
+        },
+      },
+    })).resolves.toMatchObject({
       success: true,
       tourId: 1,
       availableSlots: 5,
       isAvailable: true,
     });
     expect(mockGetTourById).toHaveBeenCalledWith(1);
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith({
+      userId: 7,
+      anonymousId: 'conversation:conversation-123',
+      event: 'tour_selected',
+      idempotencyKey: 'conversation-123:1',
+      properties: {
+        conversationId: 'conversation-123',
+        source: 'voice',
+        tourId: 1,
+        experiment: 'tour_recommendation_prompt',
+        variant: 'recommendation_prompt_v2',
+      },
+    });
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith({
+      userId: 7,
+      anonymousId: 'conversation:conversation-123',
+      event: 'availability_checked',
+      properties: {
+        conversationId: 'conversation-123',
+        source: 'voice',
+        tourId: 1,
+        participants: undefined,
+        availabilityResult: true,
+        availableSlots: 5,
+      },
+    });
   });
 
   it('calculates prices with discounts', async () => {
@@ -114,6 +161,18 @@ describe('ReservationService', () => {
       participants: 2,
       customerName: 'Ana Gomez',
       conversationId: 'conversation-123',
+    }, {
+      authUser: { plan: 'PRO' },
+      model: 'gpt-test',
+      ragTrace: { retrievedChunkCount: 2 },
+      source: 'voice',
+      aiTraceId: '11111111-1111-4111-8111-111111111111',
+      experimentAssignments: {
+        tourRecommendation: {
+          experiment: 'tour_recommendation_prompt',
+          variant: 'recommendation_prompt_v2',
+        },
+      },
     });
 
     expect(result).toMatchObject({
@@ -144,6 +203,40 @@ describe('ReservationService', () => {
       discountRate: 0,
       confirmationCode: expect.stringMatching(/^BW-/),
     }));
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith({
+      userId: undefined,
+      anonymousId: 'conversation:conversation-123',
+      event: 'reservation_started',
+      idempotencyKey: 'conversation-123:1:2',
+      properties: {
+        conversationId: 'conversation-123',
+        participants: 2,
+        plan: 'PRO',
+        source: 'voice',
+        tourId: 1,
+        aiTraceId: '11111111-1111-4111-8111-111111111111',
+        experiment: 'tour_recommendation_prompt',
+        variant: 'recommendation_prompt_v2',
+      },
+    });
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith({
+      userId: undefined,
+      anonymousId: 'conversation:conversation-123',
+      event: 'reservation_completed',
+      idempotencyKey: 42,
+      properties: {
+        conversationId: 'conversation-123',
+        plan: 'PRO',
+        source: 'voice',
+        tourId: 1,
+        participants: 2,
+        amount: 240,
+        currency: 'USD',
+        aiTraceId: '11111111-1111-4111-8111-111111111111',
+        experiment: 'tour_recommendation_prompt',
+        variant: 'recommendation_prompt_v2',
+      },
+    });
   });
 
   it('uses request context for itinerary dates without storing reservation metadata', async () => {

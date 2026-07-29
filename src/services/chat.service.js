@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import openaiService from '../ai/openai.service.js';
+import openaiService from '../ai/services/openai.service.js';
 import {
   applyChatOutputGuardrails,
   assessChatInput,
@@ -17,6 +17,9 @@ import {
 } from '../tracing/aiTracing.middleware.js';
 import { injectResponseModeMessage } from '../ai/prompts/prompt.builder.js';
 import { FIELD_ASSISTANT_RESPONSE_MODE } from '../ai/prompts/system.prompt.js';
+import analytics from '../analytics/analytics.service.js';
+import { ANALYTICS_EVENTS } from '../analytics/events.js';
+import env from '../config/env.js';
 
 const STREAM_GUARDRAIL_BUFFER_CHARS = 48;
 const VISITOR_ROLE = 'visitor';
@@ -67,10 +70,11 @@ function throwIfAborted(signal) {
   }
 }
 
-function buildPromptMeta() {
+function buildPromptMeta(metadata = {}) {
   return {
     promptVersions: {
       chat: CHAT_SYSTEM_PROMPT_VERSION,
+      ...(metadata.promptVersions || {}),
     },
   };
 }
@@ -162,7 +166,7 @@ function buildToolMeta(metadata = {}) {
   const recentMetadata = metadata.conversationContext?.recentAssistantMetadata || {};
 
   return {
-    ...buildPromptMeta(),
+    ...buildPromptMeta(metadata),
     ...(metadata.responseMode ? { responseMode: metadata.responseMode } : {}),
     ...(recentMetadata.conversationType ? { conversationType: recentMetadata.conversationType } : {}),
     ...(recentMetadata.conversationSource ? { conversationSource: recentMetadata.conversationSource } : {}),
@@ -174,6 +178,7 @@ function buildToolMeta(metadata = {}) {
     ...(metadata.transportationDeclined ? { transportationDeclined: metadata.transportationDeclined } : {}),
     ...(metadata.pricing ? { pricing: metadata.pricing } : {}),
     ...(metadata.uiAction ? { uiAction: metadata.uiAction } : {}),
+    ...(metadata.experimentAssignments ? { experimentAssignments: metadata.experimentAssignments } : {}),
   };
 }
 
@@ -192,6 +197,7 @@ function buildConversationMeta(metadata = {}) {
     ...(metadata.requestedTransportation ? { requestedTransportation: metadata.requestedTransportation } : {}),
     ...(metadata.selectedTransportation ? { selectedTransportation: metadata.selectedTransportation } : {}),
     ...(metadata.participants ? { participants: metadata.participants } : {}),
+    ...(metadata.experimentAssignments ? { experimentAssignments: metadata.experimentAssignments } : {}),
   };
 }
 
@@ -200,6 +206,14 @@ function mergeChatMeta(messageMeta = {}, conversationMeta = {}) {
     ...messageMeta,
     ...conversationMeta,
   };
+}
+
+function resolveChatSource(options = {}) {
+  if (options.source === 'voice' || options.source === 'text') {
+    return options.source;
+  }
+
+  return normalizeResponseMode(options.responseMode) ? 'voice' : 'text';
 }
 
 class ChatService {
@@ -216,6 +230,7 @@ class ChatService {
       hasConversationContext: Boolean(options.conversationContext),
       responseMode: normalizeResponseMode(options.responseMode),
       parentTraceId: options.parentTraceId,
+      aiTraceId: options.aiTraceId,
     }, (trace) => this.processMessageStreamUntraced(
       message,
       activeConversationId,
@@ -223,9 +238,13 @@ class ChatService {
       events,
       {
         ...options,
+        aiTraceId: options.aiTraceId || trace.id,
         aiExecutionTraceId: trace.id,
+        aiExecutionTrace: trace,
       }
-    ));
+    ), {
+      traceId: options.aiTraceId,
+    });
   }
 
   async processMessageStreamUntraced(message, activeConversationId, clientIP, events = {}, options = {}) {
@@ -267,6 +286,17 @@ class ChatService {
         meta: buildPromptMeta(),
       });
       events.onChunk?.(inputGuardrail.response);
+      analytics.track({
+        userId,
+        anonymousId: `conversation:${activeConversationId}`,
+        event: ANALYTICS_EVENTS.CHAT_MESSAGE_SENT,
+        properties: {
+          conversationId: activeConversationId,
+          role,
+          source: resolveChatSource(options),
+          aiTraceId: options.aiTraceId || parentTraceId,
+        },
+      });
 
       return {
         conversationId: activeConversationId,
@@ -298,7 +328,12 @@ class ChatService {
     const ragContext = await ragService.buildContext(conversationMessages, message, {
       clientIP,
       conversationId: activeConversationId,
+      userId,
+      role,
+      ...(authUser ? { authUser } : {}),
       parentTraceId,
+      aiTraceId: options.aiTraceId || parentTraceId,
+      source: resolveChatSource(options),
     });
 
     throwIfAborted(signal);
@@ -313,12 +348,19 @@ class ChatService {
       conversationId: activeConversationId,
       role,
       ...(responseMode ? { responseMode } : {}),
+      model: env.openAiModel,
+      promptVersion: CHAT_SYSTEM_PROMPT_VERSION,
+      promptVersions: {
+        chat: CHAT_SYSTEM_PROMPT_VERSION,
+      },
+      source: resolveChatSource(options),
       ...(userId ? { userId } : {}),
       ...(authUser ? { authUser } : {}),
       ...(customerContext ? { customerContext } : {}),
       ...(options.conversationContext ? { conversationContext: options.conversationContext } : {}),
       ...(ragContext.ragTrace ? { ragTrace: ragContext.ragTrace } : {}),
       ...(parentTraceId ? { parentTraceId } : {}),
+      aiTraceId: options.aiTraceId || parentTraceId,
     };
 
     events.onStart?.({
@@ -349,12 +391,16 @@ class ChatService {
       const replacement = error.guardrail.response;
       aiTelemetry.recordAiError('hallucination_event', {
         conversationId: activeConversationId,
+        userId,
+        aiTraceId: options.aiTraceId || parentTraceId,
         code: error.guardrail.code,
         reason: error.guardrail.reason,
         stage: 'streaming_output_guardrail',
       });
       aiTelemetry.recordAiError('invalid_output', {
         conversationId: activeConversationId,
+        userId,
+        aiTraceId: options.aiTraceId || parentTraceId,
         code: error.guardrail.code,
         stage: 'streaming_output_guardrail',
       });
@@ -367,12 +413,16 @@ class ChatService {
     if (outputGuardrail.blocked) {
       aiTelemetry.recordAiError('hallucination_event', {
         conversationId: activeConversationId,
+        userId,
+        aiTraceId: options.aiTraceId || parentTraceId,
         code: outputGuardrail.code,
         reason: outputGuardrail.reason,
         stage: 'final_output_guardrail',
       });
       aiTelemetry.recordAiError('invalid_output', {
         conversationId: activeConversationId,
+        userId,
+        aiTraceId: options.aiTraceId || parentTraceId,
         code: outputGuardrail.code,
         stage: 'final_output_guardrail',
       });
@@ -390,7 +440,17 @@ class ChatService {
 
     const finalResponse = outputGuardrail.response;
     throwIfAborted(signal);
-    await usageService.recordOpenAiUsage(userId, openAiMetadata.openAiUsage);
+    const usageRecord = await usageService.recordOpenAiUsage(userId, openAiMetadata.openAiUsage, {
+      usageEventId: options.usageEventId,
+      traceId: options.aiExecutionTraceId,
+    });
+
+    if (usageRecord?.traceMetadata) {
+      options.aiExecutionTrace?.annotate?.({
+        billing: usageRecord.traceMetadata,
+      });
+    }
+
     const messageMeta = buildToolMeta(openAiMetadata);
     const conversationMeta = buildConversationMeta(openAiMetadata);
     const saveOptions = {
@@ -403,6 +463,17 @@ class ChatService {
     } else {
       await conversationService.saveExchange(activeConversationId, message, finalResponse);
     }
+    analytics.track({
+      userId,
+      anonymousId: `conversation:${activeConversationId}`,
+      event: ANALYTICS_EVENTS.CHAT_MESSAGE_SENT,
+      properties: {
+        conversationId: activeConversationId,
+        role,
+        source: openAiMetadata.source,
+        aiTraceId: openAiMetadata.aiTraceId,
+      },
+    });
 
     return {
       conversationId: activeConversationId,
@@ -475,5 +546,6 @@ export {
   buildToolMeta,
   mergeAuthenticatedCustomerContext,
   normalizeResponseMode,
+  resolveChatSource,
 };
 export default new ChatService();

@@ -6,6 +6,13 @@ const mockAssertCanAccess = jest.fn();
 const mockBuildContext = jest.fn();
 const mockStreamResponseWithTools = jest.fn();
 const mockRecordOpenAiUsage = jest.fn();
+const mockAnalyticsTrack = jest.fn();
+
+await jest.unstable_mockModule('../src/analytics/analytics.service.js', () => ({
+  default: {
+    track: mockAnalyticsTrack,
+  },
+}));
 
 await jest.unstable_mockModule('../src/services/conversation.service.js', () => ({
   default: {
@@ -15,7 +22,7 @@ await jest.unstable_mockModule('../src/services/conversation.service.js', () => 
   },
 }));
 
-await jest.unstable_mockModule('../src/ai/openai.service.js', () => ({
+await jest.unstable_mockModule('../src/ai/services/openai.service.js', () => ({
   default: {
     streamResponseWithTools: mockStreamResponseWithTools,
   },
@@ -56,6 +63,7 @@ describe('ChatService streaming orchestration', () => {
   });
 
   it('streams chunks and stores the completed assistant response', async () => {
+    const aiTraceId = '11111111-1111-4111-8111-111111111111';
     const events = {
       onStart: jest.fn(),
       onChunk: jest.fn(),
@@ -77,7 +85,8 @@ describe('ChatService streaming orchestration', () => {
       'Where can I see toucans?',
       'conversation-123',
       '127.0.0.1',
-      events
+      events,
+      { aiTraceId }
     );
 
     expect(events.onStart).toHaveBeenCalledWith({
@@ -101,7 +110,8 @@ describe('ChatService streaming orchestration', () => {
         clientIP: '127.0.0.1',
         conversationId: 'conversation-123',
         role: 'visitor',
-        parentTraceId: expect.any(String),
+        parentTraceId: aiTraceId,
+        aiTraceId,
       }),
       {
         onChunk: expect.any(Function),
@@ -123,6 +133,32 @@ describe('ChatService streaming orchestration', () => {
         },
       },
     });
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith({
+      userId: undefined,
+      anonymousId: 'conversation:conversation-123',
+      event: 'chat_message_sent',
+      properties: {
+        conversationId: 'conversation-123',
+        role: 'visitor',
+        source: 'text',
+        aiTraceId,
+      },
+    });
+    expect(mockBuildContext).toHaveBeenCalledWith(
+      conversationMessages,
+      'Where can I see toucans?',
+      expect.objectContaining({
+        parentTraceId: aiTraceId,
+        aiTraceId,
+      })
+    );
+    expect(mockRecordOpenAiUsage).toHaveBeenCalledWith(
+      undefined,
+      undefined,
+      expect.objectContaining({
+        traceId: aiTraceId,
+      })
+    );
   });
 
   it('sends RAG-augmented messages to OpenAI and returns sources', async () => {
@@ -569,11 +605,31 @@ describe('ChatService streaming orchestration', () => {
     const openAiUsage = {
       promptTokens: 1000,
       completionTokens: 250,
+      totalTokens: 1250,
       estimatedCostUsd: 0.005,
       hasEstimatedCost: true,
+      modelUsage: [
+        {
+          model: 'gpt-4o-mini',
+          promptTokens: 1000,
+          completionTokens: 250,
+          totalTokens: 1250,
+          estimatedCostUsd: 0.005,
+        },
+      ],
+    };
+    const usageRecord = {
+      traceMetadata: {
+        billingUsageEventId: 'usage-1',
+        billingFeature: 'chat',
+        requestCostUsd: 0.005,
+        requestTokens: 1250,
+        modelUsage: openAiUsage.modelUsage,
+      },
     };
 
     mockBuildConversationContext.mockResolvedValue(conversationMessages);
+    mockRecordOpenAiUsage.mockResolvedValue(usageRecord);
     mockStreamResponseWithTools.mockImplementation(async (messages, metadata) => {
       metadata.openAiUsage = openAiUsage;
       return 'Quetzals favor cloud forest habitat.';
@@ -593,7 +649,10 @@ describe('ChatService streaming orchestration', () => {
       }
     );
 
-    expect(mockRecordOpenAiUsage).toHaveBeenCalledWith('7', openAiUsage);
+    expect(mockRecordOpenAiUsage).toHaveBeenCalledWith('7', openAiUsage, {
+      usageEventId: undefined,
+      traceId: expect.any(String),
+    });
   });
 
   it('blocks visitor reservation requests before AI orchestration', async () => {

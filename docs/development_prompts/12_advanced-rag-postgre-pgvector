@@ -24,7 +24,7 @@ src/db/
     vector.schema.sql
   retrieval/
     services/retrieval.service.js
-src/ai/enrichment/
+src/ingestion/
   services/
     enrichment.service.js
   chunking/

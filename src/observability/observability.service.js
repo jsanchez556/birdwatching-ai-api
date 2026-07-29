@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { Client as LangSmithClient } from 'langsmith';
 import env from '../config/env.js';
 import aiTelemetry, { normalizeTokenUsage, sanitizeTelemetryValue } from '../monitoring/aiTelemetry.js';
+import { estimateCost } from '../ai/evaluations/token.usage.js';
 import logger from '../utils/logger.js';
 
 function isTracingEnabled(config = env) {
@@ -13,6 +14,30 @@ function configureLangSmithEnvironment(config = env) {
   if (config.langChainTracingV2) process.env.LANGCHAIN_TRACING ||= 'true';
   if (config.langChainProject) process.env.LANGCHAIN_PROJECT ||= config.langChainProject;
   if (config.langChainApiKey) process.env.LANGCHAIN_API_KEY ||= config.langChainApiKey;
+}
+
+const ALLOWED_LANGSMITH_HOSTS = new Set([
+  'smith.langchain.com',
+  'eu.smith.langchain.com',
+  'aws.smith.langchain.com',
+  'apac.smith.langchain.com',
+]);
+
+function validateLangSmithUrl(value) {
+  if (typeof value !== 'string') return null;
+
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:'
+      && url.port === ''
+      && url.username === ''
+      && url.password === ''
+      && ALLOWED_LANGSMITH_HOSTS.has(url.hostname)
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 class ObservabilityService {
@@ -44,9 +69,9 @@ class ObservabilityService {
     };
   }
 
-  startTrace({ type, name, metadata = {}, parentTraceId } = {}) {
+  startTrace({ type, name, metadata = {}, parentTraceId, traceId } = {}) {
     const trace = {
-      id: this.idFactory(),
+      id: traceId || this.idFactory(),
       parentTraceId,
       type: type || 'ai',
       name: name || 'unnamed',
@@ -59,10 +84,11 @@ class ObservabilityService {
 
     this.telemetry.recordTraceStarted(trace);
 
-    return {
+    const publicTrace = {
       ...trace,
       annotate: (details = {}) => {
         trace.metadata = { ...trace.metadata, ...details };
+        publicTrace.metadata = trace.metadata;
       },
       end: (details = {}) => {
         this.telemetry.recordLatency(trace, this.clock.now() - trace.startedAt, details);
@@ -78,6 +104,7 @@ class ObservabilityService {
           completionTokens: currentUsage.completionTokens + nextUsage.completionTokens,
           totalTokens: currentUsage.totalTokens + nextUsage.totalTokens,
         };
+        publicTrace.tokenUsage = trace.tokenUsage;
         this.telemetry.recordTokenUsage(trace, usage);
       },
       child: (childType, childName, childMetadata = {}) => this.startTrace({
@@ -87,10 +114,26 @@ class ObservabilityService {
         parentTraceId: trace.id,
       }),
     };
+
+    return publicTrace;
   }
 
-  async trace({ type, name, metadata = {}, parentTraceId, tokenUsage, outputMetadata }, operation) {
-    const trace = this.startTrace({ type, name, metadata, parentTraceId });
+  async trace({
+    type,
+    name,
+    metadata = {},
+    parentTraceId,
+    traceId,
+    tokenUsage,
+    outputMetadata,
+  }, operation) {
+    const trace = this.startTrace({
+      type,
+      name,
+      metadata,
+      parentTraceId,
+      traceId,
+    });
 
     try {
       await this.createLangSmithRun(trace);
@@ -122,6 +165,7 @@ class ObservabilityService {
     const runTypes = {
       ai_execution_flow: 'chain',
       bird_identification_pipeline: 'chain',
+      cache: 'tool',
       conversation_context: 'chain',
       final_response: 'chain',
       image_input: 'tool',
@@ -131,6 +175,11 @@ class ObservabilityService {
       tool_execution: 'tool',
       agent_orchestration: 'chain',
       agent_planning: 'chain',
+      background_job: 'chain',
+      evaluation: 'chain',
+      evaluation_comparison: 'chain',
+      evaluation_run: 'chain',
+      evaluation_score: 'chain',
       tool_sequence: 'chain',
     };
 
@@ -164,10 +213,25 @@ class ObservabilityService {
     if (!this.langSmithClient || !trace.langSmithEnabled) return;
 
     const tokenUsage = usage ? normalizeTokenUsage(usage) : trace.tokenUsage;
+    const model = details?.model || trace.metadata?.model;
+    const estimatedCostUsd = model && tokenUsage
+      ? estimateCost(model, tokenUsage)
+      : null;
 
     await this.sendLangSmithUpdate('complete', trace, async () => this.langSmithClient.updateRun(trace.id, {
       end_time: new Date(this.clock.now()).toISOString(),
-      outputs: sanitizeTelemetryValue(details),
+      outputs: sanitizeTelemetryValue({
+        ...details,
+        ...(estimatedCostUsd === null ? {} : { estimatedCostUsd }),
+      }),
+      extra: {
+        metadata: {
+          traceType: trace.type,
+          langSmithEnabled: trace.langSmithEnabled,
+          ...sanitizeTelemetryValue(trace.metadata || {}),
+          ...(estimatedCostUsd === null ? {} : { estimatedCostUsd }),
+        },
+      },
       ...(tokenUsage ? {
         prompt_tokens: tokenUsage.promptTokens,
         completion_tokens: tokenUsage.completionTokens,
@@ -203,11 +267,26 @@ class ObservabilityService {
       });
     }
   }
+
+  async getTraceUrl(traceId) {
+    if (!this.langSmithClient || !isTracingEnabled(this.config) || typeof traceId !== 'string') {
+      return null;
+    }
+
+    try {
+      const traceUrl = await this.langSmithClient.getRunUrl({ runId: traceId });
+      return validateLangSmithUrl(traceUrl);
+    } catch {
+      return null;
+    }
+  }
 }
 
 export {
+  ALLOWED_LANGSMITH_HOSTS,
   configureLangSmithEnvironment,
   isTracingEnabled,
   ObservabilityService,
+  validateLangSmithUrl,
 };
 export default new ObservabilityService();

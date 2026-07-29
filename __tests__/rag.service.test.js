@@ -3,7 +3,7 @@ import { jest } from '@jest/globals';
 const mockRetrieve = jest.fn();
 const mockFindBirdProfile = jest.fn();
 
-await jest.unstable_mockModule('../src/ai/enrichment/services/retrieval.service.js', () => ({
+await jest.unstable_mockModule('../src/ai/services/retrieval.service.js', () => ({
   default: {
     retrieve: mockRetrieve,
   },
@@ -13,6 +13,21 @@ await jest.unstable_mockModule('../src/db/vector/vector.repository.js', () => ({
   default: {
     findBirdProfile: mockFindBirdProfile,
   },
+}));
+
+await jest.unstable_mockModule('../src/cache/retrievalCache.js', () => ({
+  default: () => ({
+    get: jest.fn().mockResolvedValue(null),
+    set: jest.fn().mockResolvedValue(undefined),
+  }),
+}));
+
+const mockTraceCacheOperation = jest.fn(async (name, metadata, operation) => operation());
+
+await jest.unstable_mockModule('../src/tracing/aiTracing.middleware.js', () => ({
+  traceCacheOperation: mockTraceCacheOperation,
+  traceRagPipeline: async (name, metadata, operation) => operation(),
+  traceRagRetrieval: async (name, metadata, operation) => operation(),
 }));
 
 await jest.unstable_mockModule('../src/utils/logger.js', () => ({
@@ -25,6 +40,8 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
 
 const {
   default: ragService,
+  buildRetrievalCacheKey,
+  RagService,
   summarizeRetrievedChunks,
 } = await import('../src/services/rag.service.js');
 const { formatRetrievedContext } = await import('../src/ai/prompts/rag.context.js');
@@ -91,6 +108,198 @@ describe('RagService', () => {
     expect(mockFindBirdProfile).toHaveBeenCalledWith({
       speciesCode: 'quetz1',
       name: 'Resplendent Quetzal',
+    });
+  });
+
+  it('builds stable retrieval cache keys for equivalent questions and matching parameters', () => {
+    const options = {
+      topK: 5,
+      filters: {
+        location: 'Monteverde',
+        category: 'Trogons',
+      },
+      minScore: 0.2,
+      minSemanticScore: 0.15,
+      maxChunksPerDocument: 1,
+    };
+
+    expect(buildRetrievalCacheKey(' Where can I see QUÉTZALS??? ', options))
+      .toBe(buildRetrievalCacheKey('where can i see quetzals', {
+        ...options,
+        filters: {
+          category: 'Trogons',
+          location: 'Monteverde',
+        },
+      }));
+  });
+
+  it('returns cached retrieval chunks without calling pgvector-backed retrieval', async () => {
+    const documents = [
+      {
+        id: 'bird-resque1',
+        name: 'Resplendent Quetzal',
+        locations: 'Monteverde',
+      },
+    ];
+    const retriever = {
+      retrieve: jest.fn(),
+    };
+    const retrievalCache = {
+      get: jest.fn().mockResolvedValue(documents),
+      set: jest.fn(),
+    };
+    const service = new RagService({
+      retriever,
+      retrievalCache,
+      redisConfig: { retrievalCacheTtlSeconds: 45 },
+      log: logger,
+    });
+
+    await expect(service.retrieveContext('Where can I see quetzals?', {
+      conversationId: 'conversation-123',
+      topK: 5,
+    })).resolves.toEqual(documents);
+
+    expect(retriever.retrieve).not.toHaveBeenCalled();
+    expect(retrievalCache.set).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith('CACHE HIT', {
+      cache: 'rag_retrieval',
+      conversationId: 'conversation-123',
+    });
+    expect(mockTraceCacheOperation).toHaveBeenCalledWith(
+      'rag_retrieval_cache_lookup',
+      expect.objectContaining({
+        conversationId: 'conversation-123',
+        cacheName: 'rag_retrieval',
+      }),
+      expect.any(Function)
+    );
+    expect(mockTraceCacheOperation).not.toHaveBeenCalledWith(
+      'rag_retrieval_cache_write',
+      expect.any(Object),
+      expect.any(Function)
+    );
+  });
+
+  it('caches retrieval chunks after a cache miss using the configured TTL', async () => {
+    const documents = [
+      {
+        id: 'bird-resque1',
+        name: 'Resplendent Quetzal',
+        locations: 'Monteverde',
+      },
+    ];
+    const retriever = {
+      retrieve: jest.fn().mockResolvedValue(documents),
+    };
+    const retrievalCache = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new RagService({
+      retriever,
+      retrievalCache,
+      redisConfig: { retrievalCacheTtlSeconds: 90 },
+      log: logger,
+    });
+
+    await expect(service.retrieveContext('Where can I see quetzals?', {
+      conversationId: 'conversation-123',
+      topK: 5,
+      location: 'Monteverde',
+    })).resolves.toEqual(documents);
+
+    expect(retriever.retrieve).toHaveBeenCalledWith('Where can I see quetzals?', {
+      topK: 5,
+      filters: {
+        location: 'Monteverde',
+      },
+      minScore: undefined,
+      minSemanticScore: undefined,
+      maxChunksPerDocument: undefined,
+    });
+    expect(retrievalCache.set).toHaveBeenCalledWith(
+      expect.stringMatching(/^rag-retrieval:[a-f0-9]{64}$/),
+      documents,
+      { ttlSeconds: 90 }
+    );
+    expect(logger.info).toHaveBeenCalledWith('CACHE MISS', {
+      cache: 'rag_retrieval',
+      conversationId: 'conversation-123',
+    });
+    expect(mockTraceCacheOperation).toHaveBeenCalledWith(
+      'rag_retrieval_cache_lookup',
+      expect.objectContaining({ cacheName: 'rag_retrieval' }),
+      expect.any(Function)
+    );
+    expect(mockTraceCacheOperation).toHaveBeenCalledWith(
+      'rag_retrieval_cache_write',
+      expect.objectContaining({ cacheName: 'rag_retrieval' }),
+      expect.any(Function)
+    );
+  });
+
+  it('falls back to retrieval when Redis lookup fails', async () => {
+    const documents = [
+      {
+        id: 'bird-resque1',
+        name: 'Resplendent Quetzal',
+      },
+    ];
+    const retriever = {
+      retrieve: jest.fn().mockResolvedValue(documents),
+    };
+    const retrievalCache = {
+      get: jest.fn().mockRejectedValue(new Error('Redis unavailable')),
+      set: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new RagService({
+      retriever,
+      retrievalCache,
+      redisConfig: { retrievalCacheTtlSeconds: 90 },
+      log: logger,
+    });
+
+    await expect(service.retrieveContext('Where can I see quetzals?', {
+      conversationId: 'conversation-123',
+    })).resolves.toEqual(documents);
+
+    expect(retriever.retrieve).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith('RAG retrieval cache lookup failed', {
+      conversationId: 'conversation-123',
+      error: 'Redis unavailable',
+    });
+  });
+
+  it('continues retrieval when Redis cache write fails', async () => {
+    const documents = [
+      {
+        id: 'bird-resque1',
+        name: 'Resplendent Quetzal',
+      },
+    ];
+    const retriever = {
+      retrieve: jest.fn().mockResolvedValue(documents),
+    };
+    const retrievalCache = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockRejectedValue(new Error('Redis write failed')),
+    };
+    const service = new RagService({
+      retriever,
+      retrievalCache,
+      redisConfig: { retrievalCacheTtlSeconds: 90 },
+      log: logger,
+    });
+
+    await expect(service.retrieveContext('Where can I see quetzals?', {
+      conversationId: 'conversation-123',
+    })).resolves.toEqual(documents);
+
+    expect(retriever.retrieve).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith('RAG retrieval cache write failed', {
+      conversationId: 'conversation-123',
+      error: 'Redis write failed',
     });
   });
 
@@ -617,5 +826,45 @@ describe('RagService', () => {
       'soundduck',
       'noduck',
     ]);
+  });
+
+  it('uses the advanced retrieval profile only for the new_retrieval variant', async () => {
+    const retriever = {
+      retrieve: jest.fn().mockResolvedValue([]),
+    };
+    const service = new RagService({
+      retriever,
+      retrievalCache: {
+        get: jest.fn().mockResolvedValue(null),
+        set: jest.fn().mockResolvedValue(undefined),
+      },
+      redisConfig: { retrievalCacheTtlSeconds: 60 },
+      featureFlagService: {
+        getVariant: jest.fn().mockResolvedValue('new_retrieval'),
+      },
+      log: logger,
+    });
+
+    const context = await service.buildContext(
+      [{ role: 'user', content: 'Where can I see quetzals?' }],
+      'Where can I see quetzals?',
+      {
+        conversationId: 'conversation-variant',
+        userId: 'user-variant',
+        authUser: { plan: 'PRO' },
+        role: 'customer',
+      }
+    );
+
+    expect(retriever.retrieve).toHaveBeenCalledWith(
+      'Where can I see quetzals?',
+      expect.objectContaining({
+        candidateMultiplier: 6,
+        semanticWeight: 0.7,
+        keywordWeight: 0.3,
+        maxChunksPerDocument: 2,
+      })
+    );
+    expect(context.ragTrace.retrievalVariant).toBe('new_retrieval');
   });
 });

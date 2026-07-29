@@ -5,6 +5,7 @@ import request from 'supertest';
 const mockGetLatestConversation = jest.fn();
 const mockGetConversation = jest.fn();
 const mockProcessMessageStream = jest.fn();
+const mockReserveUsage = jest.fn();
 
 process.env.AI_RATE_LIMIT_MAX_REQUESTS = '2';
 
@@ -34,11 +35,28 @@ await jest.unstable_mockModule('../src/services/chat.service.js', () => ({
   },
 }));
 
-const { default: app } = await import('../src/app.js');
+await jest.unstable_mockModule('../src/services/quota.service.js', () => ({
+  QUOTA_FEATURES: {
+    CHAT: 'chat',
+    IDENTIFICATION: 'identification',
+  },
+  default: {
+    reserveUsage: mockReserveUsage,
+  },
+}));
+
+const { default: app } = await import('../src/api/app.js');
 
 describe('POST /chat', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockReserveUsage.mockResolvedValue({
+      allowed: true,
+      plan: 'FREE',
+      feature: 'chat',
+      used: 1,
+      max: 20,
+    });
   });
 
   it('streams chat chunks and a done event', async () => {
@@ -74,6 +92,9 @@ describe('POST /chat', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toContain('text/event-stream');
+    expect(res.headers['x-ai-trace-id']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
     expect(res.text).toContain('event: start');
     expect(res.text).toContain('data: {"conversationId":"conversation-123","sources":[]');
     expect(res.text).toContain('event: chunk');
@@ -92,6 +113,7 @@ describe('POST /chat', () => {
       }),
       expect.objectContaining({
         signal: expect.any(AbortSignal),
+        aiTraceId: res.headers['x-ai-trace-id'],
       })
     );
   });
@@ -118,6 +140,40 @@ describe('POST /chat', () => {
     expect(res.statusCode).toBe(200);
     expect(res.text).toContain('event: error');
     expect(res.text).toContain('Unable to stream chat response right now.');
+  });
+
+  it('returns 429 before streaming when daily chat quota is exceeded', async () => {
+    const quotaError = new Error('Daily quota exceeded');
+    quotaError.status = 429;
+    quotaError.code = 'QUOTA_EXCEEDED';
+    quotaError.details = {
+      plan: 'FREE',
+      feature: 'chat',
+      used: 20,
+      max: 20,
+    };
+    mockReserveUsage.mockRejectedValue(quotaError);
+
+    const res = await request(app)
+      .post('/chat')
+      .set('Authorization', authHeader('chat-quota-user'))
+      .send({ message: 'Hi', conversationId: 'conversation-123' });
+
+    expect(res.statusCode).toBe(429);
+    expect(res.body).toEqual({
+      success: false,
+      error: {
+        code: 'QUOTA_EXCEEDED',
+        message: 'Daily quota exceeded',
+        details: {
+          plan: 'FREE',
+          feature: 'chat',
+          used: 20,
+          max: 20,
+        },
+      },
+    });
+    expect(mockProcessMessageStream).not.toHaveBeenCalled();
   });
 
   it('returns 429 when authenticated AI requests exceed the per-minute limit', async () => {

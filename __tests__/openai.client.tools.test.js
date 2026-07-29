@@ -29,7 +29,11 @@ await jest.unstable_mockModule('../src/ai/tools/index.js', () => ({
   executeToolCall: jest.fn(),
 }));
 
-const { default: openaiClient } = await import('../src/ai/openai.client.js');
+const {
+  default: openaiClient,
+  OpenAIClient,
+  buildEmbeddingCacheKey,
+} = await import('../src/ai/clients/openai.client.js');
 const { default: logger } = await import('../src/utils/logger.js');
 
 describe('OpenAIClient tool calling', () => {
@@ -117,6 +121,14 @@ describe('OpenAIClient tool calling', () => {
       completionTokens: 370,
       totalTokens: 2570,
       hasEstimatedCost: true,
+      modelUsage: [
+        expect.objectContaining({
+          model: 'gpt-4o',
+          promptTokens: 2200,
+          completionTokens: 370,
+          totalTokens: 2570,
+        }),
+      ],
     });
     expect(usage.openAiUsage.estimatedCostDisplay).toMatch(/^\$\d+\.\d{4}$/);
 
@@ -337,5 +349,151 @@ describe('OpenAIClient tool calling', () => {
         name: 'SyntaxError',
       }),
     }));
+  });
+
+  it('builds deterministic embedding cache keys from normalized input', () => {
+    expect(buildEmbeddingCacheKey('  Where   can I see quetzals? ', {
+      model: 'text-embedding-3-small',
+      inputKind: 'single',
+    })).toBe(buildEmbeddingCacheKey('Where can I see quetzals?', {
+      model: 'text-embedding-3-small',
+      inputKind: 'single',
+    }));
+    expect(buildEmbeddingCacheKey('Where can I see quetzals?', {
+      model: 'text-embedding-3-small',
+      inputKind: 'single',
+    })).not.toBe(buildEmbeddingCacheKey('Where can I see quetzals?', {
+      model: 'text-embedding-3-small',
+      inputKind: 'array',
+    }));
+  });
+
+  it('returns cached embeddings without calling OpenAI', async () => {
+    const embeddingCache = {
+      get: jest.fn().mockResolvedValue({ embedding: [0.1, 0.2] }),
+      set: jest.fn(),
+    };
+    const client = new OpenAIClient({
+      embeddingCache,
+      redisConfig: { embeddingCacheTtlSeconds: 900 },
+      log: logger,
+    });
+
+    await expect(client.generateEmbedding('Where can I see quetzals?'))
+      .resolves.toEqual([[0.1, 0.2]]);
+
+    expect(mockEmbeddingsCreate).not.toHaveBeenCalled();
+    expect(embeddingCache.set).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith('Embedding cache hit', {
+      inputCount: 1,
+      model: expect.any(String),
+    });
+  });
+
+  it('writes missed embeddings to cache with the configured TTL', async () => {
+    const embeddingCache = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue(undefined),
+    };
+    const client = new OpenAIClient({
+      embeddingCache,
+      redisConfig: { embeddingCacheTtlSeconds: 900 },
+      log: logger,
+    });
+
+    mockEmbeddingsCreate.mockResolvedValue({
+      id: 'embedding-1',
+      model: 'text-embedding-3-small',
+      data: [
+        { index: 0, embedding: [0.1, 0.2] },
+      ],
+      usage: {
+        prompt_tokens: 10,
+        total_tokens: 10,
+      },
+    });
+
+    await expect(client.generateEmbedding('Where can I see quetzals?'))
+      .resolves.toEqual([[0.1, 0.2]]);
+
+    expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
+      model: expect.any(String),
+      input: ['Where can I see quetzals?'],
+    });
+    expect(embeddingCache.set).toHaveBeenCalledWith(
+      expect.stringMatching(/^embedding:[a-f0-9]{64}$/),
+      {
+        embedding: [0.1, 0.2],
+        model: expect.any(String),
+      },
+      { ttlSeconds: 900 }
+    );
+    expect(logger.info).toHaveBeenCalledWith('Embedding cache miss', {
+      inputCount: 1,
+      missCount: 1,
+      model: expect.any(String),
+    });
+  });
+
+  it('supports partial cache hits for array input while preserving order', async () => {
+    const embeddingCache = {
+      get: jest.fn()
+        .mockResolvedValueOnce({ embedding: [1, 0] })
+        .mockResolvedValueOnce(null),
+      set: jest.fn().mockResolvedValue(undefined),
+    };
+    const client = new OpenAIClient({
+      embeddingCache,
+      redisConfig: { embeddingCacheTtlSeconds: 900 },
+      log: logger,
+    });
+
+    mockEmbeddingsCreate.mockResolvedValue({
+      id: 'embedding-1',
+      model: 'text-embedding-3-small',
+      data: [
+        { index: 0, embedding: [0, 1] },
+      ],
+      usage: {},
+    });
+
+    await expect(client.generateEmbedding(['cached question', 'fresh question']))
+      .resolves.toEqual([[1, 0], [0, 1]]);
+
+    expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
+      model: expect.any(String),
+      input: ['fresh question'],
+    });
+    expect(embeddingCache.set).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to OpenAI when embedding cache lookup fails', async () => {
+    const embeddingCache = {
+      get: jest.fn().mockRejectedValue(new Error('Redis unavailable')),
+      set: jest.fn().mockResolvedValue(undefined),
+    };
+    const client = new OpenAIClient({
+      embeddingCache,
+      redisConfig: { embeddingCacheTtlSeconds: 900 },
+      log: logger,
+    });
+
+    mockEmbeddingsCreate.mockResolvedValue({
+      id: 'embedding-1',
+      model: 'text-embedding-3-small',
+      data: [
+        { index: 0, embedding: [0.1, 0.2] },
+      ],
+      usage: {},
+    });
+
+    await expect(client.generateEmbedding('Where can I see quetzals?'))
+      .resolves.toEqual([[0.1, 0.2]]);
+
+    expect(mockEmbeddingsCreate).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith('Embedding cache lookup failed', {
+      error: 'Redis unavailable',
+      model: expect.any(String),
+    });
   });
 });

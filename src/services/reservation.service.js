@@ -3,6 +3,9 @@ import reservationQueries from '../db/queries/reservation.queries.js';
 import tourQueries from '../db/queries/tour.queries.js';
 import { DEFAULT_CURRENCY } from '../constants/business.js';
 import logger from '../utils/logger.js';
+import analytics from '../analytics/analytics.service.js';
+import { ANALYTICS_EVENTS } from '../analytics/events.js';
+import { getTourRecommendationEventProperties } from '../experiments/tourRecommendation.experiment.js';
 import {
   normalizeComparableText,
   normalizeOptionalText,
@@ -235,7 +238,7 @@ class ReservationService {
     };
   }
 
-  async checkTourAvailability({ tourId, tourName, location, participants } = {}) {
+  async checkTourAvailability({ tourId, tourName, location, participants } = {}, metadata = {}) {
     const resolvedTour = await this.resolveTour({
       tourId,
       tourName,
@@ -247,7 +250,41 @@ class ReservationService {
       return resolvedTour;
     }
 
-    return toAvailabilityResult(resolvedTour.tour);
+    const result = toAvailabilityResult(resolvedTour.tour);
+    analytics.track({
+      userId: metadata.userId,
+      anonymousId: metadata.conversationId
+        ? `conversation:${metadata.conversationId}`
+        : undefined,
+      event: ANALYTICS_EVENTS.TOUR_SELECTED,
+      idempotencyKey: metadata.conversationId
+        ? `${metadata.conversationId}:${result.tourId}`
+        : undefined,
+      properties: {
+        conversationId: metadata.conversationId,
+        source: metadata.source || 'chat',
+        tourId: result.tourId,
+        aiTraceId: metadata.aiTraceId,
+        ...getTourRecommendationEventProperties(metadata),
+      },
+    });
+    analytics.track({
+      userId: metadata.userId,
+      anonymousId: metadata.conversationId
+        ? `conversation:${metadata.conversationId}`
+        : undefined,
+      event: ANALYTICS_EVENTS.AVAILABILITY_CHECKED,
+      properties: {
+        conversationId: metadata.conversationId,
+        source: metadata.source || 'chat',
+        tourId: result.tourId,
+        participants: participants ? Number(participants) : undefined,
+        availabilityResult: result.isAvailable,
+        availableSlots: result.availableSlots,
+        aiTraceId: metadata.aiTraceId,
+      },
+    });
+    return result;
   }
 
   async calculateTourPrice({ tourId, tourName, location, participants, discountCode } = {}) {
@@ -308,6 +345,28 @@ class ReservationService {
 
     const normalizedTourId = resolvedTour.tour.id;
     const discount = calculateDiscount(participantCount, discountCode);
+    const normalizedConversationId = normalizeText(conversationId || metadata.conversationId);
+    const reservationAttemptKey = normalizedConversationId
+      ? `${normalizedConversationId}:${normalizedTourId}:${participantCount}`
+      : undefined;
+
+    analytics.track({
+      userId: metadata.userId,
+      anonymousId: normalizedConversationId
+        ? `conversation:${normalizedConversationId}`
+        : undefined,
+      event: ANALYTICS_EVENTS.RESERVATION_STARTED,
+      idempotencyKey: reservationAttemptKey,
+      properties: {
+        conversationId: normalizedConversationId,
+        participants: participantCount,
+        plan: metadata.authUser?.plan,
+        source: metadata.source || 'chat',
+        tourId: normalizedTourId,
+        aiTraceId: metadata.aiTraceId,
+        ...getTourRecommendationEventProperties(metadata),
+      },
+    });
 
     for (let attempt = 1; attempt <= MAX_CONFIRMATION_ATTEMPTS; attempt += 1) {
       const confirmationCode = generateConfirmationCode();
@@ -318,7 +377,7 @@ class ReservationService {
           participants: participantCount,
           customerName: reservationName,
           customerEmail: normalizeText(customerEmail),
-          conversationId: normalizeText(conversationId || metadata.conversationId),
+          conversationId: normalizedConversationId,
           confirmationCode,
           discountRate: discount.discountRate,
           userId: metadata.userId,
@@ -330,13 +389,33 @@ class ReservationService {
 
         const { reservation, tour } = result;
 
-        return buildReservationResult({
+        const reservationResult = buildReservationResult({
           reservation,
           tour,
           discount,
           itineraryStartDate: itineraryStartDate || metadata.customerContext?.itineraryStartDate,
           itineraryEndDate: itineraryEndDate || metadata.customerContext?.itineraryEndDate,
         });
+        analytics.track({
+          userId: metadata.userId,
+          anonymousId: normalizedConversationId
+            ? `conversation:${normalizedConversationId}`
+            : undefined,
+          event: ANALYTICS_EVENTS.RESERVATION_COMPLETED,
+          idempotencyKey: reservationResult.reservationId,
+          properties: {
+            conversationId: reservationResult.conversationId,
+            plan: metadata.authUser?.plan,
+            source: metadata.source || 'chat',
+            tourId: reservationResult.tourId,
+            participants: reservationResult.participants,
+            amount: reservationResult.totalPrice,
+            currency: reservationResult.currency,
+            aiTraceId: metadata.aiTraceId,
+            ...getTourRecommendationEventProperties(metadata),
+          },
+        });
+        return reservationResult;
       } catch (error) {
         if (error.code === '23505' && attempt < MAX_CONFIRMATION_ATTEMPTS) {
           logger.warn('Reservation confirmation code collision; retrying', {

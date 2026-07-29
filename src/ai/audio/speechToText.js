@@ -1,15 +1,11 @@
 import { File } from 'node:buffer';
-import openaiClient from '../openai.client.js';
+import openaiClient from '../clients/openai.client.js';
 import { traceLlmCall } from '../../tracing/aiTracing.middleware.js';
 import { asyncRetry } from '../../utils/async.utils.js';
 import logger from '../../utils/logger.js';
+import { isRetryableOpenAIError } from '../utils/openaiRetry.utils.js';
 
 const TRANSCRIPTION_MODEL = 'gpt-4o-mini-transcribe';
-const RETRYABLE_STATUSES = new Set([408, 409, 429, 500, 502, 503, 504]);
-
-function isRetryableOpenAIError(error) {
-  return RETRYABLE_STATUSES.has(error?.status) || error?.code === 'ETIMEDOUT';
-}
 
 function normalizeTranscript(response) {
   if (typeof response?.text !== 'string' || !response.text.trim()) {
@@ -25,9 +21,11 @@ class SpeechToText {
 
     const response = await traceLlmCall('audio_transcription', {
       model: TRANSCRIPTION_MODEL,
+      promptVersion: 'not_applicable',
       fileType: mimeType,
       fileSizeBytes: buffer.length,
       parentTraceId: metadata.parentTraceId,
+      cacheStatus: 'not_applicable',
     }, () => asyncRetry(() => openaiClient.client.audio.transcriptions.create({
       file,
       model: TRANSCRIPTION_MODEL,
@@ -35,7 +33,14 @@ class SpeechToText {
       retries: 2,
       shouldRetry: isRetryableOpenAIError,
     }), {
-      tokenUsage: null,
+      tokenUsage: (result) => {
+        const completionTokens = Math.max(1, Math.ceil(String(result?.text || '').length / 4));
+        return {
+          promptTokens: 0,
+          completionTokens,
+          totalTokens: completionTokens,
+        };
+      },
       outputMetadata: (result) => ({
         requestId: result.id,
         model: TRANSCRIPTION_MODEL,

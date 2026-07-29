@@ -43,9 +43,10 @@ Query modules call those functions instead of embedding most persistence SQL dir
 `006_add_user_ownership.sql` replaces the conversation helpers with
 owner-aware signatures, and `007_save_conversation_metadata.sql` replaces
 `save_message(...)` again so chat-level JSONB metadata is merged into
-`conversations.metadata` when an exchange is saved. `015_add_conversation_type.sql`
+`conversations.metadata` when an exchange is saved. `015_reservations_refactor.sql`
 adds queryable conversation type/source columns and updates `save_message(...)`
-to copy those values from safe metadata.
+to copy those values from safe metadata while preserving reservation-entry chat
+state.
 
 ## Write Behavior
 `conversation.service.saveExchange(...)` writes one row per user/assistant exchange after OpenAI returns a chat response.

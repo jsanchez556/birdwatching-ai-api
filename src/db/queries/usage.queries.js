@@ -2,6 +2,56 @@ import pool from '../pool.js';
 import logger from '../../utils/logger.js';
 
 export class UsageQueries {
+  async createUsageEvent({
+    userId,
+    feature,
+    tokens = 0,
+    estimatedCost = null,
+    traceId = null,
+    modelUsage = [],
+  }) {
+    const result = await pool.query(
+      'SELECT * FROM record_usage_event($1, $2, $3, $4, $5, $6)',
+      [userId, feature, tokens, estimatedCost, traceId, JSON.stringify(modelUsage || [])]
+    );
+
+    return result.rows[0] || null;
+  }
+
+  async updateUsageEventCost({
+    usageEventId,
+    userId,
+    tokens = 0,
+    estimatedCost = null,
+    traceId = null,
+    modelUsage = [],
+  }) {
+    const result = await pool.query(
+      'SELECT * FROM update_usage_event_cost($1, $2, $3, $4, $5, $6)',
+      [usageEventId, userId, tokens, estimatedCost, traceId, JSON.stringify(modelUsage || [])]
+    );
+
+    return result.rows[0] || null;
+  }
+
+  async getMonthlyDashboard({ userId, monthStart = null }) {
+    const result = await pool.query(
+      'SELECT * FROM get_monthly_usage_dashboard($1, $2)',
+      [userId, monthStart]
+    );
+
+    return result.rows[0] || null;
+  }
+
+  async getBillingUsageDashboard({ userId, monthStart = null }) {
+    const result = await pool.query(
+      'SELECT * FROM get_monthly_billing_usage_dashboard($1, $2)',
+      [userId, monthStart]
+    );
+
+    return result.rows[0] || null;
+  }
+
   async createLog({ userId, promptTokens, completionTokens, estimatedCost }) {
     try {
       const query = `

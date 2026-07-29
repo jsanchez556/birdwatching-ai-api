@@ -1,15 +1,11 @@
-import openaiClient from '../openai.client.js';
+import openaiClient from '../clients/openai.client.js';
 import { traceLlmCall } from '../../tracing/aiTracing.middleware.js';
 import { asyncRetry } from '../../utils/async.utils.js';
 import logger from '../../utils/logger.js';
+import { isRetryableOpenAIError } from '../utils/openaiRetry.utils.js';
 
 const SPEECH_MODEL = 'gpt-4o-mini-tts';
 const SPEECH_VOICE = 'alloy';
-const RETRYABLE_STATUSES = new Set([408, 409, 429, 500, 502, 503, 504]);
-
-function isRetryableOpenAIError(error) {
-  return RETRYABLE_STATUSES.has(error?.status) || error?.code === 'ETIMEDOUT';
-}
 
 async function responseToBuffer(response) {
   if (Buffer.isBuffer(response)) {
@@ -39,9 +35,11 @@ class TextToSpeech {
   async synthesize({ text, metadata = {} }) {
     const response = await traceLlmCall('audio_speech_generation', {
       model: SPEECH_MODEL,
+      promptVersion: 'not_applicable',
       voice: SPEECH_VOICE,
       textLength: text.length,
       parentTraceId: metadata.parentTraceId,
+      cacheStatus: 'not_applicable',
     }, () => asyncRetry(() => openaiClient.client.audio.speech.create({
       model: SPEECH_MODEL,
       voice: SPEECH_VOICE,
@@ -51,7 +49,11 @@ class TextToSpeech {
       retries: 2,
       shouldRetry: isRetryableOpenAIError,
     }), {
-      tokenUsage: null,
+      tokenUsage: {
+        promptTokens: Math.max(1, Math.ceil(text.length / 4)),
+        completionTokens: 0,
+        totalTokens: Math.max(1, Math.ceil(text.length / 4)),
+      },
       outputMetadata: () => ({
         model: SPEECH_MODEL,
         voice: SPEECH_VOICE,

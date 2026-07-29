@@ -297,14 +297,16 @@ describe('birdIdentificationService', () => {
       userId: '7',
       metadata: {
         parentTraceId: 'trace-1',
+        aiTraceId: '11111111-1111-4111-8111-111111111111',
       },
     });
 
     expect(mockAnalyze).toHaveBeenCalledWith({
       imageUrl: 'https://example.test/bird.jpg',
-      metadata: {
+      metadata: expect.objectContaining({
         parentTraceId: 'bird-identification-parent-trace',
-      },
+        userId: '7',
+      }),
     });
     expect(mockTraceBirdIdentificationPipeline).toHaveBeenCalledWith(
       'bird_identification_multimodal_pipeline',
@@ -313,7 +315,10 @@ describe('birdIdentificationService', () => {
         hasImageUrl: true,
         userIdPresent: true,
       }),
-      expect.any(Function)
+      expect.any(Function),
+      {
+        traceId: '11111111-1111-4111-8111-111111111111',
+      }
     );
     expect(mockTraceImageInput).toHaveBeenCalledWith(
       'bird_identification_image_input',
@@ -370,13 +375,14 @@ describe('birdIdentificationService', () => {
         role: 'user',
         content: expect.stringContaining('likely birds: Resplendent Quetzal'),
       },
-    ], expect.stringContaining('visible traits: colors: green, red; beak: yellow'), {
+    ], expect.stringContaining('visible traits: colors: green, red; beak: yellow'), expect.objectContaining({
       parentTraceId: 'bird-identification-parent-trace',
+      userId: '7',
       topK: 5,
       filters: {
         documentType: 'bird_profile',
       },
-    });
+    }));
     expect(mockBuildContext.mock.calls[0][1]).toContain('bill shape: unknown');
     expect(mockBuildContext.mock.calls[0][1]).toContain('underparts: red');
     expect(mockCreateHistory).toHaveBeenCalledWith({
@@ -614,9 +620,10 @@ describe('birdIdentificationService', () => {
 
     expect(mockAnalyze).toHaveBeenCalledWith({
       imageUrl: 'https://example.test/multimodal-quetzal.jpg',
-      metadata: {
+      metadata: expect.objectContaining({
         parentTraceId: 'bird-identification-parent-trace',
-      },
+        userId: 7,
+      }),
     });
     expect(mockIdentify).toHaveBeenCalledWith(expect.objectContaining({
       imageAnalysis: expect.objectContaining({
@@ -627,13 +634,14 @@ describe('birdIdentificationService', () => {
     expect(mockBuildContext).toHaveBeenCalledWith(
       expect.any(Array),
       expect.stringContaining('likely birds: Resplendent Quetzal, Golden-browed Chlorophonia'),
-      {
+      expect.objectContaining({
         parentTraceId: 'bird-identification-parent-trace',
+        userId: 7,
         topK: 5,
         filters: {
           documentType: 'bird_profile',
         },
-      }
+      })
     );
     expect(mockBuildContext.mock.calls[0][1]).toContain('beak color interpretation: orange/yellow ambiguity');
     expect(result.candidates).toEqual([
@@ -949,6 +957,95 @@ describe('birdIdentificationService', () => {
     })).toMatchObject({
       status: 'unknown',
       bestMatch: null,
+    });
+  });
+
+  it('verification reuses generated candidate evidence when verifier omits it', () => {
+    expect(normalizeBirdVerification({
+      status: 'identified',
+      bestMatch: null,
+      candidates: [
+        {
+          commonName: 'Resplendent Quetzal',
+          scientificName: 'Pharomachrus mocinno',
+          confidence: 0.82,
+          reasoning: '',
+          visualEvidence: [],
+          ragSupport: ['Retrieved profile mentions green plumage and red underparts.'],
+          contradictions: [],
+          missingEvidence: [],
+        },
+      ],
+      notes: [],
+    }, {
+      imageAnalysis: {
+        confidence: 0.86,
+        imageQuality: 'clear',
+      },
+      fallbackCandidates: [
+        {
+          commonName: 'Resplendent Quetzal',
+          scientificName: 'Pharomachrus mocinno',
+          confidence: 0.84,
+          reasoning: 'Green upperparts and red underparts match a male quetzal.',
+          visualEvidence: ['green upperparts', 'red underparts'],
+          missingEvidence: ['tail streamers not visible'],
+        },
+      ],
+    })).toMatchObject({
+      status: 'identified',
+      bestMatch: {
+        commonName: 'Resplendent Quetzal',
+        confidence: 0.82,
+        reasoning: 'Green upperparts and red underparts match a male quetzal.',
+        visualEvidence: ['green upperparts', 'red underparts'],
+        ragSupport: ['Retrieved profile mentions green plumage and red underparts.'],
+        missingEvidence: ['tail streamers not visible'],
+      },
+    });
+  });
+
+  it('uses tolerant fallback verification when the verifier fails with sparse candidates', async () => {
+    mockVerifyAndRerank.mockRejectedValue(new Error('malformed verifier response'));
+
+    const result = await birdIdentificationService.verifyAndRerankBirdCandidates({
+      imageAnalysis: {
+        dominantColors: ['green'],
+        fieldMarks: ['red underparts'],
+        bill: {
+          color: 'yellow',
+        },
+        imageQuality: 'clear',
+        confidence: 0.72,
+      },
+      candidates: [
+        {
+          commonName: 'Resplendent Quetzal',
+          scientificName: 'Pharomachrus mocinno',
+          confidence: 0.62,
+        },
+      ],
+      retrievedProfiles: [
+        {
+          commonName: 'Resplendent Quetzal',
+          scientificName: 'Pharomachrus mocinno',
+          description: 'Retrieved profile mentions red underparts and green plumage.',
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      status: 'identified',
+      bestMatch: {
+        commonName: 'Resplendent Quetzal',
+        confidence: 0.62,
+        reasoning: 'Candidate kept from the image-identification step after verifier fallback calibration.',
+        visualEvidence: ['red underparts', 'green plumage', 'yellow bill'],
+        ragSupport: ['Retrieved profile mentions red underparts and green plumage.'],
+      },
+      notes: [
+        'Candidate verification used fallback confidence calibration because the verifier did not return a usable response.',
+      ],
     });
   });
 

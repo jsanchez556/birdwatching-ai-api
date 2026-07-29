@@ -1,5 +1,5 @@
-import openaiClient from '../ai/openai.client.js';
-import { isRetryableOpenAIError } from '../ai/openaiRetry.js';
+import openaiClient from '../ai/clients/openai.client.js';
+import { isRetryableOpenAIError } from '../ai/utils/openaiRetry.utils.js';
 import {
   BIRD_IMAGE_ANALYSIS_PROMPT_VERSION,
   BIRD_IMAGE_ANALYSIS_SYSTEM_PROMPT,
@@ -10,6 +10,8 @@ import { traceLlmCall } from '../tracing/aiTracing.middleware.js';
 import { asyncRetry } from '../utils/async.utils.js';
 import HttpError from '../utils/httpError.js';
 import logger from '../utils/logger.js';
+import { getCompletionUsageSummary } from '../ai/evaluations/token.usage.js';
+import usageService, { USAGE_FEATURES, buildModelUsageEntry } from './usage.service.js';
 
 const DEFAULT_IMAGE_ANALYSIS = {
   dominantColors: [],
@@ -116,6 +118,7 @@ class BirdImageAnalysisService {
       model: env.openAiModel,
       promptVersion: BIRD_IMAGE_ANALYSIS_PROMPT_VERSION,
       parentTraceId: metadata.parentTraceId,
+      cacheStatus: 'not_applicable',
     }, () => asyncRetry(() => openaiClient.client.chat.completions.create({
       model: env.openAiModel,
       messages: [
@@ -189,6 +192,23 @@ class BirdImageAnalysisService {
       colorCount: analysis.dominantColors.length,
       fieldMarkCount: analysis.fieldMarks.length,
       confidence: analysis.confidence,
+    });
+
+    const usage = getCompletionUsageSummary(response);
+    await usageService.recordUsageEvent({
+      userId: metadata.userId,
+      feature: USAGE_FEATURES.IMAGE_ANALYSIS,
+      tokens: usage.totalTokens,
+      estimatedCost: usage.estimatedCostUsd,
+      traceId: metadata.parentTraceId,
+      modelUsage: [
+        buildModelUsageEntry(response.model || env.openAiModel, {
+          promptTokens: usage.promptTokens,
+          completionTokens: usage.completionTokens,
+          totalTokens: usage.totalTokens,
+          estimatedCostUsd: usage.estimatedCostUsd,
+        }),
+      ],
     });
 
     return {

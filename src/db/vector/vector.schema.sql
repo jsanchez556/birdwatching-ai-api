@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS knowledge_documents (
   id SERIAL PRIMARY KEY,
   external_id TEXT NOT NULL UNIQUE,
   title TEXT NOT NULL,
+  content TEXT,
   source TEXT,
   document_type TEXT,
   category TEXT,
@@ -15,6 +16,9 @@ CREATE TABLE IF NOT EXISTS knowledge_documents (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE knowledge_documents
+ADD COLUMN IF NOT EXISTS content TEXT;
 
 CREATE TABLE IF NOT EXISTS knowledge_chunks (
   id SERIAL PRIMARY KEY,

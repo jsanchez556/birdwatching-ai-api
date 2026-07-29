@@ -1,0 +1,27 @@
+const STRIPE_CHECKOUT_SESSION_COMPLETED = 'checkout.session.completed';
+const STRIPE_SUBSCRIPTION_CREATED = 'customer.subscription.created';
+const STRIPE_SUBSCRIPTION_UPDATED = 'customer.subscription.updated';
+const STRIPE_SUBSCRIPTION_DELETED = 'customer.subscription.deleted';
+const STRIPE_INVOICE_PAYMENT_FAILED = 'invoice.payment_failed';
+const STRIPE_INVOICE_PAYMENT_SUCCEEDED = 'invoice.payment_succeeded';
+
+const STRIPE_SUBSCRIPTION_EVENTS = new Set([
+  STRIPE_SUBSCRIPTION_CREATED,
+  STRIPE_SUBSCRIPTION_UPDATED,
+  STRIPE_SUBSCRIPTION_DELETED,
+]);
+
+function isStripeSubscriptionEvent(eventType) {
+  return STRIPE_SUBSCRIPTION_EVENTS.has(eventType);
+}
+
+export {
+  STRIPE_CHECKOUT_SESSION_COMPLETED,
+  STRIPE_INVOICE_PAYMENT_FAILED,
+  STRIPE_INVOICE_PAYMENT_SUCCEEDED,
+  STRIPE_SUBSCRIPTION_CREATED,
+  STRIPE_SUBSCRIPTION_DELETED,
+  STRIPE_SUBSCRIPTION_EVENTS,
+  STRIPE_SUBSCRIPTION_UPDATED,
+  isStripeSubscriptionEvent,
+};

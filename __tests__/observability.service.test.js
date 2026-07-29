@@ -15,6 +15,7 @@ const {
   ObservabilityService,
   configureLangSmithEnvironment,
   isTracingEnabled,
+  validateLangSmithUrl,
 } = await import('../src/observability/observability.service.js');
 
 describe('AI observability service', () => {
@@ -36,6 +37,31 @@ describe('AI observability service', () => {
       langChainTracingV2: true,
       langChainProject: 'birdwatching-ai',
     })).toBe(false);
+  });
+
+  it('resolves run URLs through the SDK and allows only HTTPS LangSmith origins', async () => {
+    const langSmithClient = {
+      getRunUrl: jest.fn()
+        .mockResolvedValueOnce('https://smith.langchain.com/o/project/r/trace-1')
+        .mockResolvedValueOnce('https://smith.langchain.com.evil.test/r/trace-1'),
+    };
+    const service = new ObservabilityService({
+      config: {
+        langChainTracingV2: true,
+        langChainApiKey: 'test-key',
+        langChainProject: 'birdwatching-ai',
+      },
+      langSmithClient,
+    });
+
+    await expect(service.getTraceUrl('trace-1')).resolves.toBe(
+      'https://smith.langchain.com/o/project/r/trace-1'
+    );
+    await expect(service.getTraceUrl('trace-2')).resolves.toBeNull();
+    expect(validateLangSmithUrl('http://smith.langchain.com/r/trace')).toBeNull();
+    expect(validateLangSmithUrl('https://example.com/r/trace')).toBeNull();
+    expect(validateLangSmithUrl('https://user:password@smith.langchain.com/r/trace')).toBeNull();
+    expect(validateLangSmithUrl('https://smith.langchain.com:8443/r/trace')).toBeNull();
   });
 
   it('configures LangSmith environment variables without exposing secrets in config', () => {
@@ -199,6 +225,155 @@ describe('AI observability service', () => {
         }),
       ],
     });
+  });
+
+  it('uses the API correlation ID as the LangSmith root run ID', async () => {
+    const langSmithClient = {
+      createRun: jest.fn().mockResolvedValue(undefined),
+      updateRun: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new ObservabilityService({
+      config: {
+        langChainTracingV2: true,
+        langChainApiKey: 'test-key',
+        langChainProject: 'birdwatching-ai',
+      },
+      telemetry: new AiTelemetry({ log: mockLogger }),
+      idFactory: jest.fn(() => 'unexpected-generated-id'),
+      langSmithClient,
+    });
+    const aiTraceId = '11111111-1111-4111-8111-111111111111';
+
+    await service.trace({
+      type: 'ai_execution_flow',
+      name: 'chat_stream_ai_execution_flow',
+      traceId: aiTraceId,
+      metadata: {
+        aiTraceId,
+      },
+    }, async () => ({ success: true }));
+
+    expect(service.idFactory).not.toHaveBeenCalled();
+    expect(langSmithClient.createRun).toHaveBeenCalledWith(expect.objectContaining({
+      id: aiTraceId,
+      extra: {
+        metadata: expect.objectContaining({
+          aiTraceId,
+        }),
+      },
+    }));
+  });
+
+  it('keeps model cost telemetry in LangSmith completion metadata', async () => {
+    const langSmithClient = {
+      createRun: jest.fn().mockResolvedValue(undefined),
+      updateRun: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new ObservabilityService({
+      config: {
+        langChainTracingV2: true,
+        langChainApiKey: 'test-key',
+        langChainProject: 'birdwatching-ai',
+      },
+      idFactory: () => 'llm-trace-1',
+      langSmithClient,
+      clock: {
+        now: jest.fn().mockReturnValueOnce(100).mockReturnValueOnce(140).mockReturnValueOnce(150),
+      },
+    });
+
+    await service.trace({
+      type: 'llm',
+      name: 'chat_completion',
+      metadata: {
+        model: 'gpt-4o-mini',
+        promptVersion: '2.3.0',
+      },
+      tokenUsage: (result) => result.usage,
+      outputMetadata: () => ({
+        model: 'gpt-4o-mini',
+      }),
+    }, async () => ({
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 20,
+        total_tokens: 120,
+      },
+    }));
+
+    expect(langSmithClient.updateRun).toHaveBeenCalledWith('llm-trace-1', expect.objectContaining({
+      outputs: expect.objectContaining({
+        model: 'gpt-4o-mini',
+        estimatedCostUsd: 0.000027,
+      }),
+      extra: {
+        metadata: expect.objectContaining({
+          model: 'gpt-4o-mini',
+          promptVersion: '2.3.0',
+          estimatedCostUsd: 0.000027,
+        }),
+      },
+      prompt_tokens: 100,
+      completion_tokens: 20,
+      total_tokens: 120,
+    }));
+  });
+
+  it('includes late trace annotations in LangSmith completion metadata', async () => {
+    const telemetry = new AiTelemetry({ log: mockLogger });
+    const langSmithClient = {
+      createRun: jest.fn().mockResolvedValue(undefined),
+      updateRun: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new ObservabilityService({
+      config: {
+        langChainTracingV2: true,
+        langChainApiKey: 'test-key',
+        langChainProject: 'birdwatching-ai',
+      },
+      telemetry,
+      idFactory: () => 'trace-1',
+      langSmithClient,
+      clock: {
+        now: jest.fn().mockReturnValueOnce(100).mockReturnValueOnce(125).mockReturnValueOnce(150),
+      },
+    });
+
+    await expect(service.trace({
+      type: 'ai_execution_flow',
+      name: 'chat_stream_ai_execution_flow',
+    }, async (trace) => {
+      trace.annotate({
+        billing: {
+          billingUsageEventId: 'usage-1',
+          requestCostUsd: 0.0042,
+          modelUsage: [{ model: 'gpt-4o-mini', totalTokens: 42 }],
+        },
+      });
+
+      return { conversationId: 'conversation-1' };
+    })).resolves.toEqual({ conversationId: 'conversation-1' });
+
+    expect(langSmithClient.updateRun).toHaveBeenCalledWith('trace-1', expect.objectContaining({
+      extra: {
+        metadata: expect.objectContaining({
+          billing: {
+            billingUsageEventId: 'usage-1',
+            requestCostUsd: 0.0042,
+            modelUsage: [{ model: 'gpt-4o-mini', totalTokens: 42 }],
+          },
+        }),
+      },
+    }));
+  });
+
+  it('maps cache traces to LangSmith tool runs', () => {
+    const service = new ObservabilityService({
+      config: {},
+      langSmithClient: null,
+    });
+
+    expect(service.toLangSmithRunType('cache')).toBe('tool');
   });
 
   it('keeps LangSmith export failures non-fatal', async () => {

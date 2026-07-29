@@ -351,6 +351,8 @@ function monitorToolFailure(toolName, metadata = {}, failure = {}, details = {})
   aiTelemetry.recordAiError(isTimeoutFailure(failure) ? 'tool_timeout' : 'tool_failed', {
     toolName,
     conversationId: metadata.conversationId,
+    userId: metadata.userId,
+    aiTraceId: metadata.aiTraceId,
     role: metadata.role,
     planStatus: metadata.agentPlan?.status,
     failure: sanitizeTraceValue(failure),
@@ -684,6 +686,7 @@ export class ToolExecutor {
       status: plan.status,
       stepCount: Array.isArray(plan.steps) ? plan.steps.length : 0,
       tools: (plan.steps || []).map((step) => step.tool).filter(Boolean),
+      aiTraceId: metadata.aiTraceId,
     }, async (trace) => {
       metadata.agentToolSequenceTraceId = trace.id;
       return this.executePlanUntraced(plan, metadata);
@@ -731,6 +734,7 @@ export class ToolExecutor {
         stepId,
         stepIndex: index,
         hasArguments: Boolean(step.args && Object.keys(step.args).length),
+        aiTraceId: metadata.aiTraceId,
       }, () => this.execute(step.tool, step.args || {}, metadata, { step }));
       storeIntermediateResult(context, step, result, index);
 

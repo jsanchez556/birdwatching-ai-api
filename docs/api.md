@@ -12,6 +12,12 @@ All responses use:
 }
 ```
 
+Successful AI interaction requests expose a server-generated
+`X-AI-Trace-Id` response header. The same UUID identifies the LangSmith root
+run and is included as `aiTraceId` on correlated server-side product events.
+Browsers may read this header through CORS. Client-supplied trace headers do
+not override the server-generated correlation ID.
+
 Errors use:
 
 ```json
@@ -21,6 +27,699 @@ Errors use:
     "code": "VALIDATION_ERROR",
     "message": "Invalid chat payload",
     "details": []
+  }
+}
+```
+
+## Admin Operations
+
+All `/admin/*` endpoints require a valid JWT bearer token with the server-issued
+`admin` role. Missing or invalid authentication returns `401 UNAUTHORIZED`;
+authenticated non-admin users receive `403 FORBIDDEN`. Responses intentionally
+omit password hashes, provider customer/subscription identifiers, raw job errors,
+stack traces, and billing event payloads.
+
+List endpoints accept `page` (default `1`) and `limit` (default `25`, maximum
+`100`) and return pagination fields in `meta`: `page`, `limit`, `total`, and
+`totalPages`. Reporting endpoints accept optional ISO `startDate` and `endDate`
+values, use an exclusive end date, default to the previous 30 days, and allow a
+maximum range of 366 days.
+
+- `GET /admin/overview` returns the platform overview cards. It accepts optional
+  ISO `startDate` and exclusive `endDate` values. With neither value supplied,
+  range-backed metrics cover the current UTC day. The response contains active
+  users, active subscriptions, MRR, completed reservations, AI requests,
+  estimated AI cost, average live AI latency, and the live AI error rate.
+- `GET /admin/users` returns paginated safe user profiles and current plan
+  status.
+- `GET /admin/subscriptions` returns paginated plan, status, provider name, and
+  period data without external provider identifiers.
+- `GET /admin/ai-usage` returns request, distinct-user, and token totals grouped
+  by feature for the requested UTC range.
+- `GET /admin/ai-costs` returns estimated USD costs grouped by model, feature,
+  current subscription plan, and user ID. Each group includes requests, tokens,
+  estimated cost, average estimated cost per priced request, priced requests,
+  and unpriced requests. Optional `userLimit` defaults to `25` and is capped at
+  `100`; missing cost data is never treated as a measured zero-cost request.
+- `GET /admin/ai-quality` returns current and previous-period grounding,
+  answer-relevance, retrieval, and evaluated-tool success metrics from stored
+  offline evaluation artifacts. It never runs an evaluation or contacts an AI
+  or tracing provider.
+- `GET /admin/reservations` returns paginated reservation, tour, participant,
+  total-price, and timestamp data without customer contact details or
+  confirmation codes.
+- `GET /admin/queue-health` returns live BullMQ `waiting`, `active`, `completed`,
+  `failed`, and `delayed` counts for bird identification, embeddings, and
+  document ingestion. BullMQ or Redis failures return the standard masked
+  server error rather than partial or stale queue data. `completed` means jobs
+  currently retained in BullMQ, not the lifetime request or completion total.
+- `GET /admin/failures` returns paginated sanitized background-job and payment
+  failure records. It never returns stored exception messages or provider
+  payloads.
+- `GET /admin/errors` returns the normalized operational error feed described
+  below. It accepts `page` and `limit` (maximum `100`), the same bounded
+  `startDate`/`endDate` range used by other admin reports, and an optional
+  exact `type` filter.
+- `POST /admin/jobs/:jobId/retry` retries a retained BullMQ job only when both
+  its safe PostgreSQL status and current BullMQ state are `failed`.
+- `POST /admin/users/:userId/suspend` suspends a non-admin user and revokes all
+  active refresh tokens. Admin accounts, including the caller, cannot be
+  suspended through this endpoint.
+- `POST /admin/ai-features/:feature/disable` disables an allowlisted boolean AI
+  feature for a bounded period.
+
+### Safe admin mutations
+
+All three mutation endpoints create an `admin_audit_logs` intent before
+attempting the side effect. Audit metadata contains controlled operation
+status and identifiers only; it never contains job payloads, prompts, user
+content, provider responses, exception text, PII, or secrets. If the audit
+intent cannot be persisted, the operation fails without performing the
+mutation. Responses use the standard `{ success, data, meta }` envelope.
+
+Retry a failed job:
+
+```http
+POST /admin/jobs/:jobId/retry
+Authorization: Bearer <admin token>
+Content-Type: application/json
+
+{}
+```
+
+The job identifier must contain only letters, digits, `:`, `_`, or `-`. A
+missing job returns `404 JOB_NOT_FOUND`; an unknown job type or a job that is
+not currently failed returns `409 JOB_NOT_RETRYABLE`. The endpoint cannot
+replace job data or options.
+
+Suspend a user:
+
+```http
+POST /admin/users/:userId/suspend
+Authorization: Bearer <admin token>
+Content-Type: application/json
+
+{ "reasonCode": "abuse" }
+```
+
+`reasonCode` is optional and defaults to `abuse`; accepted values are `abuse`,
+`spam`, `security`, and `policy_violation`. Only the reason code is retained,
+not free-form evidence or user content. A missing user returns
+`404 USER_NOT_FOUND`, and an attempt to suspend an admin returns
+`409 ADMIN_USER_SUSPENSION_FORBIDDEN`. Suspended users receive
+`403 ACCOUNT_SUSPENDED` on login, refresh, and authenticated production
+requests.
+
+Temporarily disable an AI feature:
+
+```http
+POST /admin/ai-features/voice_ai/disable
+Authorization: Bearer <admin token>
+Content-Type: application/json
+
+{ "durationMinutes": 60 }
+```
+
+`durationMinutes` must be an integer from `1` through `1440`. The allowlist is
+`voice_ai`, `multimodal_bird_identification`, and `agent_booking`. Other
+feature identifiers return `422 FEATURE_NOT_DISABLEABLE`. The database stores
+an absolute `disabled_until` timestamp; the normal feature-flag service checks
+this override before its configured provider and automatically resumes normal
+evaluation after expiry. If the override lookup fails, the affected feature
+fails closed. The PostgreSQL function targets the feature-control primary-key
+constraint by name so its `feature` output parameter cannot make the upsert
+ambiguous.
+
+### `GET /admin/ai-quality`
+
+This admin-only report accepts optional ISO `startDate` and `endDate` query
+parameters through the shared admin range validation. Both the current and
+previous periods use UTC half-open boundaries: `startAt <= timestamp < endAt`.
+The previous period ends at the current `startAt` and has exactly the same
+duration in milliseconds.
+
+The source is `AI_EVAL_OUTPUT_FILE` (default
+`tmp/ai-eval-results.json`, with `AI_EVAL_RESULTS_FILE` supported as a fallback),
+written by the offline `npm run ai:evals` flow or supplied as a compatible
+stored evaluation artifact. Offline output retains up to 100 timestamped runs.
+Dashboard requests only read and aggregate safe
+numeric results; they do not expose prompts, answers, retrieved content, tool
+inputs/outputs, reasoning, PII, secrets, or provider errors.
+
+Metric definitions:
+
+- `groundingScore`: mean usable grounding-quality score.
+- `answerRelevance`: mean usable answer-relevance score.
+- `retrievalQuality`: mean usable retrieval-quality score.
+- `toolSuccessRate`: successful evaluated tool executions divided by all
+  evaluated tool executions. Its sample size is the execution count; the other
+  sample sizes count usable score observations.
+
+All values are normalized to `0–1` and rounded to four decimal places only
+after aggregation. A period without usable observations returns `null` and a
+sample size of `0`. A delta is `current - previous`, and remains `null` when
+either value is unavailable.
+
+```json
+{
+  "success": true,
+  "data": {
+    "range": {
+      "startAt": "2026-07-01T00:00:00.000Z",
+      "endAt": "2026-08-01T00:00:00.000Z",
+      "timezone": "UTC"
+    },
+    "previousRange": {
+      "startAt": "2026-05-31T00:00:00.000Z",
+      "endAt": "2026-07-01T00:00:00.000Z",
+      "timezone": "UTC"
+    },
+    "metrics": {
+      "groundingScore": {
+        "current": 0.86,
+        "previous": 0.82,
+        "delta": 0.04,
+        "currentSampleSize": 120,
+        "previousSampleSize": 110
+      },
+      "answerRelevance": {
+        "current": null,
+        "previous": null,
+        "delta": null,
+        "currentSampleSize": 0,
+        "previousSampleSize": 0
+      },
+      "retrievalQuality": {
+        "current": 0.79,
+        "previous": 0.81,
+        "delta": -0.02,
+        "currentSampleSize": 75,
+        "previousSampleSize": 70
+      },
+      "toolSuccessRate": {
+        "current": 0.96,
+        "previous": 0.93,
+        "delta": 0.03,
+        "currentSampleSize": 48,
+        "previousSampleSize": 42
+      }
+    }
+  },
+  "meta": {}
+}
+```
+
+### `GET /admin/errors`
+
+The admin-only operational error feed combines these sources:
+
+| Source | Normalized type | Durability |
+|---|---|---|
+| failed LLM trace or provider request | `LLM_ERROR` | current process only |
+| `tool_timeout` or `tool_failed` telemetry | `TOOL_ERROR` | current process only |
+| failed `rag_retrieval`/`rag_pipeline` trace or `retrieval_failed` telemetry | `RETRIEVAL_ERROR` | current process only |
+| malformed provider output, `invalid_output`, `invalid_json_output`, or guardrail/hallucination rejection | `INVALID_OUTPUT` | current process only |
+| failed `jobs` row or sanitized BullMQ dead-letter record | `QUEUE_FAILURE` | PostgreSQL or bounded Redis retention |
+| application/AI/provider status `429` or known rate-limit code | `RATE_LIMIT` | current process only |
+| failed checkout/webhook handling or `billing_events.event_name = 'payment_failed'` | `PAYMENT_FAILURE` | current process or PostgreSQL |
+
+Unknown trace types and telemetry events are omitted instead of being assigned
+an approximate type. Checkout and webhook exceptions are recorded in the
+current process; only failures that produce a `payment_failed` billing event
+are durable feed sources.
+
+The response uses object data and pagination metadata:
+
+```json
+{
+  "success": true,
+  "data": {
+    "errors": [{
+      "id": "telemetry-error-123",
+      "timestamp": "2026-07-28T15:42:18.000Z",
+      "type": "TOOL_ERROR",
+      "user": { "id": "42", "label": "User 42" },
+      "traceId": "trace-uuid",
+      "traceUrl": "https://smith.langchain.com/...",
+      "message": "Tool execution failed",
+      "status": "failed"
+    }]
+  },
+  "meta": {
+    "page": 1,
+    "limit": 25,
+    "total": 1,
+    "totalPages": 1
+  }
+}
+```
+
+Messages and statuses come from a server allowlist. The endpoint never selects
+or returns prompts, model output, retrieval content, tool input/output, raw job
+or billing payloads, provider error text, credentials, image URLs, or stack
+traces. Users are represented only by an opaque ID and `User <id>` label.
+
+Results are newest first with ID as a deterministic secondary sort. Persisted
+jobs and dead-letter records sharing an original job ID are deduplicated. The
+aggregator reads at most the newest `1000` records from each source for one
+request; `total` describes the normalized, filtered records inside that bounded
+source window. If PostgreSQL or Redis is unavailable, the endpoint returns the
+standard masked server error and no partial feed.
+
+For records with a trace ID, the backend asks the installed LangSmith SDK for
+the run URL. It never constructs a URL from the trace ID. Only HTTPS URLs on
+the explicit LangSmith UI hostname allowlist are returned; otherwise
+`traceUrl` is `null`. Existing `LANGCHAIN_TRACING`, `LANGCHAIN_PROJECT`, and
+`LANGCHAIN_API_KEY` configuration is sufficient.
+
+Example list metadata:
+
+```json
+{
+  "success": true,
+  "data": [],
+  "meta": {
+    "page": 1,
+    "limit": 25,
+    "total": 0,
+    "totalPages": 0
+  }
+}
+```
+
+Representative `data` shapes:
+
+```json
+{
+  "overview": {
+    "activeUsers": 147,
+    "activeSubscriptions": 63,
+    "mrr": 1890,
+    "reservations": 42,
+    "aiRequestsToday": 1294,
+    "aiCostToday": 18.72,
+    "averageLatencyMs": 1840,
+    "errorRate": 0.021
+  },
+  "user": {
+    "id": "7",
+    "email": "operator@example.com",
+    "name": "Operator",
+    "role": "admin",
+    "plan": "PRO",
+    "subscriptionStatus": "active",
+    "createdAt": "2026-07-01T00:00:00.000Z"
+  },
+  "subscription": {
+    "userId": "7",
+    "email": "operator@example.com",
+    "plan": "PRO",
+    "status": "active",
+    "billingProvider": "Stripe",
+    "currentPeriodEnd": "2026-08-01T00:00:00.000Z",
+    "createdAt": "2026-07-01T00:00:00.000Z",
+    "updatedAt": "2026-07-20T00:00:00.000Z"
+  },
+  "reservation": {
+    "id": 42,
+    "userId": "7",
+    "tour": { "id": 3, "name": "Monteverde Cloud Forest" },
+    "participants": 2,
+    "totalPrice": 180,
+    "currency": "USD",
+    "createdAt": "2026-07-20T00:00:00.000Z"
+  },
+  "failure": {
+    "id": "job-123",
+    "category": "background_job",
+    "type": "embedding",
+    "status": "failed",
+    "occurredAt": "2026-07-27T00:00:00.000Z",
+    "error": { "code": "JOB_FAILED", "message": "Background job failed" }
+  }
+}
+```
+
+For the overview, `activeUsers` is the number of distinct authenticated users
+with persisted AI usage in the selected range. Every persisted reservation is a
+completed confirmation because the current reservation schema has no draft
+state. `aiRequestsToday` and `aiCostToday` retain dashboard-compatible names but
+use the selected range when dates are supplied. MRR and active subscriptions
+reuse the billing dashboard for the calendar month containing the range's
+exclusive end.
+
+Latency and error rate come from sanitized in-process AI telemetry. They cover
+traffic observed by the current API process since startup and are not historical
+or cross-instance metrics. Durable date-range latency/error reporting will
+require persisting these telemetry samples or querying the configured tracing
+provider.
+
+AI usage returns `range`, aggregate `totals`, and `byFeature` entries containing
+`feature`, `requests`, distinct `users`, and `tokens`. AI costs returns the same
+range plus `currency`, `costType`, aggregate totals, `byModel`, `byFeature`,
+`byPlan`, and a bounded `byUser` list. Cost entries contain `requests`, `tokens`,
+`estimatedCost`, `averageCostPerRequest`, `pricedRequests`, and
+`unpricedRequests`. The average divides estimated cost by priced requests so
+unpriced usage does not silently lower the result. User entries expose only the
+internal user ID and current plan, not names or email addresses. Historical plan
+attribution is unavailable because usage events do not snapshot plan state.
+
+Queue health returns `observedAt` and a `queues` array. Each queue contains a
+stable UI `id`, display `name`, and the five numeric BullMQ counts. The UI IDs
+`bird-identification`, `embeddings`, and `document-ingestion` map to the actual
+BullMQ queue names `bird-identification`, `embedding`, and `ingestion`.
+Bird-identification producers explicitly store the configured retry and bounded
+retention options on each BullMQ job so a successful completion remains
+countable for up to `BULLMQ_REMOVE_ON_COMPLETE_AGE_SECONDS` while respecting
+`BULLMQ_REMOVE_ON_COMPLETE_COUNT`.
+
+Quota errors use `429` with code `QUOTA_EXCEEDED` and a user-facing message.
+
+## Auth Profile
+`PATCH /auth/profile` requires JWT bearer authentication and updates the
+authenticated user's display name. The request body is:
+
+```json
+{
+  "name": "Ana Rivera"
+}
+```
+
+`POST /auth/profile-image` requires JWT bearer authentication and accepts raw
+JPEG, PNG, or WebP image bytes up to 5 MB. The endpoint stores images in S3
+under `user-profile-images/`, persists the resulting object key on the user
+record, and returns a frontend-safe user profile.
+
+Success data:
+
+```json
+{
+  "user": {
+    "id": "user-1",
+    "email": "ana@example.com",
+    "name": "Ana Rivera",
+    "role": "customer",
+    "plan": "FREE",
+    "imageUrl": "/files/user-profile-images/user-1.png"
+  }
+}
+```
+
+The client never sends a user ID for profile updates; the API uses the bearer
+token identity.
+
+## Subscription Plans
+Authenticated users are assigned a subscription plan. New users default to:
+
+```json
+{
+  "plan": "FREE"
+}
+```
+
+### `POST /billing/checkout`
+Requires JWT bearer authentication. Creates a hosted provider checkout/payment
+session for the requested internal plan. The body may be empty, or may specify
+the enabled provider and plan:
+
+```json
+{
+  "provider": "stripe",
+  "plan": "GUIDE"
+}
+```
+
+Success data:
+
+```json
+{
+  "provider": "stripe",
+  "plan": "GUIDE",
+  "checkoutUrl": "https://checkout.stripe.com/c/pay/cs_test_...",
+  "paymentUrl": "https://checkout.stripe.com/c/pay/cs_test_..."
+}
+```
+
+`FREE` plan requests do not create hosted provider checkout sessions.
+
+### `POST /billing/portal`
+Requires JWT bearer authentication. Creates a hosted billing management session
+for the authenticated user's active subscription. The body may be empty, or may
+specify the enabled provider:
+
+```json
+{
+  "provider": "stripe"
+}
+```
+
+The client never sends provider customer or subscription IDs.
+
+Success data:
+
+```json
+{
+  "provider": "stripe",
+  "managementUrl": "https://billing.stripe.com/p/session/..."
+}
+```
+
+If the account does not have a provider subscription/customer record in a
+billing-manageable state, the API returns a safe `409` error with code
+`BILLING_SUBSCRIPTION_NOT_FOUND`.
+
+### `GET /billing/usage`
+Requires JWT bearer authentication. Returns the authenticated user's current
+month AI cost, usage, LangSmith trace correlation, subscription plan context,
+and provider revenue/profitability summary. `monthlyCost` and
+`monthlyRequests` are retained as top-level compatibility fields.
+
+Success data:
+
+```json
+{
+  "monthlyCost": 4.28,
+  "monthlyRequests": 142,
+  "plan": {
+    "name": "PRO",
+    "status": "active",
+    "billingProvider": "Stripe",
+    "hasProviderSubscription": true
+  },
+  "usage": {
+    "requests": 142,
+    "tokens": 12000,
+    "byFeature": [
+      {
+        "feature": "chat",
+        "requests": 100,
+        "tokens": 9000,
+        "cost": 3.5
+      }
+    ]
+  },
+  "langSmith": {
+    "traceCount": 18
+  },
+  "profitability": {
+    "revenue": 29,
+    "cost": 4.284999,
+    "profit": 24.72,
+    "marginPercent": 85.22
+  }
+}
+```
+
+### `GET /billing/admin/dashboard`
+Requires JWT bearer authentication with an admin role. Returns current-month
+billing metrics for operator dashboards. The optional `monthStart` query
+parameter accepts an ISO date string and defaults to the current database month.
+
+Success data:
+
+```json
+{
+  "monthlyRevenue": 2450,
+  "mrr": 2450,
+  "arr": 29400,
+  "activeSubscriptions": 103,
+  "cancelledSubscriptions": 7,
+  "revenueByPlan": [
+    {
+      "plan": "GUIDE",
+      "monthlyRevenue": 950,
+      "activeSubscriptions": 19
+    },
+    {
+      "plan": "PRO",
+      "monthlyRevenue": 1500,
+      "activeSubscriptions": 84
+    }
+  ]
+}
+```
+
+### `GET /billing/admin/feature-economics`
+
+Requires JWT bearer authentication with an admin role. Aggregates AI feature
+usage, token volume, estimated AI cost, recognized subscription revenue, and
+estimated contribution margin in UTC daily or monthly buckets.
+
+Optional query parameters are `granularity=daily|monthly`, `startDate`, and
+`endDate`. Dates must be valid ISO date strings; `endDate` is exclusive.
+
+Success data:
+
+```json
+{
+  "granularity": "daily",
+  "timezone": "UTC",
+  "currency": "USD",
+  "range": {
+    "startAt": "2026-07-01T00:00:00.000Z",
+    "endAt": "2026-07-03T00:00:00.000Z"
+  },
+  "allocationMethod": "per_user_feature_usage_share",
+  "totals": {
+    "usage": 10,
+    "tokens": 10000,
+    "aiCost": 3,
+    "subscriptionRevenue": 40,
+    "estimatedContributionMargin": 37,
+    "estimatedContributionMarginPercent": 92.5,
+    "allocatedSubscriptionRevenue": 25,
+    "unallocatedSubscriptionRevenue": 15
+  },
+  "buckets": [
+    {
+      "periodStart": "2026-07-01T00:00:00.000Z",
+      "usage": 10,
+      "tokens": 10000,
+      "aiCost": 3,
+      "subscriptionRevenue": 30,
+      "estimatedContributionMargin": 27,
+      "estimatedContributionMarginPercent": 90,
+      "allocatedSubscriptionRevenue": 25,
+      "unallocatedSubscriptionRevenue": 5,
+      "features": [
+        {
+          "feature": "chat",
+          "usage": 8,
+          "tokens": 8000,
+          "aiCost": 2,
+          "allocatedSubscriptionRevenue": 20,
+          "estimatedContributionMargin": 18,
+          "estimatedContributionMarginPercent": 90
+        }
+      ]
+    }
+  ]
+}
+```
+
+Per-feature subscription revenue is an allocation estimate based on each
+paying user's feature-usage share within the period. Revenue for subscribers
+without AI usage remains unallocated.
+
+### `POST /billing/admin/simulate-payment`
+Requires JWT bearer authentication with an admin role. Simulates provider-neutral
+subscription lifecycle events without calling Stripe or any external provider.
+Simulated events are persisted in `billing_events` with provider `Other` and
+`eventData.simulated: true`.
+
+Request body:
+
+```json
+{
+  "userId": 7,
+  "action": "renewal",
+  "plan": "PRO",
+  "status": "active",
+  "amountPaid": 2900,
+  "currency": "usd",
+  "effectiveAt": "2026-07-08T00:00:00.000Z"
+}
+```
+
+Supported actions are `renewal`, `cancel`, `upgrade`, `downgrade`,
+`payment_failed`, and `expire`. `upgrade` and `downgrade` require a paid plan;
+renewal and payment-failure simulations use the supplied paid plan or the
+current paid plan.
+
+Success data:
+
+```json
+{
+  "simulated": true,
+  "action": "renewal",
+  "userId": 7,
+  "plan": "PRO",
+  "status": "active",
+  "subscription": {
+    "userId": 7,
+    "plan": "PRO",
+    "status": "active"
+  },
+  "billingEvent": {
+    "provider": "Other",
+    "eventName": "subscription_renewed"
+  }
+}
+```
+
+### `POST /billing/webhook` and `POST /billing/webhook/:provider`
+Receive provider webhook or callback events. The default route uses
+`BILLING_DEFAULT_PROVIDER`; provider-specific routes use the provider path
+segment. The Stripe adapter verifies `Stripe-Signature`, stores provider events
+idempotently by provider event ID, handles Checkout completion, subscription
+create/update/delete events, records renewals and payment failures, and persists
+subscription status locally through provider-neutral fields.
+
+Local `user_subscriptions.status` values are:
+
+| Status | Meaning |
+| --- | --- |
+| `trialing` | Provider subscription is in a trial period. |
+| `active` | Provider subscription is active. |
+| `past_due` | Provider subscription is in payment-retry/dunning state. |
+| `cancelled` | Provider subscription was cancelled. |
+| `expired` | Provider subscription expired or cannot become active. |
+
+AI usage costs are stored in `usage_events` with `user_id`, `feature`, `tokens`,
+`estimated_cost`, optional `trace_id`, compact `model_usage`, and `created_at`.
+`trace_id` stores the LangSmith-compatible parent trace ID when available, so
+billing rows can be correlated with runtime traces without storing prompt text,
+responses, email addresses, or provider customer IDs in trace metadata. Features
+include chat, identification, embedding, voice, and image analysis.
+
+Internal plans remain provider-neutral. `plan_provider_mappings` can map a plan
+to provider product, price, SKU, or equivalent identifiers. To add TiloPay or
+another provider, add an adapter under `src/providers/billing/`, register it,
+configure `BILLING_PROVIDERS`, and map provider callback payloads to the
+normalized subscription sync shape used by `billing.service.js`.
+
+Plan limits are enforced daily:
+
+| Plan | Chats | Bird identifications |
+| --- | ---: | ---: |
+| FREE | 20 | 5 |
+| PRO | 500 | 100 |
+| GUIDE | 1200 | 300 |
+
+When the daily quota is exhausted, protected AI endpoints return:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "QUOTA_EXCEEDED",
+    "message": "Daily quota exceeded",
+    "details": {
+      "plan": "FREE",
+      "feature": "chat",
+      "used": 20,
+      "max": 20
+    }
   }
 }
 ```
@@ -67,7 +766,10 @@ GET /birds/profile?name=Great%20Tinamou
 Either `speciesCode`/`species_code` or `name` is required. Missing query input returns `422` with code `validation_error`; unknown birds return `404` with code `bird_not_found`.
 
 ### `POST /birds/identify`
-Requires JWT bearer authentication. Analyzes a bird image URL or uploaded bird image internally, extracts rich visible field marks, generates conservative candidate species, verifies/reranks candidates against bird-profile RAG, and returns an identified, uncertain, or unknown result.
+Requires JWT bearer authentication. Accepts a bird image URL or uploaded bird
+image, stores uploaded images in S3, queues a BullMQ bird-identification job,
+and returns immediately with a job ID. `POST /bird-identification` is available
+as an equivalent alias for new clients.
 
 URL body:
 ```json
@@ -86,22 +788,26 @@ X-Filename: bird.jpg
 <raw image bytes>
 ```
 
-Success data:
+Accepted response data:
 ```json
 {
-  "status": "identified",
-  "bestMatch": {
-    "commonName": "Resplendent Quetzal",
-    "scientificName": "Pharomachrus mocinno",
-    "confidence": 0.91,
-    "reasoning": "Green upperparts, red underparts, and long tail coverts match visible field marks and retrieved profile support.",
-    "visualEvidence": ["green upperparts", "red underparts", "long tail coverts"],
-    "contradictions": [],
-    "ragSupport": ["Retrieved profile describes emerald upperparts and red belly."]
-  },
-  "candidates": [
-    {
-      "species": "Resplendent Quetzal",
+  "jobId": "job-123",
+  "status": "queued"
+}
+```
+
+Use `GET /jobs/:id` to poll the job status and final result. Completed result
+data contains the same public bird-identification shape that this endpoint
+previously returned synchronously.
+
+Completed job result:
+```json
+{
+  "jobId": "job-123",
+  "status": "completed",
+  "result": {
+    "status": "identified",
+    "bestMatch": {
       "commonName": "Resplendent Quetzal",
       "scientificName": "Pharomachrus mocinno",
       "confidence": 0.91,
@@ -109,28 +815,150 @@ Success data:
       "visualEvidence": ["green upperparts", "red underparts", "long tail coverts"],
       "contradictions": [],
       "ragSupport": ["Retrieved profile describes emerald upperparts and red belly."]
-    }
-  ],
-  "imageAnalysis": {
-    "dominantColors": ["green", "red"],
-    "fieldMarks": ["long tail coverts", "red underparts"],
-    "bill": { "color": "yellow", "shape": "short", "length": "short" },
-    "head": "green head with crest",
-    "throat": "green",
-    "underparts": "red",
-    "upperparts": "green",
-    "wings": "green",
-    "tail": "long",
-    "legs": "unknown",
-    "bodyShape": "trogon-like",
-    "apparentGroup": "trogon",
-    "habitatHint": "forest",
-    "imageQuality": "clear",
-    "confidence": 0.86
-  },
-  "notes": []
+    },
+    "candidates": [
+      {
+        "species": "Resplendent Quetzal",
+        "commonName": "Resplendent Quetzal",
+        "scientificName": "Pharomachrus mocinno",
+        "confidence": 0.91,
+        "reasoning": "Green upperparts, red underparts, and long tail coverts match visible field marks and retrieved profile support.",
+        "visualEvidence": ["green upperparts", "red underparts", "long tail coverts"],
+        "contradictions": [],
+        "ragSupport": ["Retrieved profile describes emerald upperparts and red belly."]
+      }
+    ],
+    "imageAnalysis": {
+      "dominantColors": ["green", "red"],
+      "fieldMarks": ["long tail coverts", "red underparts"],
+      "bill": { "color": "yellow", "shape": "short", "length": "short" },
+      "head": "green head with crest",
+      "throat": "green",
+      "underparts": "red",
+      "upperparts": "green",
+      "wings": "green",
+      "tail": "long",
+      "legs": "unknown",
+      "bodyShape": "trogon-like",
+      "apparentGroup": "trogon",
+      "habitatHint": "forest",
+      "imageQuality": "clear",
+      "confidence": 0.86
+    },
+    "notes": []
+  }
 }
 ```
+
+### `GET /jobs/:id`
+Requires JWT bearer authentication. Returns the polling state for an
+authenticated user's background job.
+
+Queued or active response data:
+```json
+{
+  "jobId": "job-123",
+  "status": "queued"
+}
+```
+
+Failed response data:
+```json
+{
+  "jobId": "job-123",
+  "status": "failed",
+  "error": {
+    "message": "Bird identification failed. Please try again."
+  }
+}
+```
+
+Unknown or expired job response data:
+```json
+{
+  "jobId": "job-123",
+  "status": "not_found"
+}
+```
+
+Bird identification job statuses are `queued`, `active`, `completed`, `failed`,
+and `not_found`.
+
+The worker extracts rich visible field marks, generates conservative candidate
+species, verifies/reranks candidates against bird-profile RAG, and stores an
+identified, uncertain, or unknown result for polling.
+
+### `POST /ingestions`
+Requires JWT bearer authentication. Accepts normalized JSON documents or a raw
+text-like upload, persists the source payload, queues a BullMQ ingestion job,
+and returns immediately.
+
+JSON body:
+```json
+{
+  "documents": [
+    {
+      "externalId": "field-note-1",
+      "name": "Field note",
+      "description": "Cloud forest bird habitat notes.",
+      "documentType": "field_note"
+    }
+  ],
+  "source": "manual-upload",
+  "force": false
+}
+```
+
+Raw text upload:
+```http
+POST /ingestions
+Authorization: Bearer jwt
+Content-Type: text/plain
+X-Filename: notes.txt
+
+Cloud forest bird habitat notes.
+```
+
+Accepted response data:
+```json
+{
+  "jobId": "job-123",
+  "status": "processing"
+}
+```
+
+### `GET /ingestions/:id`
+Requires JWT bearer authentication. Returns the authenticated user's ingestion
+job status without exposing the stored source document contents.
+
+Completed response data:
+```json
+{
+  "jobId": "job-123",
+  "status": "completed",
+  "result": {
+    "documentCount": 1,
+    "chunkCount": 2,
+    "queuedCount": 1,
+    "skippedCount": 0
+  }
+}
+```
+
+Failed response data:
+```json
+{
+  "jobId": "job-123",
+  "status": "failed",
+  "error": {
+    "message": "Document ingestion failed. Please try again."
+  }
+}
+```
+
+Document ingestion statuses are `processing`, `active`, `completed`, `failed`,
+and `not_found`. The ingestion worker validates and persists documents through
+the existing ingestion service, which queues embedding jobs for pgvector storage.
 
 `imageObservations` remains present as a compatibility alias for older clients. Normal responses omit internal debug details. Authenticated admins may request `?debug=true` to receive internal debug metadata under `meta.debug` with raw candidates, retrieved profile identifiers/names, and verification notes.
 
@@ -238,7 +1066,8 @@ Success data:
 Success meta:
 ```json
 {
-  "conversationId": "conversation-123"
+  "conversationId": "conversation-123",
+  "aiTraceId": "11111111-1111-4111-8111-111111111111"
 }
 ```
 
@@ -551,7 +1380,7 @@ Validation and behavior:
 - successful responses do not expose bucket credentials
 
 ## Current Protection
-`GET /chat/latest`, `GET /chat/:conversationId`, `POST /birds/identify`, and all `/cart` routes require JWT bearer authentication. `POST /chat` and `POST /voice-chat` accept authenticated customer/admin users or unauthenticated visitors; visitors can only ask bird-related questions, cannot execute tool-backed tour or reservation actions, and have a stricter 10-request-per-hour IP limit. Conversation and reservation `user_id` ownership is enforced server-side. `POST /auth/signup`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, homepage content endpoints, `GET /files/:folderName/:filename`, and `GET /health` remain public.
+`POST /billing/checkout`, `POST /billing/portal`, `GET /billing/usage`, `GET /chat/latest`, `GET /chat/:conversationId`, `POST /birds/identify`, `POST /bird-identification`, `GET /jobs/:id`, `POST /ingestions`, `GET /ingestions/:id`, and all `/cart` routes require JWT bearer authentication. `POST /chat` and `POST /voice-chat` accept authenticated customer/admin users or unauthenticated visitors; visitors can only ask bird-related questions, cannot execute tool-backed tour or reservation actions, and have a stricter 10-request-per-hour IP limit. Conversation, reservation, job, and ingestion ownership is enforced server-side. Billing webhooks are public provider callbacks and verify provider signatures where supported. `POST /auth/signup`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, homepage content endpoints, `GET /files/:folderName/:filename`, and `GET /health` remain public.
 
 Request protection includes:
 - Helmet security headers through `security.middleware.js`.
@@ -568,3 +1397,20 @@ Request protection includes:
 - Unknown routes return `404` with code `NOT_FOUND`.
 - Empty or malformed AI provider responses return `502` with code `AI_EMPTY_RESPONSE`.
 - Unexpected server errors return `500` with code `INTERNAL_SERVER_ERROR` and do not expose stack traces.
+
+### Feature-control and suspension state
+
+- `GET /admin/ai-features` (admin only) returns `name`, `enabled`, `status`,
+  and ISO UTC `disabledUntil | null` for the three supported AI features.
+- `POST /admin/ai-features/:feature/enable` with `{}` removes the temporary
+  override and returns the audit reference.
+- `GET /admin/users` includes `status`, `suspendedAt`, and
+  `suspensionReasonCode`.
+- `POST /admin/users/:userId/unsuspend` with `{}` clears an eligible user’s
+  suspension and returns the audit reference.
+- `GET /features/availability` is the safe public availability projection.
+
+Enable and unsuspend are idempotent; admin/self protection remains enforced.
+Temporarily disabled requests return the safe
+`FEATURE_TEMPORARILY_DISABLED` code, feature-specific message, and UTC
+expiration (HTTP `503` except where streaming transport has already begun).

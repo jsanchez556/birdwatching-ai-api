@@ -1,10 +1,23 @@
-import openaiClient from '../openai.client.js';
+import openaiClient from '../clients/openai.client.js';
 import birdwatchingAgent from '../agents/birdwatching.agent.js';
 import logger from '../../utils/logger.js';
 import {
   traceAgentOrchestration,
   traceAgentPlanning,
 } from '../../tracing/aiTracing.middleware.js';
+import featureFlags from '../../featureFlags/featureFlag.service.js';
+import { FEATURE_FLAGS } from '../../featureFlags/flags.js';
+import experimentAssignmentService from '../../services/experimentAssignment.service.js';
+import {
+  TOUR_RECOMMENDATION_EXPERIMENT,
+  normalizeTourRecommendationAssignment,
+} from '../../experiments/tourRecommendation.experiment.js';
+import { getTourRecommendationPrompt } from '../prompts/tourRecommendation.prompt.js';
+import HttpError from '../../utils/httpError.js';
+
+const BOOKING_TOOLS = new Set([
+  'createReservation',
+]);
 
 function safeJson(value) {
   return JSON.stringify(value, null, 2);
@@ -80,6 +93,53 @@ function buildPlannerMessage(plan) {
       'Ask for the missing confirmation or details clearly and do not claim a reservation was created unless createReservation succeeded.',
     ].join('\n'),
   };
+}
+
+function buildTourRecommendationPromptMessage(metadata = {}) {
+  const version = metadata.activeTourRecommendationPromptVersion;
+
+  if (!version) {
+    return null;
+  }
+
+  return {
+    role: 'system',
+    content: getTourRecommendationPrompt(version),
+  };
+}
+
+function hasRecommendationStep(plan = {}) {
+  return (plan.steps || []).some((step) => (
+    step.tool === 'searchTours'
+    && step.args?.recommend === true
+  ));
+}
+
+function hasRecommendationOutcomeStep(plan = {}) {
+  return (plan.steps || []).some((step) => (
+    step.tool === 'checkAvailability'
+    || step.tool === 'createReservation'
+  ));
+}
+
+function attachTourRecommendationAssignment(metadata, assignment, { activePrompt = false } = {}) {
+  if (!assignment) return;
+
+  metadata.experimentAssignments = {
+    ...(metadata.experimentAssignments || {}),
+    [TOUR_RECOMMENDATION_EXPERIMENT.metadataKey]: assignment,
+  };
+  metadata.experiment = assignment.experiment;
+  metadata.experimentVariant = assignment.variant;
+
+  if (activePrompt) {
+    metadata.activeTourRecommendationPromptVersion = assignment.variant;
+    metadata.promptVersion = assignment.variant;
+    metadata.promptVersions = {
+      ...(metadata.promptVersions || {}),
+      tourRecommendation: assignment.variant,
+    };
+  }
 }
 
 function buildVisitorScopeMessage(metadata = {}) {
@@ -176,10 +236,14 @@ export class AgentOrchestrator {
   constructor({
     agent = birdwatchingAgent,
     aiClient = openaiClient,
+    featureFlagService = featureFlags,
+    experimentAssignments = experimentAssignmentService,
     log = logger,
   } = {}) {
     this.agent = agent;
     this.aiClient = aiClient;
+    this.featureFlags = featureFlagService;
+    this.experimentAssignments = experimentAssignments;
     this.logger = log;
   }
 
@@ -191,6 +255,7 @@ export class AgentOrchestrator {
       messageCount: messages.length,
       hasCustomerContext: Boolean(metadata.customerContext),
       hasConversationContext: Boolean(metadata.conversationContext),
+      aiTraceId: metadata.aiTraceId,
     }, (trace) => {
       metadata.agentTraceId = trace.id;
       return this.generateResponseUntraced(messages, metadata, options);
@@ -202,6 +267,11 @@ export class AgentOrchestrator {
     const onChunk = options.onChunk || (() => {});
     const userMessage = getLatestUserMessage(messages);
     const conversationContext = buildConversationContext(messages, metadata);
+    let activeExperimentAssignment = normalizeTourRecommendationAssignment(
+      metadata.conversationContext?.recentAssistantMetadata
+    );
+
+    attachTourRecommendationAssignment(metadata, activeExperimentAssignment);
 
     this.logger.info('Birdwatching agent orchestration started', {
       conversationId: metadata.conversationId,
@@ -210,9 +280,10 @@ export class AgentOrchestrator {
       hasSelectedTransportation: Boolean(conversationContext.selectedTransportation),
       transportationDeclined: Boolean(conversationContext.transportationDeclined),
       recentToolCount: conversationContext.recentToolsCalled.length,
+      aiTraceId: metadata.aiTraceId,
     });
 
-    const plan = await traceAgentPlanning('birdwatching_agent_planner', {
+    let plan = await traceAgentPlanning('birdwatching_agent_planner', {
       parentTraceId: metadata.agentTraceId,
       conversationId: metadata.conversationId,
       role: metadata.role,
@@ -231,6 +302,66 @@ export class AgentOrchestrator {
         message: userMessage,
         context: conversationContext,
       })));
+
+    if (hasRecommendationStep(plan)) {
+      activeExperimentAssignment = activeExperimentAssignment || await this.experimentAssignments.resolve({
+        userId: metadata.userId,
+        anonymousId: metadata.conversationId,
+        experiment: TOUR_RECOMMENDATION_EXPERIMENT.key,
+        flag: TOUR_RECOMMENDATION_EXPERIMENT.flag,
+        variants: TOUR_RECOMMENDATION_EXPERIMENT.variants,
+        defaultVariant: TOUR_RECOMMENDATION_EXPERIMENT.defaultVariant,
+        personProperties: {
+          plan: metadata.authUser?.plan,
+          role: metadata.role,
+        },
+      });
+
+      attachTourRecommendationAssignment(metadata, activeExperimentAssignment, {
+        activePrompt: true,
+      });
+    } else if (!activeExperimentAssignment && hasRecommendationOutcomeStep(plan)) {
+      activeExperimentAssignment = await this.experimentAssignments.getPersisted({
+        userId: metadata.userId,
+        experiment: TOUR_RECOMMENDATION_EXPERIMENT.key,
+        variants: TOUR_RECOMMENDATION_EXPERIMENT.variants,
+      });
+      attachTourRecommendationAssignment(metadata, activeExperimentAssignment);
+    }
+
+    const hasBookingSteps = (plan.steps || []).some((step) => BOOKING_TOOLS.has(step.tool));
+
+    if (hasBookingSteps) {
+      const temporaryDisable = await this.featureFlags.getTemporaryDisable?.(
+        FEATURE_FLAGS.AGENT_BOOKING
+      );
+      if (temporaryDisable) {
+        throw new HttpError(503, 'AI-assisted booking is temporarily unavailable.', {
+          code: 'FEATURE_TEMPORARILY_DISABLED',
+          expose: true,
+          meta: {
+            feature: FEATURE_FLAGS.AGENT_BOOKING,
+            disabledUntil: temporaryDisable.disabledUntil,
+          },
+        });
+      }
+      const bookingEnabled = await this.featureFlags.isEnabled({
+        flag: FEATURE_FLAGS.AGENT_BOOKING,
+        userId: metadata.userId,
+        anonymousId: metadata.conversationId,
+        personProperties: {
+          plan: metadata.authUser?.plan,
+          role: metadata.role,
+        },
+      });
+
+      if (!bookingEnabled) {
+        const unavailableMessage = 'AI-assisted booking is temporarily unavailable.';
+        metadata.agentPlan = { status: 'booking_feature_unavailable', tools: [] };
+        await onChunk(unavailableMessage);
+        return unavailableMessage;
+      }
+    }
 
     metadata.agentPlan = {
       status: plan.status,
@@ -277,12 +408,14 @@ export class AgentOrchestrator {
     const knownBookingContextMessage = buildKnownBookingContextMessage(metadata);
     const reservationFailureMessage = buildReservationFailureMessage(toolResults);
     const plannerMessage = buildPlannerMessage(plan);
+    const tourRecommendationPromptMessage = buildTourRecommendationPromptMessage(metadata);
     const finalMessages = [
       ...messages,
       visitorScopeMessage,
       toolContextMessage,
       knownBookingContextMessage,
       reservationFailureMessage,
+      tourRecommendationPromptMessage,
       plannerMessage,
     ].filter(Boolean);
 
@@ -291,6 +424,7 @@ export class AgentOrchestrator {
       hasToolContext: Boolean(toolContextMessage),
       hasKnownBookingContext: Boolean(knownBookingContextMessage),
       hasReservationFailure: Boolean(reservationFailureMessage),
+      hasTourRecommendationPrompt: Boolean(tourRecommendationPromptMessage),
       hasPlannerMessage: Boolean(plannerMessage),
     });
     this.logger.info('Birdwatching agent final prompt assembled', {
@@ -299,6 +433,7 @@ export class AgentOrchestrator {
       hasToolContext: Boolean(toolContextMessage),
       hasKnownBookingContext: Boolean(knownBookingContextMessage),
       hasReservationFailure: Boolean(reservationFailureMessage),
+      hasTourRecommendationPrompt: Boolean(tourRecommendationPromptMessage),
       hasPlannerMessage: Boolean(plannerMessage),
     });
 

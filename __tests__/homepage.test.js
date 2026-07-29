@@ -25,7 +25,7 @@ await jest.unstable_mockModule('../src/services/homepage.service.js', () => ({
   },
 }));
 
-const { default: app } = await import('../src/app.js');
+const { default: app } = await import('../src/api/app.js');
 
 describe('homepage endpoints', () => {
   beforeEach(() => {

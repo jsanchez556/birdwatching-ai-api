@@ -28,7 +28,7 @@ Back to [Project Context](../CONTEXT.md). Pair this with [API Contracts](./api.m
 ## OpenAI
 - Always send role-based messages.
 - Use centralized prompts from `src/ai/prompts/`.
-- Keep token usage and cost-estimation helpers in `src/ai/evaluations/`.
+- Keep offline evaluation datasets, scorers, runners, dashboard summaries, token usage comparison, and cost-estimation helpers in `src/evaluations/`.
 - Keep AI safety, refusal, or policy checks in `src/ai/guardrails/`.
 - Keep chat tool schemas in `src/ai/schemas/`, adapters in `src/ai/tools/`, and multi-step planning in `src/ai/orchestrators/`.
 - Feed tool results into final response context before returning conversational text.
@@ -47,21 +47,21 @@ Back to [Project Context](../CONTEXT.md). Pair this with [API Contracts](./api.m
 - Keep pgvector RAG documents in `knowledge_documents` and `knowledge_chunks`; do not mix RAG embeddings into the tour/location reference tables.
 
 ## RAG Data
-- Keep runtime knowledge source files under `src/ai/enrichment/data`.
+- Keep runtime knowledge source files under `src/ingestion/data`.
 - Use normalized JSON arrays for ingestion datasets; `birds.json` is the reference contract.
 - Preserve normalized document fields used by embeddings and UI metadata: required `externalId` and `name`, plus optional `description`, `locations`, `documentType`, `category`, `tags`, and `metadata`.
 - Store generated embeddings in PostgreSQL through `src/db/vector/vector.repository.js`; do not write generated embeddings into source files.
-- Keep enrichment, chunking, and semantic retrieval in `src/ai/enrichment`.
+- Keep external source export/normalization in `src/ingestion`; keep chunking and semantic retrieval in `src/ai/services`.
 - Keep metadata filters parameterized and limited to known document fields, tags, and JSONB containment.
 - Run bird document enrichment and ingestion through `npm run enrich -- birds`; do not run source document ingestion from chat or request handlers.
 
 ## External Bird Data
-- Keep provider clients in `src/ai/enrichment/clients/` and ingestion orchestration in services.
+- Keep provider clients in `src/ingestion/clients/` and ingestion orchestration in `src/ingestion/services/`.
 - Use `src/utils/httpClient.js` for provider requests so non-2xx responses, malformed JSON, and unexpected response shapes are normalized.
 - Share `src/utils/rateLimiter.js` across provider clients for ingestion jobs; do not configure external provider traffic above 40 requests per minute.
 - Read eBird, iNaturalist, and Xeno-canto base URLs and API keys from `src/config/env.js`; never hardcode provider secrets.
-- Keep external provider JSON export and cache behavior in `src/ai/enrichment/services/birds.enrichment.service.js` or enrichment services, not in provider client classes.
-- Normalize fetched provider data before writing documents into `src/ai/enrichment/data` or passing it to vector ingestion.
+- Keep external provider JSON export and cache behavior in `src/ingestion/services/birdsIngest.service.js` or ingestion services, not in provider client classes.
+- Normalize fetched provider data before writing documents into `src/ingestion/data` or passing it to vector ingestion.
 
 ## Tour Tools
 - Keep tour data and reservation state in PostgreSQL; do not reintroduce JSON-backed tour state.

@@ -10,7 +10,7 @@
   "include": [
     "src/**/*.js",
     "__tests__/**/*.js"
-  ],
+, "scripts/enrich.js"  ],
   "exclude": [
     "node_modules",
     "coverage",

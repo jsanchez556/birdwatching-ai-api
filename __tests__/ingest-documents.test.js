@@ -6,7 +6,7 @@ import { jest } from '@jest/globals';
 const mockIngestDocuments = jest.fn();
 const mockPoolEnd = jest.fn();
 
-await jest.unstable_mockModule('../src/ai/enrichment/services/ingest.service.js', () => ({
+await jest.unstable_mockModule('../src/ingestion/services/ingest.service.js', () => ({
   default: {
     ingestDocuments: mockIngestDocuments,
   },
@@ -32,7 +32,7 @@ const {
   normalizeFileName,
   parseJson,
   readDocumentsFromFile,
-} = await import('../src/ai/enrichment/services/birds.enrichment.service.js');
+} = await import('../src/ingestion/services/birdsIngest.service.js');
 
 describe('enrichment ingestion helpers', () => {
   let dataDir;
@@ -51,9 +51,9 @@ describe('enrichment ingestion helpers', () => {
     expect(normalizeFileName('birds.json')).toBe('birds.json');
   });
 
-  it('rejects paths outside src/ai/enrichment/data', () => {
+  it('rejects paths outside src/ingestion/data', () => {
     expect(() => assertSafeDataPath('../secrets.json', dataDir))
-      .toThrow('Refusing to read outside src/ai/enrichment/data');
+      .toThrow('Refusing to read outside src/ingestion/data');
   });
 
   it('rejects JSON shapes that are not normalized document arrays', () => {

@@ -1,6 +1,6 @@
-# Task: Add a Targeted Enrichment Pipeline for `src/ai/enrichment/data`
+# Task: Add a Targeted Enrichment Pipeline for `src/ingestion/data`
 
-Create a standalone document ingestion pipeline for files in `src/ai/enrichment/data`.
+Create a standalone document ingestion pipeline for files in `src/ingestion/data`.
 
 The goal is to move RAG ingestion out of the chat request cycle so chat retrieval does not trigger document chunking, embedding generation, or pgvector writes. This avoids slow first responses and request timeouts.
 
@@ -20,7 +20,7 @@ If the project script supports argument forwarding differently, document the exa
 
 The ingestion pipeline should:
 
-- Read one or more files from `src/ai/enrichment/data`
+- Read one or more files from `src/ingestion/data`
 - Support processing all compatible files
 - Parse supported source files, starting with `.json`
 - Normalize documents using the existing RAG document normalization logic
@@ -41,7 +41,7 @@ The ingestion pipeline should:
 Add a script entry point such as:
 
 ```txt
-src/ai/enrichment/services/birds.enrichment.service.js
+src/ingestion/services/birdsIngest.service.js
 ```
 
 or a project-consistent location.
@@ -51,7 +51,7 @@ Add a `package.json` script:
 ```json
 {
   "scripts": {
-    "enrich": "node src/ai/enrichment/scripts/enrich.js"
+    "enrich": "node scripts/enrich.js"
   }
 }
 ```
@@ -68,11 +68,11 @@ Optional alias support is fine, but the documented npm form must work reliably.
 
 ## Data Directory
 
-Use `src/ai/enrichment/data` as the root input directory.
+Use `src/ingestion/data` as the root input directory.
 
 Rules:
 
-- Reject paths outside `src/ai/enrichment/data`
+- Reject paths outside `src/ingestion/data`
 - Ignore unsupported file types with a clear message
 - Fail clearly if a requested file does not exist
 - For `npm ingest`, process all supported files in deterministic order
@@ -94,7 +94,7 @@ Specifically:
 Add focused tests for:
 
 - CLI argument parsing
-- Rejecting paths outside `src/ai/enrichment/data`
+- Rejecting paths outside `src/ingestion/data`
 - Processing one or multiple JSON files
 - Calling the ingestion service with parsed documents
 - Chat/RAG no longer triggering ingestion
@@ -116,7 +116,7 @@ This is complete when:
 
 - `npm run enrich -- birds` ingests one file
 - `npm run enrich -- birds` ingests multiple files
-- `npm run enrich -- birds` ingests all supported files in `src/ai/enrichment/data`
+- `npm run enrich -- birds` ingests all supported files in `src/ingestion/data`
 - Documents are chunked, embedded, and stored in PostgreSQL/pgvector
 - Chat requests no longer perform ingestion
 - Existing chat behavior remains graceful when no RAG documents are available

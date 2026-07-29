@@ -1,0 +1,232 @@
+Treat both repository guidance files as the source of truth for architecture, coding style, testing expectations, and response format:
+
+- [Backend AGENTS.md](/home/jose/Documents/projects/birdwatching-ai-api/AGENTS.md)
+- [Frontend AGENTS.md](/home/jose/Documents/projects/birdwatching-ai-ui/AGENTS.md)
+
+Do not make changes that conflict with either file unless I explicitly override those instructions.
+
+## Goal
+
+Implement subscription plans across the backend and frontend.
+
+## Plans
+
+### FREE
+- 20 chats per day
+- 5 bird identifications per day
+
+### PRO
+- 500 chats per day
+- 100 bird identifications per day
+
+## Backend Requirements
+
+Store subscription plan data in PostgreSQL.
+
+Create the following backend components:
+
+- Plan service
+- Quota service
+- Usage validator
+
+Add database support for these tables:
+
+### `plans`
+- `id`
+- `name`
+- `max_chats`
+- `max_identifications`
+
+### `user_subscriptions`
+- `user_id`
+- `plan_id`
+- `status`
+
+New users should default to the FREE plan.
+
+Expected new-user subscription shape:
+
+```json
+{
+  "plan": "FREE"
+}
+```
+
+The backend should enforce daily usage limits for:
+
+- Chat requests
+- Bird identification requests
+
+If a user exceeds their daily quota, return a clear, user-facing error response that follows the existing backend API response conventions.
+
+## Frontend Requirements
+
+Update the frontend to support the subscription-plan behavior exposed by the backend.
+
+The UI should gracefully handle quota-limit responses and display a clear message when the user has reached their daily limit.
+
+Do not invent subscription fields that the backend does not return.
+
+## Constraints
+
+- Implement both backend and frontend changes.
+- Follow the existing architecture and service boundaries in each repository.
+- Keep database, quota, and subscription logic in the backend.
+- Keep frontend API calls inside the frontend API adapter layer.
+- Do not add tests yet unless I explicitly ask for them.
+- Do not introduce unrelated refactors.
+
+---
+
+## Current Architecture Note
+
+Subscription, usage, quota, and billing domain logic is provider-agnostic.
+Stripe is now only a concrete billing provider adapter for hosted checkout,
+billing management, and webhook normalization. Generic API responses use
+`paymentUrl` and `managementUrl`; provider IDs are stored as
+`billing_provider`, `provider_customer_id`, `provider_subscription_id`, and
+`provider_price_id`.
+
+Treat the provider-agnostic billing schema as the baseline implementation, not
+as a follow-up compatibility migration. The final
+`src/db/migrations/018_create_subscription_plans.sql` migration creates
+provider-neutral subscription storage directly:
+
+- `user_subscriptions` must define `billing_provider`,
+  `provider_customer_id`, `provider_subscription_id`, and `provider_price_id`
+  from the start.
+- Do not create `stripe_customer_id`, `stripe_subscription_id`, or
+  `stripe_price_id` in the baseline schema.
+- Do not include migration-only `ALTER TABLE`, `UPDATE`, `DROP COLUMN`, or
+  `DROP FUNCTION` steps that only exist to convert the old Stripe-specific
+  schema.
+- Include `plan_provider_mappings` in `018` so internal plans can map to
+  provider products, prices, SKUs, or equivalent identifiers.
+- Define provider-neutral SQL helpers in `018`, including
+  `get_user_subscription_plan`, `upsert_provider_subscription`, and
+  `update_provider_subscription_status`.
+- Keep usage tracking and quota functions in `018`, but make sure they read
+  the provider-neutral subscription shape.
+
+---
+
+## Iteration 2, STRIPE CHECKOUT
+
+Integrate Stripe Checkout.
+
+Requirements:
+
+- Create checkout session
+- Upgrade FREE to PRO
+- Handle Stripe webhooks
+- Persist subscription status
+
+Expected Enpoint:
+
+POST /billing/checkout 
+
+```json
+{
+  "paymentUrl": "..."
+}
+```
+
+---
+
+## Iteration 3, WEBHOOKS
+
+Implement Stripe webhooks.
+
+Handle:
+
+- checkout.session.completed
+- customer.subscription.updated
+- customer.subscription.deleted
+
+Expected Result: 
+
+User pays, then system updates:
+
+```txt
+FREE
+↓
+PRO
+```
+
+---
+
+## Iteration 4, QUOTA ENFORCEMENT
+
+Implement quota enforcement.
+
+Requirements:
+
+Before every AI request:
+
+- validate plan
+- validate daily usage
+- block if limit exceeded
+
+Return proper errors.
+
+Expected Result: 
+
+```http
+429
+```
+
+or
+
+```json
+{
+  "error": "Daily quota exceeded"
+}
+```
+
+---
+
+## Iteration 5, AI COST TRACKING
+
+Track AI costs per user.
+
+Track:
+
+- OpenAI chat costs
+- embeddings costs
+- voice costs
+- image analysis costs
+
+Store estimated cost per request.
+
+Expected result:
+
+Table:
+
+```sql
+usage_events
+- user_id
+- feature
+- tokens
+- estimated_cost
+- created_at
+```
+
+Dashboard:
+
+```json
+{
+  "monthlyCost": 4.28,
+  "monthlyRequests": 142
+}
+```
+
+---
+
+## Iteration 6, LANGSMITH + BILLING
+
+Correlate LangSmith traces with billing data.
+
+Track:
+- user
+- request cost
+- model usage

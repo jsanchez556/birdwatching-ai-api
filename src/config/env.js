@@ -1,6 +1,13 @@
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { parsePositiveInteger } from '../utils/number.utils.js';
 
-dotenv.config({ quiet: true });
+const projectEnvPath = fileURLToPath(new URL('../../.env', import.meta.url));
+
+dotenv.config({
+  path: projectEnvPath,
+  quiet: true,
+});
 
 const required = ['OPENAI_API_KEY', 'DATABASE_URL', 'JWT_SECRET'];
 const nodeEnv = process.env.NODE_ENV || 'development';
@@ -21,6 +28,15 @@ const numericEnvKeys = [
   'AI_RATE_LIMIT_MAX_REQUESTS',
   'EXTERNAL_API_RATE_LIMIT_WINDOW_MS',
   'EXTERNAL_API_RATE_LIMIT_MAX_REQUESTS',
+  'BULLMQ_JOB_ATTEMPTS',
+  'BULLMQ_JOB_BACKOFF_DELAY_MS',
+  'BULLMQ_REMOVE_ON_COMPLETE_AGE_SECONDS',
+  'BULLMQ_REMOVE_ON_COMPLETE_COUNT',
+  'BULLMQ_REMOVE_ON_FAIL_AGE_SECONDS',
+  'BULLMQ_REMOVE_ON_FAIL_COUNT',
+  'BULLMQ_WORKER_CONCURRENCY',
+  'BIRD_IDENTIFICATION_JOB_STALL_TIMEOUT_MS',
+  'STRIPE_WEBHOOK_TOLERANCE_SECONDS',
 ];
 
 for (const key of numericEnvKeys) {
@@ -34,6 +50,20 @@ if (
   !['true', 'false'].includes(process.env.LOG_FILES_ENABLED)
 ) {
   throw new Error('LOG_FILES_ENABLED must be true or false');
+}
+
+if (
+  process.env.BULLMQ_DLQ_ENABLED &&
+  !['true', 'false'].includes(process.env.BULLMQ_DLQ_ENABLED)
+) {
+  throw new Error('BULLMQ_DLQ_ENABLED must be true or false');
+}
+
+if (
+  process.env.POSTHOG_ENABLED
+  && !['true', 'false'].includes(process.env.POSTHOG_ENABLED)
+) {
+  throw new Error('POSTHOG_ENABLED must be true or false');
 }
 
 if (nodeEnv !== 'test') {
@@ -68,6 +98,11 @@ const headLineBirds = (process.env.HEAD_LINE_BIRDS || process.env.HOMEPAGE_BIRD_
   .map((name) => name.trim())
   .filter(Boolean);
 
+const billingProviders = (process.env.BILLING_PROVIDERS || 'stripe')
+  .split(',')
+  .map((provider) => provider.trim().toLowerCase())
+  .filter(Boolean);
+
 const env = {
   port: Number(process.env.PORT) || 3000,
   nodeEnv,
@@ -77,6 +112,9 @@ const env = {
   langChainApiKey: process.env.LANGCHAIN_API_KEY,
   langChainTracingV2: process.env.LANGCHAIN_TRACING === 'true',
   langChainProject: process.env.LANGCHAIN_PROJECT || 'birdwatching-ai',
+  aiEvalResultsFile: process.env.AI_EVAL_OUTPUT_FILE
+    || process.env.AI_EVAL_RESULTS_FILE
+    || 'tmp/ai-eval-results.json',
   databaseUrl: process.env.DATABASE_URL,
   jwtSecret: nodeEnv === 'test' ? 'test-jwt-secret' : process.env.JWT_SECRET,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
@@ -106,6 +144,34 @@ const env = {
     secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
   },
   adminEmail: process.env.ADMIN_EMAIL,
+  billing: {
+    defaultProvider: (process.env.BILLING_DEFAULT_PROVIDER || billingProviders[0] || 'stripe')
+      .trim()
+      .toLowerCase(),
+    providers: billingProviders,
+  },
+  stripe: {
+    secretKey: process.env.STRIPE_SECRET_KEY,
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+    proPriceId: process.env.STRIPE_PRICE_PRO,
+    guidePriceId: process.env.STRIPE_PRICE_GUIDE,
+    checkoutSuccessUrl: process.env.STRIPE_CHECKOUT_SUCCESS_URL,
+    checkoutCancelUrl: process.env.STRIPE_CHECKOUT_CANCEL_URL,
+    portalReturnUrl: process.env.STRIPE_PORTAL_RETURN_URL,
+    webhookToleranceSeconds: parsePositiveInteger(
+      process.env.STRIPE_WEBHOOK_TOLERANCE_SECONDS,
+      5 * 60
+    ),
+  },
+  posthog: {
+    enabled: process.env.POSTHOG_ENABLED === 'true',
+    apiKey: process.env.POSTHOG_API_KEY,
+    host: process.env.POSTHOG_HOST || 'https://us.i.posthog.com',
+  },
+  birdIdentificationJobStallTimeoutMs: parsePositiveInteger(
+    process.env.BIRD_IDENTIFICATION_JOB_STALL_TIMEOUT_MS,
+    5 * 60 * 1000
+  ),
 };
 
 export default env;

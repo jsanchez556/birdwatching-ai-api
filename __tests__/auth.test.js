@@ -6,10 +6,22 @@ import request from 'supertest';
 const mockCreateUser = jest.fn();
 const mockFindByEmail = jest.fn();
 const mockFindById = jest.fn();
+const mockUpdateProfile = jest.fn();
+const mockUpdateProfileImage = jest.fn();
 const mockCreateRefreshToken = jest.fn();
 const mockFindActiveRefreshToken = jest.fn();
 const mockRevokeRefreshToken = jest.fn();
 const mockProcessMessageStream = jest.fn();
+const mockEnsureDefaultSubscription = jest.fn();
+const mockReserveUsage = jest.fn();
+const mockUploadObject = jest.fn();
+const mockAnalyticsTrack = jest.fn();
+
+await jest.unstable_mockModule('../src/analytics/analytics.service.js', () => ({
+  default: {
+    track: mockAnalyticsTrack,
+  },
+}));
 
 await jest.unstable_mockModule('../src/utils/logger.js', () => ({
   default: {
@@ -24,6 +36,8 @@ await jest.unstable_mockModule('../src/db/queries/user.queries.js', () => ({
     create: mockCreateUser,
     findByEmail: mockFindByEmail,
     findById: mockFindById,
+    updateProfile: mockUpdateProfile,
+    updateProfileImage: mockUpdateProfileImage,
   },
 }));
 
@@ -41,7 +55,31 @@ await jest.unstable_mockModule('../src/services/chat.service.js', () => ({
   },
 }));
 
-const { default: app } = await import('../src/app.js');
+await jest.unstable_mockModule('../src/services/plan.service.js', () => ({
+  DEFAULT_PLAN_NAME: 'FREE',
+  PRO_PLAN_NAME: 'PRO',
+  default: {
+    ensureDefaultSubscription: mockEnsureDefaultSubscription,
+  },
+}));
+
+await jest.unstable_mockModule('../src/services/quota.service.js', () => ({
+  QUOTA_FEATURES: {
+    CHAT: 'chat',
+    IDENTIFICATION: 'identification',
+  },
+  default: {
+    reserveUsage: mockReserveUsage,
+  },
+}));
+
+await jest.unstable_mockModule('../src/storage/s3Bucket.service.js', () => ({
+  default: jest.fn().mockImplementation(() => ({
+    uploadObject: mockUploadObject,
+  })),
+}));
+
+const { default: app } = await import('../src/api/app.js');
 
 function authHeader() {
   const token = jwt.sign(
@@ -57,6 +95,15 @@ describe('auth endpoints', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockCreateRefreshToken.mockResolvedValue({});
+    mockEnsureDefaultSubscription.mockResolvedValue({ plan: 'FREE' });
+    mockUploadObject.mockResolvedValue({ bucket: 'test-bucket', key: 'user-profile-images/user-1.png' });
+    mockReserveUsage.mockResolvedValue({
+      allowed: true,
+      plan: 'FREE',
+      feature: 'chat',
+      used: 1,
+      max: 20,
+    });
   });
 
   it('signs up a user and returns a token with safe profile data', async () => {
@@ -86,6 +133,8 @@ describe('auth endpoints', () => {
       email: 'ana@example.com',
       name: 'Ana Gomez',
       role: 'customer',
+      plan: 'FREE',
+      imageUrl: null,
     });
     expect(res.body.data.user.passwordHash).toBeUndefined();
     expect(mockCreateUser).toHaveBeenCalledWith(expect.objectContaining({
@@ -98,6 +147,15 @@ describe('auth endpoints', () => {
       userId: 'user-1',
       tokenHash: expect.any(String),
       expiresAt: expect.any(Date),
+    });
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith({
+      userId: 'user-1',
+      event: 'user_signed_up',
+      properties: {
+        role: 'customer',
+        plan: 'FREE',
+        source: 'email_password',
+      },
     });
   });
 
@@ -144,6 +202,8 @@ describe('auth endpoints', () => {
       email: 'ana@example.com',
       name: 'Ana Gomez',
       role: 'customer',
+      plan: 'FREE',
+      imageUrl: null,
     });
     expect(mockFindByEmail).toHaveBeenCalledWith('ana@example.com');
     expect(mockCreateRefreshToken).toHaveBeenCalledWith({
@@ -151,6 +211,28 @@ describe('auth endpoints', () => {
       tokenHash: expect.any(String),
       expiresAt: expect.any(Date),
     });
+    expect(mockAnalyticsTrack).not.toHaveBeenCalled();
+  });
+
+  it('rejects login for a suspended account after validating its credentials', async () => {
+    const passwordHash = await bcrypt.hash('correct-password', 4);
+    mockFindByEmail.mockResolvedValue({
+      id: 'user-1',
+      email: 'ana@example.com',
+      passwordHash,
+      suspendedAt: '2026-07-29T12:00:00.000Z',
+    });
+
+    const res = await request(app)
+      .post('/auth/login')
+      .send({
+        email: 'ana@example.com',
+        password: 'correct-password',
+      });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body.error.code).toBe('ACCOUNT_SUSPENDED');
+    expect(mockCreateRefreshToken).not.toHaveBeenCalled();
   });
 
   it('refreshes a session and rotates the refresh token', async () => {
@@ -221,6 +303,118 @@ describe('auth endpoints', () => {
     expect(res.statusCode).toBe(401);
     expect(res.body.error.code).toBe('INVALID_CREDENTIALS');
     expect(res.body.error.message).toBe('Invalid email or password');
+  });
+
+  it('updates the authenticated user profile', async () => {
+    mockUpdateProfile.mockResolvedValue({
+      id: 'user-1',
+      email: 'ana@example.com',
+      name: 'Ana Maria',
+      role: 'customer',
+      plan: 'PRO',
+      profileImageKey: 'user-profile-images/user-1.png',
+    });
+
+    const res = await request(app)
+      .patch('/auth/profile')
+      .set('Authorization', authHeader())
+      .send({
+        userId: 'other-user',
+        name: ' Ana Maria ',
+      });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.user).toEqual({
+      id: 'user-1',
+      email: 'ana@example.com',
+      name: 'Ana Maria',
+      role: 'customer',
+      plan: 'PRO',
+      imageUrl: '/files/user-profile-images/user-1.png',
+    });
+    expect(mockUpdateProfile).toHaveBeenCalledWith({
+      userId: 'user-1',
+      name: 'Ana Maria',
+    });
+  });
+
+  it('rejects unauthenticated profile updates', async () => {
+    const res = await request(app)
+      .patch('/auth/profile')
+      .send({ name: 'Ana Maria' });
+
+    expect(res.statusCode).toBe(401);
+    expect(res.body.error.code).toBe('UNAUTHORIZED');
+    expect(mockUpdateProfile).not.toHaveBeenCalled();
+  });
+
+  it('uploads an authenticated profile image', async () => {
+    mockUpdateProfileImage.mockResolvedValue({
+      id: 'user-1',
+      email: 'ana@example.com',
+      name: 'Ana Gomez',
+      role: 'customer',
+      plan: 'FREE',
+      profileImageKey: 'user-profile-images/user-1.png',
+    });
+
+    const res = await request(app)
+      .post('/auth/profile-image')
+      .set('Authorization', authHeader())
+      .set('Content-Type', 'image/png')
+      .send(Buffer.from('image-bytes'));
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.user.imageUrl).toBe('/files/user-profile-images/user-1.png');
+    expect(mockUploadObject).toHaveBeenCalledWith(expect.objectContaining({
+      key: expect.stringMatching(/^user-profile-images\/user-user-1-/),
+      body: expect.any(Buffer),
+      contentType: 'image/png',
+      skipIfExists: false,
+    }));
+    expect(mockUpdateProfileImage).toHaveBeenCalledWith({
+      userId: 'user-1',
+      profileImageKey: expect.stringMatching(/^user-profile-images\/user-user-1-/),
+    });
+  });
+
+  it('rejects invalid profile image uploads', async () => {
+    const res = await request(app)
+      .post('/auth/profile-image')
+      .set('Authorization', authHeader())
+      .set('Content-Type', 'text/plain')
+      .send('not image');
+
+    expect(res.statusCode).toBe(422);
+    expect(res.body.error.code).toBe('INVALID_PROFILE_IMAGE_TYPE');
+    expect(mockUploadObject).not.toHaveBeenCalled();
+  });
+
+  it('rejects oversized profile image uploads', async () => {
+    const res = await request(app)
+      .post('/auth/profile-image')
+      .set('Authorization', authHeader())
+      .set('Content-Type', 'image/png')
+      .send(Buffer.alloc((5 * 1024 * 1024) + 1));
+
+    expect(res.statusCode).toBe(413);
+    expect(res.body.error.code).toBe('PROFILE_IMAGE_TOO_LARGE');
+    expect(mockUploadObject).not.toHaveBeenCalled();
+  });
+
+  it('returns a safe error when profile image storage fails', async () => {
+    mockUploadObject.mockRejectedValue(new Error('secret bucket failure'));
+
+    const res = await request(app)
+      .post('/auth/profile-image')
+      .set('Authorization', authHeader())
+      .set('Content-Type', 'image/png')
+      .send(Buffer.from('image-bytes'));
+
+    expect(res.statusCode).toBe(502);
+    expect(res.body.error.code).toBe('PROFILE_IMAGE_UPLOAD_FAILED');
+    expect(res.body.error.message).toBe('Profile image could not be saved. Please try again.');
+    expect(mockUpdateProfileImage).not.toHaveBeenCalled();
   });
 });
 

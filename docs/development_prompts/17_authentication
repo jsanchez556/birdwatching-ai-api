@@ -104,12 +104,12 @@ Use a clean `requireAuth` middleware. If an `optionalAuth` placeholder already e
 
 Follow the existing project structure:
 
-- `src/routes/auth.routes.js`
-- `src/controllers/auth.controller.js`
+- `src/api/routes/auth.routes.js`
+- `src/api/controllers/auth.controller.js`
 - `src/services/auth.service.js`
 - `src/db/queries/user.queries.js`
-- `src/middleware/auth.middleware.js`
-- `src/validators/auth.validators.js`
+- `src/api/middleware/auth.middleware.js`
+- `src/api/validators/auth.validators.js`
 - shared JWT/password helpers where appropriate
 
 Do not put auth logic directly in route files or AI services.
@@ -403,8 +403,8 @@ Keep clean separation:
 
 Likely files:
 
-- `src/middleware/auth.middleware.js`
-- `src/controllers/chat.controller.js`
+- `src/api/middleware/auth.middleware.js`
+- `src/api/controllers/chat.controller.js`
 - `src/services/chat.service.js`
 - `src/services/conversation.service.js`
 - `src/services/reservation.service.js`

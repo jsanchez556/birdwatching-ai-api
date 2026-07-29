@@ -24,7 +24,9 @@ class VoiceChatService {
         audioMimeType: audioUpload.mimeType,
         audioBytes: audioUpload.buffer.length,
         parentTraceId: context.parentTraceId,
+        aiTraceId: context.aiTraceId,
       },
+      traceId: context.aiTraceId,
       parentTraceId: context.parentTraceId,
       outputMetadata: (result = {}) => ({
         conversationId: result.conversationId,
@@ -35,6 +37,7 @@ class VoiceChatService {
     }, async (trace) => {
       const { transcript } = await audioService.transcribe(audioUpload, {
         parentTraceId: trace.id,
+        userId: context.authUser?.id,
       });
       const normalizedTranscript = assertNonEmptyText(
         transcript,
@@ -57,7 +60,9 @@ class VoiceChatService {
           authUser: context.authUser,
           role: context.role,
           responseMode: context.responseMode,
+          source: 'voice',
           parentTraceId: trace.id,
+          aiTraceId: context.aiTraceId || trace.id,
         }
       );
 
@@ -68,6 +73,7 @@ class VoiceChatService {
       );
       const speech = await audioService.synthesizeSpeech({ text: answer }, {
         parentTraceId: trace.id,
+        userId: context.authUser?.id,
       });
       const storedAudio = await voiceChatAudioStorage.uploadSpeechResponse(speech);
 

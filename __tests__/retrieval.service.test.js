@@ -3,7 +3,7 @@ import { jest } from '@jest/globals';
 const mockGenerateEmbedding = jest.fn();
 const mockSearchSimilar = jest.fn();
 
-await jest.unstable_mockModule('../src/ai/openai.client.js', () => ({
+await jest.unstable_mockModule('../src/ai/clients/openai.client.js', () => ({
   default: {
     generateEmbedding: mockGenerateEmbedding,
   },
@@ -29,7 +29,7 @@ const {
   diversifyByDocument,
   mapRetrievedChunk,
   normalizeFilters,
-} = await import('../src/ai/enrichment/services/retrieval.service.js');
+} = await import('../src/ai/services/retrieval.service.js');
 
 describe('RetrievalService helpers', () => {
   beforeEach(() => {

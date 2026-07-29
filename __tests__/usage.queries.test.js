@@ -46,6 +46,79 @@ describe('UsageQueries', () => {
     );
   });
 
+  it('creates usage events with trace and model correlation data', async () => {
+    const usageEvent = {
+      id: '123',
+      user_id: 7,
+      feature: 'embedding',
+      tokens: 42,
+      estimated_cost: '0.000001',
+      trace_id: 'trace-1',
+      model_usage: [{ model: 'text-embedding-3-small', totalTokens: 42 }],
+    };
+    mockQuery.mockResolvedValue({ rows: [usageEvent] });
+
+    await expect(usageQueries.createUsageEvent({
+      userId: 7,
+      feature: 'embedding',
+      tokens: 42,
+      estimatedCost: 0.000001,
+      traceId: 'trace-1',
+      modelUsage: usageEvent.model_usage,
+    })).resolves.toBe(usageEvent);
+
+    expect(mockQuery).toHaveBeenCalledWith(
+      'SELECT * FROM record_usage_event($1, $2, $3, $4, $5, $6)',
+      [7, 'embedding', 42, 0.000001, 'trace-1', JSON.stringify(usageEvent.model_usage)]
+    );
+  });
+
+  it('updates reserved usage events with trace and model correlation data', async () => {
+    const usageEvent = {
+      id: '123',
+      user_id: 7,
+      feature: 'chat',
+      tokens: 220,
+      estimated_cost: '0.002000',
+      trace_id: 'trace-1',
+      model_usage: [{ model: 'gpt-4o-mini', totalTokens: 220 }],
+    };
+    mockQuery.mockResolvedValue({ rows: [usageEvent] });
+
+    await expect(usageQueries.updateUsageEventCost({
+      usageEventId: 123,
+      userId: 7,
+      tokens: 220,
+      estimatedCost: 0.002,
+      traceId: 'trace-1',
+      modelUsage: usageEvent.model_usage,
+    })).resolves.toBe(usageEvent);
+
+    expect(mockQuery).toHaveBeenCalledWith(
+      'SELECT * FROM update_usage_event_cost($1, $2, $3, $4, $5, $6)',
+      [123, 7, 220, 0.002, 'trace-1', JSON.stringify(usageEvent.model_usage)]
+    );
+  });
+
+  it('reads the monthly billing usage dashboard', async () => {
+    const dashboard = {
+      monthly_cost: '4.280000',
+      monthly_requests: 142,
+      plan_name: 'PRO',
+    };
+    mockQuery.mockResolvedValue({ rows: [dashboard] });
+
+    await expect(usageQueries.getBillingUsageDashboard({
+      userId: 7,
+      monthStart: '2026-06-01T00:00:00.000Z',
+    })).resolves.toBe(dashboard);
+
+    expect(mockQuery).toHaveBeenCalledWith(
+      'SELECT * FROM get_monthly_billing_usage_dashboard($1, $2)',
+      [7, '2026-06-01T00:00:00.000Z']
+    );
+  });
+
   it('throws when the database insert fails', async () => {
     mockQuery.mockRejectedValue(new Error('Database error'));
 
