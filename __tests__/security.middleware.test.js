@@ -1,8 +1,14 @@
 import { jest } from '@jest/globals';
 import request from 'supertest';
 
+process.env.NODE_ENV = 'test';
+process.env.OPENAI_API_KEY = 'test-openai-key';
+process.env.DATABASE_URL = 'postgres://test:test@localhost:5432/test';
+process.env.JWT_SECRET = 'test-jwt-secret';
 process.env.CORS_ORIGINS = ' https://app.example.com, https://admin.example.com , ';
-process.env.CORS_ALLOWED_HEADERS = [
+delete process.env.CORS_ALLOWED_HEADERS;
+
+const EXPECTED_DEFAULT_ALLOWED_HEADERS = [
   'Content-Type',
   'Authorization',
   'X-Filename',
@@ -11,7 +17,89 @@ process.env.CORS_ALLOWED_HEADERS = [
   'X-Response-Mode',
   'X-Customer-Context',
   'X-Conversation-Context',
-].join(', ');
+];
+const EXPECTED_ALLOWED_METHODS = ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'];
+
+const BROWSER_PREFLIGHT_CASES = [
+  {
+    name: 'authenticated GET',
+    path: '/chat/latest',
+    method: 'GET',
+    requestHeaders: ['authorization'],
+  },
+  {
+    name: 'public JSON POST',
+    path: '/auth/login',
+    method: 'POST',
+    requestHeaders: ['content-type'],
+  },
+  {
+    name: 'authenticated JSON POST',
+    path: '/chat',
+    method: 'POST',
+    requestHeaders: ['authorization', 'content-type'],
+  },
+  {
+    name: 'authenticated JSON PATCH',
+    path: '/auth/profile',
+    method: 'PATCH',
+    requestHeaders: ['authorization', 'content-type'],
+  },
+  {
+    name: 'authenticated DELETE',
+    path: '/cart/items/item-123',
+    method: 'DELETE',
+    requestHeaders: ['authorization'],
+  },
+  {
+    name: 'raw authenticated profile-image upload',
+    path: '/auth/profile-image',
+    method: 'POST',
+    requestHeaders: ['authorization', 'content-type', 'x-filename'],
+  },
+  {
+    name: 'visitor voice chat with optional context',
+    path: '/voice-chat',
+    method: 'POST',
+    requestHeaders: [
+      'content-type',
+      'x-conversation-context',
+      'x-conversation-id',
+      'x-customer-context',
+      'x-filename',
+      'x-response-mode',
+      'x-role',
+    ],
+  },
+  {
+    name: 'authenticated voice chat with optional context',
+    path: '/voice-chat',
+    method: 'POST',
+    requestHeaders: [
+      'authorization',
+      'content-type',
+      'x-conversation-context',
+      'x-conversation-id',
+      'x-customer-context',
+      'x-filename',
+      'x-response-mode',
+      'x-role',
+    ],
+  },
+];
+
+function commaSeparatedHeaderNames(value) {
+  return String(value || '')
+    .split(',')
+    .map((header) => header.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+await jest.unstable_mockModule('dotenv', () => ({
+  default: {
+    config: jest.fn(),
+  },
+}));
 
 await jest.unstable_mockModule('../src/utils/logger.js', () => ({
   default: {
@@ -33,23 +121,36 @@ describe('security middleware', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['x-content-type-options']).toBe('nosniff');
     expect(res.headers['access-control-allow-origin']).toBe('https://app.example.com');
-    expect(res.headers['access-control-allow-headers']).toBe(process.env.CORS_ALLOWED_HEADERS);
+    expect(commaSeparatedHeaderNames(res.headers['access-control-allow-headers']))
+      .toEqual(EXPECTED_DEFAULT_ALLOWED_HEADERS.map((header) => header.toLowerCase()));
+    expect(commaSeparatedHeaderNames(res.headers['access-control-allow-methods']))
+      .toEqual(EXPECTED_ALLOWED_METHODS.map((method) => method.toLowerCase()));
+    expect(res.headers['access-control-expose-headers']).toBe('X-AI-Trace-Id');
     expect(res.headers.vary).toContain('Origin');
   });
 
-  it('allows configured voice chat CORS request headers during preflight', async () => {
-    const res = await request(app)
-      .options('/voice-chat')
-      .set('Origin', 'https://app.example.com')
-      .set(
-        'Access-Control-Request-Headers',
-        'content-type,x-response-mode,x-conversation-id,x-customer-context,x-conversation-context,x-role,authorization'
+  it.each(BROWSER_PREFLIGHT_CASES)(
+    'allows browser preflight for $name',
+    async ({ path, method, requestHeaders }) => {
+      const res = await request(app)
+        .options(path)
+        .set('Origin', 'https://app.example.com')
+        .set('Access-Control-Request-Method', method)
+        .set('Access-Control-Request-Headers', requestHeaders.join(', '));
+
+      const allowedMethods = commaSeparatedHeaderNames(
+        res.headers['access-control-allow-methods']
+      ).map((allowedMethod) => allowedMethod.toUpperCase());
+      const allowedHeaders = commaSeparatedHeaderNames(
+        res.headers['access-control-allow-headers']
       );
 
-    expect(res.statusCode).toBe(204);
-    expect(res.headers['access-control-allow-origin']).toBe('https://app.example.com');
-    expect(res.headers['access-control-allow-headers']).toBe(process.env.CORS_ALLOWED_HEADERS);
-  });
+      expect(res.statusCode).toBe(204);
+      expect(res.headers['access-control-allow-origin']).toBe('https://app.example.com');
+      expect(allowedMethods).toContain(method);
+      expect(allowedHeaders).toEqual(expect.arrayContaining(requestHeaders));
+    }
+  );
 
   it('allows additional comma-separated CORS origins after trimming whitespace', async () => {
     const res = await request(app)

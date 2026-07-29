@@ -1,4 +1,4 @@
-import stripeBillingProvider from './billing/stripe.provider.js';
+import stripeBillingProvider from './billing/stripe.adapter.js';
 
 const providers = new Map([
   [stripeBillingProvider.name, stripeBillingProvider],

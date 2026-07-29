@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "birdwatching-ai-real-output-artifact-v1",
+  "title": "Birdwatching AI portfolio regression real-output artifact",
+  "type": "object",
+  "required": ["schemaVersion", "evaluationType", "sourceType", "provenance", "cases"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "evaluationType": { "const": "portfolio_regression" },
+    "artifactId": { "type": "string", "minLength": 1 },
+    "sourceType": {
+      "enum": ["recorded_production_like", "staging_evaluation", "external_pipeline_fixture"]
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["generatedByActualPipeline", "labelsPresentedToPipeline"],
+      "properties": {
+        "generatedByActualPipeline": { "const": true },
+        "labelsPresentedToPipeline": { "const": false },
+        "collectedAt": { "type": ["string", "null"] },
+        "collectionMethod": { "type": "string" },
+        "modelIdentifier": { "type": "string" },
+        "promptVersion": { "type": "string" },
+        "retrievalIndexVersion": { "type": "string" },
+        "reviewProcess": { "type": "string" },
+        "redactionProcess": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["caseId", "retrieval"],
+        "properties": {
+          "caseId": { "type": "string", "minLength": 1 },
+          "assistantResponse": { "type": "string" },
+          "error": {
+            "type": "object",
+            "required": ["code"],
+            "properties": { "code": { "type": "string" } }
+          },
+          "retrieval": {
+            "type": "object",
+            "required": ["status"],
+            "properties": {
+              "status": { "enum": ["evaluated", "not_applicable", "missing"] },
+              "chunks": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["id", "content"],
+                  "properties": {
+                    "id": { "type": "string" },
+                    "content": { "type": "string" }
+                  }
+                }
+              },
+              "expectedRelevantChunkIds": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            }
+          },
+          "toolOutcome": {
+            "type": "object",
+            "required": ["status"],
+            "properties": {
+              "status": { "enum": ["success", "failure", "not_applicable"] }
+            }
+          }
+        },
+        "anyOf": [
+          { "required": ["assistantResponse"] },
+          { "required": ["error"] }
+        ]
+      }
+    }
+  }
+}

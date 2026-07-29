@@ -25,10 +25,9 @@ app.use((req, res, next) => {
   res.on('finish', () => {
     logger.info('HTTP request completed', {
       method: req.method,
-      url: req.originalUrl,
+      route: req.route?.path || 'unmatched',
       statusCode: res.statusCode,
       durationMs: Date.now() - startedAt,
-      ip: req.ip || req.connection.remoteAddress,
       aiTraceId: req.aiTraceId,
     });
   });

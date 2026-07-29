@@ -16,7 +16,7 @@ const {
   evaluateToolCorrectness,
   groundingQualityEvaluator,
   LangSmithEvaluationTracker,
-} = await import('../src/ai/evaluations/langSmith.evaluators.js');
+} = await import('../src/ai/telemetry/langSmithEvaluators.js');
 
 describe('LangSmith AI evaluators', () => {
   beforeEach(() => {

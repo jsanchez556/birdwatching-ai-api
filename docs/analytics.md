@@ -4,7 +4,7 @@ Back to [Project Context](../CONTEXT.md).
 
 Runtime product analytics uses `src/analytics/analytics.service.js`. Business
 services depend only on its provider-neutral `track` contract; the PostHog SDK
-is isolated in `src/analytics/posthog.provider.js`. Missing configuration
+is isolated in `src/analytics/posthog.adapter.js`. Missing configuration
 selects a no-op provider, and capture or shutdown failures never fail a product
 operation.
 

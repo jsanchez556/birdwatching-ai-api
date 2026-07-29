@@ -9,7 +9,7 @@ await jest.unstable_mockModule('../src/ai/services/retrieval.service.js', () => 
   },
 }));
 
-await jest.unstable_mockModule('../src/db/vector/vector.repository.js', () => ({
+await jest.unstable_mockModule('../src/db/repositories/vector/vector.repository.js', () => ({
   default: {
     findBirdProfile: mockFindBirdProfile,
   },

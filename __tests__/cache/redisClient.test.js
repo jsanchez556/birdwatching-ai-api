@@ -19,6 +19,7 @@ describe('redis client', () => {
     })).toEqual({
       url: 'redis://cache.example.test:6379',
       keyPrefix: 'test-prefix:',
+      connectionTimeoutMs: 1000,
       defaultTtlSeconds: 120,
       responseCacheTtlSeconds: 240,
       retrievalCacheTtlSeconds: 360,
@@ -52,15 +53,20 @@ describe('redis client', () => {
 
     expect(clientFactory).toHaveBeenCalledWith({
       url: 'redis://secret-user:secret-pass@localhost:6379',
+      socket: {
+        connectTimeout: 1000,
+      },
     });
     expect(connect).toHaveBeenCalledTimes(1);
     expect(on).toHaveBeenCalledWith('error', expect.any(Function));
 
     const errorHandler = on.mock.calls[0][1];
-    errorHandler(new Error('connection refused'));
+    const connectionError = new Error('redis://user:password@host must not leak');
+    connectionError.code = 'ECONNREFUSED';
+    errorHandler(connectionError);
 
     expect(logger.warn).toHaveBeenCalledWith('Redis client error', {
-      error: 'connection refused',
+      code: 'ECONNREFUSED',
     });
   });
 

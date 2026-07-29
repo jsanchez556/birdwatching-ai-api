@@ -5,7 +5,7 @@ import logger from '../../utils/logger.js';
 import { buildHashKey } from '../../utils/hash.utils.js';
 import { normalizeWhitespace } from '../../utils/text.utils.js';
 import { availableTools, executeToolCall } from '../tools/index.js';
-import { addCompletionUsage, estimateCost } from '../evaluations/token.usage.js';
+import { addCompletionUsage, estimateCost } from '../telemetry/tokenUsage.js';
 import usageService, { USAGE_FEATURES, buildModelUsageEntry } from '../../services/usage.service.js';
 import { traceLlmCall } from '../../tracing/aiTracing.middleware.js';
 import aiTelemetry from '../../monitoring/aiTelemetry.js';

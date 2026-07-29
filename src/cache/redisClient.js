@@ -3,6 +3,7 @@ import { parsePositiveInteger, parsePositiveNumber } from '../utils/number.utils
 export const getRedisConfig = (env = process.env) => ({
   url: env.REDIS_URL || 'redis://localhost:6379',
   keyPrefix: env.REDIS_KEY_PREFIX || 'birdwatching-ai:',
+  connectionTimeoutMs: parsePositiveInteger(env.REDIS_CONNECT_TIMEOUT_MS, 1000),
   defaultTtlSeconds: parsePositiveInteger(env.REDIS_CACHE_TTL_SECONDS, 300),
   responseCacheTtlSeconds: parsePositiveInteger(env.AI_RESPONSE_CACHE_TTL_SECONDS, 300),
   retrievalCacheTtlSeconds: parsePositiveInteger(env.RETRIEVAL_CACHE_TTL_SECONDS, 300),
@@ -21,11 +22,16 @@ export const createRedisClient = async ({
     clientFactory ||
     (await import('redis').then(({ createClient: redisCreateClient }) => redisCreateClient));
 
-  const client = createClient({ url: config.url });
+  const client = createClient({
+    url: config.url,
+    socket: {
+      connectTimeout: config.connectionTimeoutMs || 1000,
+    },
+  });
 
   client.on?.('error', (error) => {
     logger.warn?.('Redis client error', {
-      error: error?.message,
+      code: typeof error?.code === 'string' ? error.code : 'REDIS_CLIENT_ERROR',
     });
   });
 

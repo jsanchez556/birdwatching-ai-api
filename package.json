@@ -7,7 +7,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "mkdir -p dist && cp -R src/. dist/",
+    "build": "node scripts/build-runtime.js && npm run verify:artifact",
+    "verify:artifact": "node scripts/verify-runtime-artifact.js",
     "start": "npm run start:api",
     "dev": "concurrently -n api,worker -c blue,magenta \"npm run dev:api\" \"npm run dev:worker\"",
     "dev:api": "nodemon src/api/server.js",
@@ -15,7 +16,9 @@
     "start:api": "node dist/api/server.js",
     "start:worker": "node dist/workers/index.js",
     "enrich": "node scripts/enrich.js",
-    "ai:evals": "node scripts/run-ai-evals.js",
+    "ai:evals": "node scripts/runAiEvals.js",
+    "ai:evals:portfolio": "node scripts/runAiEvals.js",
+    "ai:evals:self-test": "node scripts/runAiScorerSelfTest.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
   },
   "keywords": [],

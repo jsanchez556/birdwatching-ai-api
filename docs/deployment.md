@@ -39,7 +39,15 @@ Optional:
 - `OPENAI_MODEL`, defaults to `gpt-4o`
 - `OPENAI_EMBEDDING_MODEL`, defaults to `text-embedding-3-small`
 - `REDIS_URL`, defaults to `redis://localhost:6379`
+- `REDIS_CONNECT_TIMEOUT_MS`, defaults to `1000`
 - `REDIS_KEY_PREFIX`, defaults to `birdwatching-ai:`
+- `RATE_LIMIT_REDIS_FAILURE_MODE`, `local` (default) or `deny`; see Distributed rate limiting below
+- `DEPENDENCY_HEALTH_TIMEOUT_MS`, defaults to `1000`
+- `SHUTDOWN_GRACE_PERIOD_MS`, defaults to `15000`
+- `SHUTDOWN_HARD_TIMEOUT_MS`, defaults to `30000` and must exceed the grace period
+- `DATABASE_SSL_MODE`, `disable`, `require`, or `verify-full`; production defaults to `verify-full`
+- `DATABASE_SSL_CA_BASE64`, optional base64-encoded private CA certificate
+- `DATABASE_SSL_CA_FILE`, optional mounted CA path; mutually exclusive with `DATABASE_SSL_CA_BASE64`
 - `BULLMQ_KEY_PREFIX`, defaults to `birdwatching-ai:jobs`
 - `BULLMQ_JOB_ATTEMPTS`, defaults to `3`
 - `BULLMQ_JOB_BACKOFF_DELAY_MS`, defaults to `5000`
@@ -89,7 +97,7 @@ verified webhook updates `user_subscriptions`.
 - `LANGCHAIN_TRACING`, set to `true` to enable LangSmith-compatible tracing
 - `LANGCHAIN_PROJECT`, defaults to `birdwatching-ai`
 - `CORS_ORIGINS`, comma-separated allowed origins; empty means no CORS allow-origin header is set
-- `CORS_ALLOWED_HEADERS`, comma-separated allowed request headers; defaults to `Content-Type, Authorization, X-Filename`
+- `CORS_ALLOWED_HEADERS`, comma-separated allowed request headers; defaults to `Content-Type, Authorization, X-Filename, X-Conversation-Id, X-Role, X-Response-Mode, X-Customer-Context, X-Conversation-Context`
 - `RATE_LIMIT_WINDOW_MS`, defaults to `60000`
 - `RATE_LIMIT_MAX_REQUESTS`, defaults to `60`
 - `AI_RATE_LIMIT_WINDOW_MS`, defaults to `60000`
@@ -160,7 +168,72 @@ src/db/migrations/024_create_ai_feature_economics.sql
 
 Run migrations in order with `psql`, Railway shell, or your deployment platform's database tooling before using chat memory, reservations, users, refresh-token sessions, usage logging, tour-location metadata, cart/reservation entry flows, bird-identification records, job polling, subscription plans, provider billing, profile images, or pgvector-backed RAG.
 
-Production database connections use SSL with `rejectUnauthorized: false`.
+Production database connections default to `DATABASE_SSL_MODE=verify-full`,
+which verifies the certificate chain and hostname using the Node trust store.
+When a hosting provider supplies a private CA, mount it and set
+`DATABASE_SSL_CA_FILE`, or provide it through the secret store as
+`DATABASE_SSL_CA_BASE64`. Do not commit the certificate. `require` encrypts the
+connection but does not authenticate the server and exists only as a migration
+bridge for providers whose current connection endpoint cannot be verified.
+Migrate from the former `rejectUnauthorized: false` behavior by testing
+`verify-full` against the provider endpoint, adding the provider CA when
+needed, and using `require` only for the shortest documented transition.
+`disable` is intended for explicitly trusted local development only.
+
+## Health probes
+
+- `GET /health` and `GET /health/live` are liveness probes. They do not contact
+  dependencies and should be used to decide whether the API process must be
+  restarted.
+- `GET /health/ready` is the API readiness probe. It checks only the API's
+  required PostgreSQL and Redis/queue connectivity, in parallel, with
+  `DEPENDENCY_HEALTH_TIMEOUT_MS` per check. Results are coalesced for one second
+  to prevent probe load. It returns `200` only when both dependencies are
+  available and `503` while degraded, timed out, or shutting down.
+
+Configure the deployment platform to use `/health/live` for liveness and
+`/health/ready` for readiness. Responses contain only stable status names,
+process role, uptime for liveness, and `ok`/`unavailable` dependency states.
+They never contain connection strings, hostnames, credentials, or raw errors.
+
+The worker has no HTTP listener in the current two-service Railway topology.
+Use the platform's process check plus the admin queue-health/DLQ view for worker
+observation. During termination the worker stops consuming and waits for active
+jobs before closing. If the platform later supports a private worker probe,
+expose a heartbeat in the existing Redis keyspace with a short TTL rather than
+adding a public worker port.
+
+## Distributed rate limiting
+
+API limits use a Redis fixed window beginning with the first request for a
+hashed identity. A Lua script atomically increments the counter and applies
+`PEXPIRE`; keys therefore disappear after one window and do not grow without
+bound. Global requests use a hashed client IP; authenticated AI requests prefer
+the user ID and visitors use a scoped IP. The current limits remain 60/minute
+globally, 12/minute for authenticated AI, and 10/hour for visitor AI unless
+configured lower or through the documented variables.
+
+Responses include `RateLimit-Limit`, `RateLimit-Remaining`,
+`RateLimit-Reset`, and compatible `X-RateLimit-*` headers. Rejected requests
+retain the existing safe `429` message and add `Retry-After`. Redis details are
+never returned.
+
+`RATE_LIMIT_REDIS_FAILURE_MODE=local` is the safe availability default: a Redis
+failure falls back to a bounded 10,000-key per-replica fixed-window limiter.
+This keeps customer traffic available but weakens cross-replica protection
+until Redis recovers. Set `deny` to return a generic `503` when centralized
+protection is mandatory; health readiness already becomes unavailable during
+the same Redis outage.
+
+## Graceful shutdown
+
+SIGTERM and SIGINT handling is idempotent. The API marks readiness unavailable,
+stops accepting connections, drains active HTTP requests, then closes BullMQ
+queues/events, analytics, feature flags, Redis, and PostgreSQL. The worker stops
+accepting jobs and waits for active work, then closes queues, Redis, and
+PostgreSQL. `SHUTDOWN_GRACE_PERIOD_MS` forces active HTTP sockets/jobs closed;
+`SHUTDOWN_HARD_TIMEOUT_MS` enforces an overall deadline. Clean shutdown returns
+exit code `0`; resource failure or hard timeout returns `1`.
 
 ## Runtime Data
 - Bird RAG source data lives under `src/ingestion/data`; run `npm run enrich -- birds` after vector migrations to refresh provider data, generate `birds.json`, and ingest it.
@@ -192,7 +265,8 @@ the existing LangSmith configuration is complete, `GET /admin/errors` resolves
 trace navigation through the SDK. Without it, error rows remain available and
 return `traceUrl: null`.
 
-The feed is not a single durable audit log. Failed `jobs` and
+The feed is deliberately not a single durable audit log. The admin UI labels it
+as a partial, volatile, replica-local view. Failed `jobs` and
 `billing_events.payment_failed` records survive restarts in PostgreSQL;
 dead-letter records follow bounded BullMQ/Redis retention; AI, tool, retrieval,
 invalid-output, rate-limit, checkout, and webhook records are held in a 250-entry ring in the
@@ -200,6 +274,22 @@ current API process. In a multi-replica deployment, an admin request sees only
 that replica's in-memory records, and it does not see the worker process's
 telemetry unless the failure is also represented by PostgreSQL or the
 dead-letter queue.
+
+This design avoids making best-effort telemetry a customer-request dependency.
+Use PostgreSQL job/payment records, bounded BullMQ/DLQ data, platform logs, and
+LangSmith as the cross-replica sources appropriate to each incident. A future
+durable telemetry store should be introduced only with approved retention,
+redaction, cleanup, and failure-isolation rules.
+
+## Runtime artifact
+
+`npm run build` composes a shared API/worker artifact from an explicit directory
+allowlist and runs `npm run verify:artifact`. It includes API and worker entry
+points, runtime prompts/schemas, SQL migrations, JSON configuration, and
+runtime ingestion modules. It excludes `src/evaluations` and generated
+`src/ingestion/data`; evaluations and bird enrichment remain CI/maintenance
+processes run from the source checkout. The verification command fails when
+required runtime assets are absent or excluded content reappears.
 
 Current AI trace boundaries:
 - Root streamed chat AI execution flow, including response length, source count, prompt versions, reservations, and tool names
@@ -248,9 +338,10 @@ non-empty and the incoming origin does not match, the first configured origin is
 sent. If the allowlist is empty, no allow-origin header is set.
 
 `CORS_ALLOWED_HEADERS` is parsed as a comma-separated list and returned as
-`Access-Control-Allow-Headers`. Browser voice chat requests need:
+`Access-Control-Allow-Headers`. The default covers the non-safelisted headers
+used by browser voice chat requests:
 ```text
-Content-Type,Authorization,Accept,X-Filename,X-Conversation-Id,X-Role,X-Response-Mode,X-Customer-Context,X-Conversation-Context
+Content-Type,Authorization,X-Filename,X-Conversation-Id,X-Role,X-Response-Mode,X-Customer-Context,X-Conversation-Context
 ```
 
 ## Railway

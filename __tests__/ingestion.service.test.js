@@ -34,7 +34,7 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
   },
 }));
 
-await jest.unstable_mockModule('../src/db/vector/vector.repository.js', () => ({
+await jest.unstable_mockModule('../src/db/repositories/vector/vector.repository.js', () => ({
   default: {
     initializeSchema: mockInitializeSchema,
     findDocumentByExternalId: mockFindDocumentByExternalId,

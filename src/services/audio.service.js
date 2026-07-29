@@ -1,8 +1,8 @@
-import speechToText from '../ai/audio/speechToText.js';
-import textToSpeech from '../ai/audio/textToSpeech.js';
+import speechToText from '../ai/audio/speechToText.adapter.js';
+import textToSpeech from '../ai/audio/textToSpeech.adapter.js';
 import HttpError from '../utils/httpError.js';
 import logger from '../utils/logger.js';
-import { estimateCost } from '../ai/evaluations/token.usage.js';
+import { estimateCost } from '../ai/telemetry/tokenUsage.js';
 import usageService, { USAGE_FEATURES, buildModelUsageEntry } from './usage.service.js';
 
 function estimateTextTokens(text = '') {

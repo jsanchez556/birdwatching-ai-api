@@ -31,11 +31,11 @@ await jest.unstable_mockModule('../src/config/env.js', () => ({
   },
 }));
 
-await jest.unstable_mockModule('../src/admin/admin.service.js', () => ({
+await jest.unstable_mockModule('../src/services/admin/admin.service.js', () => ({
   default: adminServiceMock,
 }));
 
-await jest.unstable_mockModule('../src/admin/admin-operations.service.js', () => ({
+await jest.unstable_mockModule('../src/services/admin/adminOperations.service.js', () => ({
   default: adminOperationsServiceMock,
 }));
 
@@ -47,7 +47,7 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
   },
 }));
 
-const { default: adminRoutes } = await import('../src/admin/admin.routes.js');
+const { default: adminRoutes } = await import('../src/api/routes/admin.routes.js');
 const { default: errorMiddleware } = await import('../src/api/middleware/error.middleware.js');
 
 const endpoints = [

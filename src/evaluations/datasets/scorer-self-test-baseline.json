@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "evaluationType": "scorer_self_test",
+  "displayLabel": "Synthetic scorer self-test baseline — not model or RAG quality",
+  "synthetic": true,
+  "score": 0.9839,
+  "retrievalQuality": 0.9796,
+  "source": "birdwatching-ai-golden-dataset labels",
+  "caseCount": 100,
+  "migratedFrom": "src/evaluations/datasets/ai-eval-baseline.json",
+  "limitations": [
+    "Answers are assembled from expected behavior labels.",
+    "Retrieved chunks are assembled from questions, expected behavior, and evaluation criteria.",
+    "Scores validate deterministic scorer behavior only."
+  ]
+}

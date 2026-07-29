@@ -16,12 +16,12 @@ src/
     routes/              route modules
     streaming/           HTTP response streaming helpers
     validators/          request payload validators
-  ai/                    OpenAI client/service, agents, orchestrators, prompts, guardrails, schemas, chat tools, retrieval/chunking
+  ai/                    OpenAI clients/services, agents, orchestrators, prompts, guardrails, schemas, tools, runtime telemetry
   cache/                 Redis client and reusable response/retrieval cache abstractions
   config/                environment parsing and validation
-  db/                    pg pool, migrations, query modules
+  db/                    pg pool, migrations, query modules, focused persistence repositories
   events/                BullMQ queue and worker event wiring
-  evaluations/           offline AI datasets, scorers, runners, LangSmith-compatible reports, dashboard summaries
+  evaluations/           offline AI datasets, scorers, runners, comparisons, reports, dashboard summaries
   jobs/                  shared background job names and default job options
   queues/                BullMQ queue configuration and queue manager
   workers/               BullMQ worker process entrypoint, manager, and job processors
@@ -34,6 +34,66 @@ src/
   monitoring/            centralized AI telemetry for latency, token usage, and errors
 ```
 
+## Organization And Naming Conventions
+
+The repository uses technical layers at the top level because that is the
+dominant existing structure and preserves the controller/service/query
+dependency direction. Features may have focused subdirectories *inside* a
+layer, such as `src/services/admin/`, `src/services/birdIdentification/`, and
+`src/db/repositories/admin/`; a feature must not create a parallel top-level
+controller/service/query stack. The former top-level admin feature package was
+split across the existing API, service, and persistence layers.
+
+JavaScript filenames use lower camel case for the subject and a dot-separated
+role suffix when useful: `birdIdentification.service.js`,
+`adminOperations.repository.js`, and `tokenUsage.js`. Kebab-case JavaScript
+filenames are not used. Existing public façade filenames such as
+`tool.executor.js` and `rag.service.js` remain stable because callers import
+them directly; new stage modules use camelCase names.
+
+Third-party boundaries are named by responsibility:
+
+- A `client` is a thin transport wrapper over an external HTTP/API surface,
+  such as the ingestion clients in `src/ingestion/clients/`.
+- An `adapter` translates an external provider into an internal domain
+  contract, such as `src/providers/billing/stripe.adapter.js`, the PostHog
+  analytics adapter, and the speech adapters.
+- A `service` implements an application use case and may select or coordinate
+  clients/adapters. A module is not called a service merely because it invokes
+  a provider.
+
+The word `evaluation` is reserved for offline quality infrastructure under
+`src/evaluations/`. Runtime token/cost accounting and LangSmith-compatible
+instrumentation live under `src/ai/telemetry/`. Runtime product experiment
+assignment and event properties live under `src/experiments/`; offline prompt
+comparisons live under `src/evaluations/comparisons/`.
+
+### Compatibility And Remaining Migration
+
+`birdIdentification.service.js`, `rag.service.js`, `tool.planner.js`, and
+`tool.executor.js` remain stable import façades. Their exported APIs did not
+change; stage implementation moved behind narrow internal modules. No duplicate
+compatibility implementation or re-export-only legacy path was added.
+
+The tool planner now delegates message/context extraction to
+`planningInput.js`, but its ordered decision tree remains in
+`tool.planner.js`. Splitting that tree into guided-booking, logistics/pricing,
+and discovery planners is intentionally deferred because branch ordering is
+part of the public conversational behavior and is characterized by one shared
+orchestration suite. The safe migration sequence is:
+
+1. add table-driven characterization cases for every current branch and branch precedence;
+2. extract guided booking/confirmation planning with a single immutable planning-input contract;
+3. extract transportation/pricing planning, then discovery planning;
+4. retain `ToolPlanner.plan` as the sole precedence coordinator and remove each old branch in the same change that adds its replacement.
+
+Billing is intentionally distributed by technical responsibility rather than
+collapsed into a feature package: billing use cases live under
+`src/services/billing/`, provider-neutral persistence remains under
+`src/db/queries/`, and third-party translations remain adapters under
+`src/providers/billing/`. `src/services/billing.service.js` remains the public
+use-case coordinator.
+
 ## Layer Rules
 - Routes compose middleware and controller methods.
 - Controllers should not build prompts, call SQL, or own business branching.
@@ -42,14 +102,14 @@ src/
 - AI modules own prompt text, prompt versions, schemas, provider calls, retry, and token usage logging.
 - Evaluation modules own offline datasets, quality/retrieval/tool scorers, prompt regression runners, LangSmith-compatible reports, and dashboard summaries.
 - The admin AI-quality read path stays offline:
-  `admin.routes -> admin.controller -> admin.service -> ai-quality.service ->
-  ai-quality.repository`. The repository reads timestamped numeric evaluation
+  `admin.routes -> admin.controller -> admin.service -> aiQuality.service ->
+  aiQuality.repository`. The repository reads timestamped numeric evaluation
   artifacts, while the service applies UTC half-open current/previous ranges
   and aggregates usable scores. No evaluator, OpenAI client, tracing client, or
   raw evaluation content is imported into the request path.
 - Safe admin mutations follow
-  `admin.routes -> admin.controller -> admin-operations.service ->
-  admin-operations.repository -> adminOperations.queries`. The service creates
+  `admin.routes -> admin.controller -> adminOperations.service ->
+  adminOperations.repository -> adminOperations.queries`. The service creates
   an audit intent before touching BullMQ or invoking a database mutation.
   PostgreSQL functions make user suspension and feature-control persistence
   atomic with successful audit finalization. BullMQ cannot share a PostgreSQL
@@ -96,19 +156,25 @@ Chat context is assembled from:
 
 RAG uses:
 1. `npm run enrich -- birds` to refresh bird provider data, generate `birds.json`, normalize documents, persist source text, and enqueue embedding jobs
-2. `rag.service.js` to check Redis for an equivalent retrieval query and relevant retrieval options
-3. `src/ai/services/retrieval.service.js` to embed the user question and retrieve ranked chunks through `src/db/vector/vector.repository.js` on cache miss
-4. `rag.service.js` to write successful retrieval results back to Redis using the configured retrieval TTL
-5. `rag.service.js` to inject a compact system context message and return frontend-safe `sources`
-6. `rag.service.js` to derive compact `birdMatches` metadata from top `bird_profile` documents, including optional media references stored in document metadata
+2. `queryNormalization.js` to normalize the query and build a deterministic cache key
+3. `rag.service.js` to perform best-effort Redis cache lookup
+4. `src/ai/services/retrieval.service.js` to retrieve ranked chunks through pgvector on cache miss
+5. `retrievalFiltering.js` to merge supplemental results and build ranked, deduplicated bird matches
+6. `contextAssembly.js` to build compact grounding trace contracts while `rag.service.js` injects the prompt context and returns frontend-safe sources
 
 Bird identification uses:
 1. authenticated `POST /birds/identify` requests with either a JSON `imageUrl` or raw JPEG, PNG, WebP, or GIF bytes
 2. `imageUpload.middleware.js` plus `birdIdentification.validator.js` to enforce content type, size, and one-input-only rules
 3. `birdIdentificationImageStorage.service.js` to upload raw images to S3 under `bird-identification/` and produce a CloudFront URL for provider image analysis
 4. `birdImageAnalysis.service.js` to extract rich visible field marks, image quality, apparent group, bill details, plumage areas, and conservative confidence from the image
-5. `birdIdentification.agent.js` to generate conservative candidate species from the rich evidence and, when available, the provider-readable image URL
-6. `birdIdentification.service.js` to retrieve bird-profile RAG for candidates and confusion species, run verification/reranking against retrieved profiles, calibrate confidence thresholds, and assemble the final normalized response
+5. `candidateGeneration.js` to validate and normalize conservative candidate species generated by `birdIdentification.agent.js`
+6. `evidenceRetrieval.js` to build a bounded bird-profile query and retrieve/deduplicate RAG evidence
+7. `reranking.js` to validate verifier output and provide a conservative fallback
+8. `calibration.js` to enforce confidence and status invariants
+9. `responseAssembly.js` to build the normalized response and persist eligible identification history
+
+`birdIdentification.service.js` remains the stable public façade and readable
+top-to-bottom orchestrator for these stages.
 
 External bird data ingestion uses:
 1. provider-specific clients in `src/ingestion/clients/` for eBird, iNaturalist, wiki, and Xeno-canto
@@ -158,7 +224,8 @@ still pass through RAG metadata unchanged.
 Billing uses a provider-neutral domain boundary:
 1. `billing.service.js` authenticates the user, selects an enabled provider, and
    returns generic payment or management URLs.
-2. Provider adapters under `src/providers/billing/` own provider HTTP
+2. Provider adapters under `src/providers/billing/` (for example
+   `stripe.adapter.js`) own provider HTTP
    calls, hosted checkout/portal behavior, signature verification, and callback
    normalization. Stripe is the first adapter.
 3. `plan.service.js` syncs normalized provider subscription events into internal
@@ -182,14 +249,17 @@ Chat streaming uses:
 1. `agent.orchestrator.js` to classify the turn, plan booking/tool steps, and request the final assistant response
 2. tool schemas from `src/ai/schemas/tour.schema.js`
 3. registry validation and dispatch through `src/ai/tools/index.js`
-4. `ToolExecutor` in `src/ai/tools/tool.executor.js` for retries, trace metadata, and frontend-safe `uiAction` metadata
-5. thin tool adapters in `src/ai/tools/*.tool.js`
-6. tour listing and recommendation in `src/services/tour.service.js`
-7. reservation and availability orchestration in `src/services/reservation.service.js`
-8. PostgreSQL function calls in `src/db/queries/tour.queries.js` and `src/db/queries/reservation.queries.js`
-9. frontend-safe tool metadata collected on the SSE `done` event `meta` object
-10. OpenAI streaming for the final assistant response
-11. SSE `start`, `chunk`, optional `replace`, `done`, or `error` events
+4. `planningInput.js` for intent input extraction and normalization
+5. `toolArgumentValidation.js` for the orchestration argument-envelope invariant; adapters retain schema and business validation
+6. `ToolExecutor` in `src/ai/tools/tool.executor.js` for ordered execution
+7. `toolExecutionPolicy.js` for retry/error classification and trace sanitization
+8. `toolExecutionState.js` for explicit state transitions and intermediate results
+9. `toolResponseMetadata.js` for frontend-safe `uiAction` and response metadata
+10. thin tool adapters in `src/ai/tools/*.tool.js`
+11. tour and reservation services backed by PostgreSQL query modules
+12. frontend-safe tool metadata collected on the SSE `done` event `meta` object
+13. OpenAI streaming for the final assistant response
+14. SSE `start`, `chunk`, optional `replace`, `done`, or `error` events
 
 `POST /chat` is the single active chat response path. It enters
 `chat.controller.handleStreamChat`, then `chat.service.processMessageStream`.
@@ -253,7 +323,7 @@ The `src/ai/` layer is split by responsibility:
 - `tools/` owns thin tool adapters and registry validation for model-callable functions.
 - `agents/` owns booking planner behavior and tool execution wiring.
 - `orchestrators/` owns chat turn planning and coordinates tool execution before final response generation.
-- `evaluations/` owns AI observability and evaluation helpers such as token usage and estimated cost accounting.
+- `telemetry/` owns runtime token/cost accounting and LangSmith-compatible evaluator integrations; it is not offline evaluation infrastructure.
 - `guardrails/` owns AI safety checks such as prompt-extraction blocking and sensitive-output fallbacks.
 
 ## Cache Layer
@@ -349,7 +419,7 @@ The observability layer is split into three small modules:
   LLM/tool/retrieval/invalid-output/rate-limit and checkout/webhook events. This ring is local to one
   process and is cleared by a restart; worker-process telemetry is not visible
   to an API replica.
-- `src/admin/operational-errors.service.js` aggregates that bounded ring with
+- `src/services/admin/operationalErrors.service.js` aggregates that bounded ring with
   safe PostgreSQL job/payment failure projections and sanitized BullMQ
   dead-letter records. It owns classification, range/type filtering,
   deterministic ordering, cross-source job deduplication, pagination, safe
@@ -457,7 +527,7 @@ search, chunk metadata/text search, and IVFFlat cosine embedding search.
 - `POST /chat` uses optional auth for customer/admin chat and visitor bird-only access; authenticated conversation ownership is enforced before history is loaded.
 
 Persisted emergency feature controls are read through the feature-control query
-layer. Admin controllers parse, the admin-operations service owns audited
+layer. Admin controllers parse, the `adminOperations` service owns audited
 transitions, and repository/query functions perform mutations. Enforcement
 happens before voice uploads, image uploads/queues, and booking tool/model
 execution. The public availability controller exposes only a whitelisted state

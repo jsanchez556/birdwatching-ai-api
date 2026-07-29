@@ -10,7 +10,7 @@ import { traceLlmCall } from '../tracing/aiTracing.middleware.js';
 import { asyncRetry } from '../utils/async.utils.js';
 import HttpError from '../utils/httpError.js';
 import logger from '../utils/logger.js';
-import { getCompletionUsageSummary } from '../ai/evaluations/token.usage.js';
+import { getCompletionUsageSummary } from '../ai/telemetry/tokenUsage.js';
 import usageService, { USAGE_FEATURES, buildModelUsageEntry } from './usage.service.js';
 
 const DEFAULT_IMAGE_ANALYSIS = {

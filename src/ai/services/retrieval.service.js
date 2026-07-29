@@ -1,6 +1,6 @@
 import openaiClient from '../clients/openai.client.js';
 import logger from '../../utils/logger.js';
-import vectorRepository from '../../db/vector/vector.repository.js';
+import vectorRepository from '../../db/repositories/vector/vector.repository.js';
 
 const DEFAULT_MAX_CHUNKS_PER_DOCUMENT = 1;
 const DEFAULT_CANDIDATE_MULTIPLIER = 4;

@@ -7,7 +7,7 @@ await jest.unstable_mockModule('../src/db/pool.js', () => ({
 }));
 
 const { default: adminQueries } = await import('../src/db/queries/admin.queries.js');
-const { AdminRepository } = await import('../src/admin/admin.repository.js');
+const { AdminRepository } = await import('../src/db/repositories/admin/admin.repository.js');
 
 describe('admin persistence', () => {
   beforeEach(() => {

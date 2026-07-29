@@ -2,7 +2,7 @@ import {
   addCompletionUsage,
   estimateCost,
   getCompletionUsageSummary,
-} from '../src/ai/evaluations/token.usage.js';
+} from '../src/ai/telemetry/tokenUsage.js';
 
 describe('AI billing token usage calculations', () => {
   it('estimates chat model request cost from prompt and completion tokens', () => {

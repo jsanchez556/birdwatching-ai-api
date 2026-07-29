@@ -7,7 +7,7 @@ import {
 import { normalizeTextOrEmpty } from '../../utils/normalizer.utils.js'
 import logger from '../../utils/logger.js';
 import chunkingService from '../../ai/services/chunking.service.js';
-import vectorRepository from '../../db/vector/vector.repository.js';
+import vectorRepository from '../../db/repositories/vector/vector.repository.js';
 import embeddingJobService from '../../ai/services/embeddingJob.service.js';
 
 const REQUIRED_DOCUMENT_FIELDS = ['externalId', 'name'];

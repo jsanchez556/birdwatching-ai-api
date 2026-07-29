@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import env from '../config/env.js';
 import logger from '../utils/logger.js';
-import { createPostHogProvider } from './posthog.provider.js';
+import { createPostHogProvider } from './posthog.adapter.js';
 
 const BLOCKED_PROPERTY_PATTERN = /(authorization|customer|email|message|name|password|prompt|provider.*id|response|secret|session.*id|token)/i;
 const SERVICE_NAME = 'birdwatching-ai-api';

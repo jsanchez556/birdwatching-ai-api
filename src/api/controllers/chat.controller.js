@@ -1,4 +1,10 @@
 import chatService from '../../services/chat.service.js';
+import {
+  sendChatStreamChunk,
+  sendChatStreamCompletion,
+  sendChatStreamReplacement,
+  sendChatStreamStart,
+} from '../streaming/chatSse.js';
 import { endSse, sendSseEvent, setSseHeaders } from '../streaming/sse.js';
 import { sendSuccess } from '../../utils/apiResponse.js';
 import logger from '../../utils/logger.js';
@@ -46,9 +52,9 @@ class ChatController {
         conversationId,
         clientIP,
         {
-          onStart: (data) => sendSseEvent(res, 'start', data),
-          onChunk: (content) => sendSseEvent(res, 'chunk', { content }),
-          onReplace: (content) => sendSseEvent(res, 'replace', { content }),
+          onStart: (data) => sendChatStreamStart(res, data),
+          onChunk: (content) => sendChatStreamChunk(res, content),
+          onReplace: (content) => sendChatStreamReplacement(res, content),
         },
         {
           signal: abortController.signal,
@@ -63,12 +69,7 @@ class ChatController {
         }
       );
 
-      sendSseEvent(res, 'done', {
-        conversationId: result.conversationId,
-        response: result.response,
-        sources: result.sources || [],
-        meta: result.meta || {},
-      });
+      sendChatStreamCompletion(res, result);
     } catch (error) {
       if (abortController.signal.aborted || isAbortError(error)) {
         logger.info('Streaming chat cancelled', {

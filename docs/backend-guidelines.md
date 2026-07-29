@@ -29,6 +29,7 @@ Back to [Project Context](../CONTEXT.md). Pair this with [API Contracts](./api.m
 - Always send role-based messages.
 - Use centralized prompts from `src/ai/prompts/`.
 - Keep offline evaluation datasets, scorers, runners, dashboard summaries, token usage comparison, and cost-estimation helpers in `src/evaluations/`.
+- Keep runtime token/cost accounting and evaluator instrumentation in `src/ai/telemetry/`; do not call runtime telemetry “offline evaluation.”
 - Keep AI safety, refusal, or policy checks in `src/ai/guardrails/`.
 - Keep chat tool schemas in `src/ai/schemas/`, adapters in `src/ai/tools/`, and multi-step planning in `src/ai/orchestrators/`.
 - Feed tool results into final response context before returning conversational text.
@@ -50,7 +51,7 @@ Back to [Project Context](../CONTEXT.md). Pair this with [API Contracts](./api.m
 - Keep runtime knowledge source files under `src/ingestion/data`.
 - Use normalized JSON arrays for ingestion datasets; `birds.json` is the reference contract.
 - Preserve normalized document fields used by embeddings and UI metadata: required `externalId` and `name`, plus optional `description`, `locations`, `documentType`, `category`, `tags`, and `metadata`.
-- Store generated embeddings in PostgreSQL through `src/db/vector/vector.repository.js`; do not write generated embeddings into source files.
+- Store generated embeddings in PostgreSQL through `src/db/repositories/vector/vector.repository.js`; do not write generated embeddings into source files.
 - Keep external source export/normalization in `src/ingestion`; keep chunking and semantic retrieval in `src/ai/services`.
 - Keep metadata filters parameterized and limited to known document fields, tags, and JSONB containment.
 - Run bird document enrichment and ingestion through `npm run enrich -- birds`; do not run source document ingestion from chat or request handlers.

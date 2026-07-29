@@ -29,6 +29,7 @@ This repository is a Node.js backend for Costa Rica birdwatching assistance, spl
 - Prompt assets and versioning: [docs/prompting.md](./docs/prompting.md)
 - Conversation memory behavior: [docs/memory.md](./docs/memory.md)
 - Deployment and environment: [docs/deployment.md](./docs/deployment.md)
+- Privacy, retention, deletion, and export: [docs/privacy-retention.md](./docs/privacy-retention.md)
 - Product analytics and event ownership: [docs/analytics.md](./docs/analytics.md)
 - Product feature flags and rollout ownership: [docs/feature-flags.md](./docs/feature-flags.md)
 - Product experiments and measurement ownership: [docs/experiments.md](./docs/experiments.md)
@@ -49,8 +50,8 @@ The app uses a controller-service-query split:
 - `src/queues/` owns BullMQ queue registration, producers, and shared queue configuration used by the API and workers.
 - `src/ingestion/` owns provider HTTP clients, export orchestration, normalized bird data, and ingestion source preparation.
 - `src/api/routes/media.routes.js` owns CloudFront media URL creation for relative media keys; `src/storage/` remains for S3 uploads and object checks used by ingestion jobs.
-- `src/ai/*` owns OpenAI client calls, prompt assets, structured schemas, and chat tool adapters.
-- `src/evaluations/` owns AI evaluation datasets, scoring utilities, runners, LangSmith-compatible reporting, and dashboard summaries. It is offline evaluation infrastructure, not runtime prompt logic.
+- `src/ai/*` owns OpenAI client calls, prompt assets, structured schemas, chat tool adapters, and runtime AI telemetry.
+- `src/evaluations/` owns offline AI evaluation datasets, scoring utilities, runners, prompt comparisons, LangSmith-compatible reporting, and dashboard summaries. Runtime token/cost and evaluator instrumentation lives under `src/ai/telemetry/`.
 - `src/api/middleware/*` owns validation, sanitization, security headers, CORS protection, rate limiting, errors, and auth hooks.
 - `src/utils/` owns shared helpers. Search existing utilities before adding a helper; prefer adding reusable helpers to an existing cohesive utility module, and use the `<name>.utils.js` naming convention for new utility files.
 
@@ -126,12 +127,14 @@ GET /chat/latest
   come from the SDK and pass an HTTPS hostname allowlist; they are never
   constructed from trace IDs.
 - `GET /admin/ai-quality` is an authenticated admin-only offline quality
-  summary. It reads timestamped safe numeric results from
+  summary. It reads timestamped safe numeric results and allowlisted provenance from
   `AI_EVAL_OUTPUT_FILE` (or the compatible `AI_EVAL_RESULTS_FILE` fallback),
   compares UTC half-open current and immediately
   preceding equal-duration periods, and returns grounding, answer relevance,
-  retrieval quality, and evaluated-tool success with honest null/sample-size
-  semantics. It does not execute evaluations or contact OpenAI/LangSmith.
+  retrieval quality, and evaluated-tool success only for validated real-pipeline
+  portfolio artifacts, with honest unavailable/null/sample-size semantics.
+  Synthetic scorer self-tests are explicitly excluded. It does not execute
+  evaluations or contact OpenAI/LangSmith.
 - Tour data, availability, selection, and reservations are stored in PostgreSQL through functions in `003_create_tour_reservations.sql`; the tour helpers join the Costa Rica `country`/`zone`/`node`/`birds`/`birds_by_node` reference graph and return `location`, `node`, `subnode`, and `zone` for tour discovery, selection, and reservation metadata.
 - Safe admin mutations use `POST /admin/jobs/:jobId/retry`,
   `POST /admin/users/:userId/suspend`, and
@@ -151,13 +154,13 @@ GET /chat/latest
 - Reservation creation can include optional `customerEmail`, `discountCode`, itinerary dates, and selected transportation metadata; discounts are calculated in `reservation.service.js` and the tour total is computed inside the PostgreSQL function.
 - Database writes for chat memory are best-effort; save failures are logged but do not fail the chat response.
 - Authenticated chat requests persist OpenAI prompt tokens, completion tokens, estimated cost, compact model usage, and LangSmith-compatible trace correlation to provider-neutral `usage_events`, plus the legacy `usage_logs` row on a best-effort basis after the streamed response completes.
-- AI evaluation data lives under `src/evaluations/datasets/`. `golden-dataset.json` contains 100 representative bird identification, tour recommendation, reservation, RAG, and edge-case queries with expected behaviors and criteria; `ai-eval-baseline.json` stores the baseline used by CI.
+- AI evaluation data lives under `src/evaluations/datasets/`. `golden-dataset.json` contains 100 representative bird identification, tour recommendation, reservation, RAG, and edge-case queries with expected behaviors and criteria. The portfolio gate requires captured real-pipeline outputs; synthetic label-derived scoring is isolated as a scorer self-test and is not quality evidence.
 - Evaluation scorers measure response relevance, grounding, correctness, completeness, retrieval chunk relevance, retrieval precision/recall, grounding quality, and tool correctness. Prompt regression runners compare prompt quality, latency, token usage, estimated cost, retrieval quality, and quality-per-dollar without storing raw prompt text.
 - LangSmith-compatible evaluation helpers model the flow as `Run -> Evaluation -> Score -> Comparison`; dashboard helpers summarize quality trends, regression detection, and retrieval performance using safe numeric metadata.
-- `.github/workflows/ai-evals.yml` runs `npm run ai:evals` on pull requests to `main` and pushes to `develop`, uploads `tmp/ai-eval-results.json`, and fails when score or retrieval quality drops below the checked-in baseline.
+- `.github/workflows/ai-evals.yml` runs the synthetic scorer self-test separately, requires a configured real-pipeline artifact for the portfolio gate, uploads both artifacts, and fails closed when real outputs are absent or thresholds are violated.
 - AI response caching records `CACHE HIT` and `CACHE MISS` logs, tracks cache hit/miss metrics and estimated OpenAI savings, and skips response reuse when metadata contains user-specific, reservation, tool, or conversation-scoped state.
 - Chat persistence uses the `conversations` and `messages` tables plus SQL helper functions from `src/db/migrations/002_create_functions.sql`; later migrations make those helpers owner-aware and merge safe JSONB booking metadata into `conversations.metadata`.
-- Voice chat uses the same chat orchestration and conversation memory as `POST /chat`. `src/ai/audio/speechToText.js` and `src/ai/audio/textToSpeech.js` are internal services; standalone transcribe/speak routes are not exposed publicly.
+- Voice chat uses the same chat orchestration and conversation memory as `POST /chat`. `src/ai/audio/speechToText.adapter.js` and `src/ai/audio/textToSpeech.adapter.js` are internal services; standalone transcribe/speak routes are not exposed publicly.
 - `POST /voice-chat` accepts raw MP3/WAV audio only, including `audio/mpeg`, `audio/mp3`, `audio/wav`, and `audio/x-wav`. Browser clients that record `audio/webm` should convert to WAV before upload or the backend validation will reject the request.
 - Generated voice-chat MP3 responses are uploaded to S3 under `voice-chat/<uuid>.mp3`; the API returns a relative `/files/voice-chat/...` URL that clients resolve through CloudFront-backed media delivery.
 - Voice chat creates one LangSmith-compatible parent trace with child spans for transcription, conversation context/RAG retrieval, agent execution/tool work, final chat response, and speech generation when tracing is enabled.

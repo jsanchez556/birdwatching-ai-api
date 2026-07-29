@@ -24,15 +24,15 @@ Expected files:
 ```text
 src/
   ai/audio/
-    speechToText.js
-    textToSpeech.js
+    speechToText.adapter.js
+    textToSpeech.adapter.js
   services/
   agents/
 ```
 
 Implementation details:
-- Implement `src/ai/audio/speechToText.js` as the OpenAI transcription adapter/service.
-- Leave `src/ai/audio/textToSpeech.js` as a placeholder only if text-to-speech is not part of this task.
+- Implement `src/ai/audio/speechToText.adapter.js` as the OpenAI transcription adapter/service.
+- Leave `src/ai/audio/textToSpeech.adapter.js` as a placeholder only if text-to-speech is not part of this task.
 - Add upload handling for audio files using the project’s existing middleware pattern, or introduce one if none exists.
 - Validate file type before calling OpenAI.
 - Return a response like:

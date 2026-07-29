@@ -9,7 +9,7 @@ await jest.unstable_mockModule('../src/ai/clients/openai.client.js', () => ({
   },
 }));
 
-await jest.unstable_mockModule('../src/db/vector/vector.repository.js', () => ({
+await jest.unstable_mockModule('../src/db/repositories/vector/vector.repository.js', () => ({
   default: {
     searchSimilar: mockSearchSimilar,
   },

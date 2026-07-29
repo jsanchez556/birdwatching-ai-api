@@ -3,6 +3,7 @@ import env from '../../config/env.js';
 import HttpError from '../../utils/httpError.js';
 
 const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+const CORS_ALLOWED_METHODS = ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'];
 
 export const securityHeaders = helmet({
   contentSecurityPolicy: false,
@@ -34,7 +35,7 @@ export function corsProtection(req, res, next) {
 
   res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Headers', env.corsAllowedHeaders.join(', '));
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', CORS_ALLOWED_METHODS.join(', '));
   res.setHeader('Access-Control-Expose-Headers', 'X-AI-Trace-Id');
 
   if (allowedOrigin) {

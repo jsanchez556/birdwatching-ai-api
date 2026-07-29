@@ -12,7 +12,7 @@ await jest.unstable_mockModule('../src/evaluations/runners/langSmithEvaluation.r
 
 const {
   runTourRecommendationPromptExperiment,
-} = await import('../src/evaluations/experiments/tourRecommendation.experiment.js');
+} = await import('../src/evaluations/comparisons/tourRecommendation.comparison.js');
 
 describe('tour recommendation experiment evaluation', () => {
   it('compares both prompt versions with LangSmith evaluation metrics', async () => {

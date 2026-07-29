@@ -1,6 +1,52 @@
 {
-  "score": 0.9839,
-  "retrievalQuality": 0.9796,
-  "source": "birdwatching-ai-golden-dataset",
-  "caseCount": 100
+  "schemaVersion": 1,
+  "evaluationType": "portfolio_regression",
+  "status": "unavailable",
+  "reason": "No verifiable real-pipeline output artifact was available when the synthetic baseline was retired.",
+  "thresholds": {
+    "casePassScore": 0.6,
+    "overallQuality": 0.7,
+    "retrievalQuality": 0.5,
+    "categoryPassRate": 0.5
+  },
+  "provenance": {
+    "datasetSource": "src/evaluations/datasets/golden-dataset.json",
+    "datasetPurpose": "Offline portfolio regression coverage for representative Birdwatching AI behavior.",
+    "datasetCreationMethod": "unknown",
+    "labelingMethod": "Expected behaviors and evaluation criteria are checked in with the dataset; original authoring method is unknown.",
+    "reviewerInformation": "unknown",
+    "baselineCreationDate": "unknown",
+    "modelIdentifier": "unknown",
+    "promptVersion": "unknown",
+    "retrievalIndexVersion": "unknown",
+    "evaluatorVersion": "lexical-scorers-v1",
+    "scoringVersion": "portfolio-regression-report-v1",
+    "sampleCount": 100,
+    "categoryDistribution": {
+      "bird_identification": 20,
+      "edge_cases": 20,
+      "rag_retrieval": 20,
+      "reservations": 20,
+      "tour_recommendations": 20
+    },
+    "knownEvaluatorLimitations": [
+      "Lexical overlap is only a proxy for semantic correctness.",
+      "Expected relevant chunk identifiers must be supplied by reviewed real-output artifacts for recall to be meaningful.",
+      "Human review remains necessary for nuanced safety, correctness, and tool outcomes."
+    ],
+    "knownDatasetLimitations": [
+      "Dataset creation and reviewer provenance were not recorded.",
+      "The dataset is synthetic and may not represent production traffic distribution.",
+      "It contains labels for scoring and must never be presented to the evaluated pipeline."
+    ],
+    "unknownFieldsSupplyMethod": "Provide values in the real-output artifact provenance after a reviewed staging or production-like collection run, then regenerate with npm run ai:evals -- --results <artifact> --write-baseline.",
+    "regenerationConditions": [
+      "Model identifier changes",
+      "Prompt version changes",
+      "Retrieval corpus, embedding model, or index version changes",
+      "Tool contracts or orchestration behavior changes",
+      "Dataset labels or category distribution changes",
+      "Evaluator or scoring version changes"
+    ]
+  }
 }

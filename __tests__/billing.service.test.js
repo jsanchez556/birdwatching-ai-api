@@ -118,7 +118,7 @@ await jest.unstable_mockModule('../src/monitoring/aiTelemetry.js', () => ({
 }));
 
 const { BillingService } = await import('../src/services/billing.service.js');
-const { StripeBillingProvider } = await import('../src/providers/billing/stripe.provider.js');
+const { StripeBillingProvider } = await import('../src/providers/billing/stripe.adapter.js');
 
 function buildStripeSignature(payload, timestamp = Math.floor(Date.now() / 1000)) {
   const signature = crypto

@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { Client as LangSmithClient } from 'langsmith';
 import env from '../config/env.js';
 import aiTelemetry, { normalizeTokenUsage, sanitizeTelemetryValue } from '../monitoring/aiTelemetry.js';
-import { estimateCost } from '../ai/evaluations/token.usage.js';
+import { estimateCost } from '../ai/telemetry/tokenUsage.js';
 import logger from '../utils/logger.js';
 
 function isTracingEnabled(config = env) {

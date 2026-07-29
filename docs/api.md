@@ -160,8 +160,13 @@ duration in milliseconds.
 
 The source is `AI_EVAL_OUTPUT_FILE` (default
 `tmp/ai-eval-results.json`, with `AI_EVAL_RESULTS_FILE` supported as a fallback),
-written by the offline `npm run ai:evals` flow or supplied as a compatible
-stored evaluation artifact. Offline output retains up to 100 timestamped runs.
+written by the real-output portfolio `npm run ai:evals` flow. Only artifacts
+with `evaluationType: "portfolio_regression"`,
+`evidenceClass: "real_pipeline_output"`, and
+`validRealPipelineOutputs: true` contribute metrics. Legacy or synthetic
+artifacts return `qualityStatus: "unavailable"` with null metrics. The response
+also identifies the scorer self-test as excluded and includes safe provenance
+when available. Offline output retains up to 100 timestamped runs.
 Dashboard requests only read and aggregate safe
 numeric results; they do not expose prompts, answers, retrieved content, tool
 inputs/outputs, reasoning, PII, secrets, or provider errors.
@@ -193,6 +198,25 @@ either value is unavailable.
       "startAt": "2026-05-31T00:00:00.000Z",
       "endAt": "2026-07-01T00:00:00.000Z",
       "timezone": "UTC"
+    },
+    "qualityStatus": "available",
+    "qualitySource": "real_pipeline_output",
+    "unavailableReason": null,
+    "provenance": {
+      "sourceType": "staging_evaluation",
+      "sourceArtifactId": "staging-2026-07-01",
+      "collectedAt": "2026-07-01T12:00:00.000Z",
+      "modelIdentifier": "configured-model-id",
+      "promptVersion": "configured-prompt-version",
+      "retrievalIndexVersion": "configured-index-version",
+      "evaluatorVersion": "lexical-scorers-v1",
+      "scoringVersion": "portfolio-regression-report-v1",
+      "provenanceReference": null
+    },
+    "scorerSelfTest": {
+      "label": "Synthetic scorer self-test — not model or RAG quality",
+      "includedInQualityMetrics": false,
+      "availableInConfiguredArtifact": false
     },
     "metrics": {
       "groundingScore": {
@@ -724,8 +748,34 @@ When the daily quota is exhausted, protected AI endpoints return:
 }
 ```
 
-## `GET /health`
-Returns service health and process uptime.
+## Health endpoints
+
+`GET /health` and `GET /health/live` return dependency-free API liveness with
+HTTP `200`:
+
+```json
+{"success":true,"data":{"status":"ok","role":"api","uptime":123.4},"meta":{}}
+```
+
+`GET /health/ready` checks PostgreSQL and Redis with strict timeouts and returns
+HTTP `200` only when both are ready. Degraded, unavailable, timed-out, and
+shutting-down states return HTTP `503`. The schema is stable and deliberately
+does not contain dependency errors, endpoints, or credentials:
+
+```json
+{
+  "success": false,
+  "data": {
+    "status": "unavailable",
+    "role": "api",
+    "checks": {
+      "postgres": {"status":"unavailable","reason":"timeout"},
+      "redis": {"status":"ok"}
+    }
+  },
+  "meta": {}
+}
+```
 
 Success data:
 ```json

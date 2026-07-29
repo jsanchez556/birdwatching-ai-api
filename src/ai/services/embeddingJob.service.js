@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import openaiClient from '../clients/openai.client.js';
 import chunkingService from './chunking.service.js';
-import vectorRepository from '../../db/vector/vector.repository.js';
+import vectorRepository from '../../db/repositories/vector/vector.repository.js';
 import { JOB_STATUSES, JOB_TYPES } from '../../jobs/jobTypes.js';
 import { registerEmbeddingQueue } from '../../queues/embedding.queue.js';
 import logger from '../../utils/logger.js';

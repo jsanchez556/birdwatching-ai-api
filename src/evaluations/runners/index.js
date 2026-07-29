@@ -10,3 +10,8 @@ export {
 export {
   runLangSmithEvaluation,
 } from './langSmithEvaluation.runner.js';
+
+export {
+  runPortfolioRegression,
+  validateAndIndexOutputs,
+} from './portfolioRegression.runner.js';

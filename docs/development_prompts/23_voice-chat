@@ -28,7 +28,7 @@ Architecture:
   - text-to-speech
   - audio response storage/URL generation
 - Do not call OpenAI directly from routes or controllers.
-- Reuse existing `src/ai/audio/speechToText.js` and `src/ai/audio/textToSpeech.js`.
+- Reuse existing `src/ai/audio/speechToText.adapter.js` and `src/ai/audio/textToSpeech.adapter.js`.
 - Reuse existing chat service logic instead of creating a second chatbot flow.
 - Reuse existing response envelopes and centralized error handling.
 - Keep provider details, stack traces, prompts, secrets, and raw tool internals out of client responses and logs.

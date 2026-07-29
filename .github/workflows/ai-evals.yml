@@ -25,23 +25,30 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: 24
+          node-version: 22
 
       - name: Install dependencies
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
+        run: npm ci
 
-      - name: Run AI evaluation gate
-        run: npm run ai:evals
+      - name: Run synthetic scorer self-test
+        run: npm run ai:evals:self-test
+
+      - name: Require real pipeline output artifact
+        env:
+          AI_EVAL_RESULTS_FILE: ${{ vars.AI_EVAL_RESULTS_FILE }}
+        run: |
+          if [ -z "$AI_EVAL_RESULTS_FILE" ] || [ ! -f "$AI_EVAL_RESULTS_FILE" ]; then
+            echo "A repository-relative AI_EVAL_RESULTS_FILE from a staging or production-like pipeline run is required."
+            exit 1
+          fi
+          npm run ai:evals -- --results "$AI_EVAL_RESULTS_FILE"
 
       - name: Upload AI evaluation results
         uses: actions/upload-artifact@v5
         if: always()
         with:
           name: ai-eval-results
-          path: tmp/ai-eval-results.json
+          path: |
+            tmp/ai-eval-results.json
+            tmp/ai-scorer-self-test-results.json
           if-no-files-found: ignore

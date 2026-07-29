@@ -22,7 +22,7 @@ const {
   normalizeLimit,
   normalizeSearchWeights,
   toVectorLiteral,
-} = await import('../src/db/vector/vector.repository.js');
+} = await import('../src/db/repositories/vector/vector.repository.js');
 const { default: pool } = await import('../src/db/pool.js');
 
 describe('VectorRepository helpers', () => {

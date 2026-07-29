@@ -5,7 +5,7 @@ import {
   normalizePagination,
   normalizeRange,
   summarizeTelemetry,
-} from '../src/admin/admin.service.js';
+} from '../src/services/admin/admin.service.js';
 
 function buildRepository() {
   return {

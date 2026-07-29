@@ -14,7 +14,7 @@ const {
   calculateRetrievalQuality,
   comparePromptEvaluations,
   PromptEvaluationTracker,
-} = await import('../src/ai/evaluations/promptEvaluation.tracker.js');
+} = await import('../src/ai/telemetry/promptEvaluationTracker.js');
 
 describe('PromptEvaluationTracker', () => {
   beforeEach(() => {

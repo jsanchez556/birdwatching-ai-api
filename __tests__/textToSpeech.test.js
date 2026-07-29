@@ -39,7 +39,7 @@ const {
   default: textToSpeech,
   assertAudioBuffer,
   responseToBuffer,
-} = await import('../src/ai/audio/textToSpeech.js');
+} = await import('../src/ai/audio/textToSpeech.adapter.js');
 
 describe('textToSpeech audio adapter', () => {
   beforeEach(() => {

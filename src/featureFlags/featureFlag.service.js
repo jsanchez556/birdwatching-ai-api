@@ -1,6 +1,6 @@
 import env from '../config/env.js';
 import logger from '../utils/logger.js';
-import { createPostHogProvider } from '../analytics/posthog.provider.js';
+import { createPostHogProvider } from '../analytics/posthog.adapter.js';
 import { FEATURE_FLAG_DEFAULTS } from './flags.js';
 import featureControlQueries from '../db/queries/featureControl.queries.js';
 

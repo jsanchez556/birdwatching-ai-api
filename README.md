@@ -1,8 +1,42 @@
 # Birdwatching AI API
 
-REST API for Costa Rica birdwatching chat, voice chat, trip recommendations, conversation memory, RAG retrieval, and tour reservations. The service is a single Node.js/Express app rooted at `src/` and integrates OpenAI with PostgreSQL persistence.
+This backend turns Costa Rica bird and tour questions into grounded answers,
+asynchronous image-identification results, and database-backed reservation
+confirmations. Its central engineering problem is controlling probabilistic
+model behavior at transactional boundaries: retrieval can degrade safely,
+vision output must preserve uncertainty, and a booking is real only after
+validated tool state reaches the PostgreSQL transaction.
+
+## Five-minute portfolio review
+
+- **System story:** [canonical portfolio case study](./docs/portfolio-case-study.md)
+- **Architecture:** [browser, API, worker, data, storage, model, and provider boundaries](./docs/portfolio-case-study.md#architecture)
+- **Concrete traces:** [grounded chat, multimodal identification, and transactional booking](./docs/portfolio-case-study.md#end-to-end-ai-traces)
+- **Evidence:** [claim-to-code/test map](./docs/portfolio-case-study.md#claim-to-evidence-map)
+- **Results:** [measured, tested, simulated, and missing outcomes](./docs/portfolio-case-study.md#results-and-evidence-status)
+- **Demo:** [honest status and local walkthrough](./docs/portfolio-case-study.md#demo-status-and-local-walkthrough)
+- **Developer path:** [local setup](#local-setup), [API contracts](./docs/api.md), [testing and evaluation](./docs/testing.md), and [deployment](./docs/deployment.md)
+
+The service owns HTTP validation and authorization, conversation persistence,
+RAG assembly, model/tool orchestration, usage and trace metadata, durable
+reservation rules, and BullMQ job coordination. A separate worker executes
+bird identification and ingestion/embedding jobs; PostgreSQL remains the source
+of truth, Redis is an optimization and queue transport, and object storage holds
+uploaded or generated media.
+
+### Evidence boundary
+
+The implementation and automated tests support the workflow and failure-path
+claims in the case study. They do **not** establish production usage, customer
+outcomes, latency, retrieval quality, booking success rate, cost, cache benefit,
+or uncertainty calibration. The checked-in real-pipeline evaluation baseline is
+explicitly unavailable; the numeric synthetic artifact validates scorers only.
+No sole-authorship claim or verified live demo URL is inferred from repository
+contents.
 
 ## Quick Links
+- Shared system case study: [docs/portfolio-case-study.md](./docs/portfolio-case-study.md)
+- Frontend repository: [birdwatching-ai-ui](https://github.com/jsanchez556/birdwatching-ai-ui)
 - Project context for AI agents: [CONTEXT.md](./CONTEXT.md)
 - Agent coding rules: [AGENTS.md](./AGENTS.md)
 - Architecture details: [docs/architecture.md](./docs/architecture.md)
@@ -115,7 +149,8 @@ or equivalent identifiers when adding providers such as TiloPay.
   exposing provider internals to clients.
 - Admin AI Quality: `GET /admin/ai-quality` summarizes stored offline
   grounding, answer relevance, retrieval quality, and evaluated-tool success
-  for current and equal-duration previous UTC periods without executing AI.
+  only from validated real-pipeline portfolio artifacts. Synthetic/legacy data
+  yields an explicit unavailable state and is never included in quality.
 - Safe Admin Operations: authenticated admins can retry a currently failed
   BullMQ job, suspend a non-admin abusive account, or disable an allowlisted
   boolean AI feature for up to 24 hours. Every accepted operation creates an
@@ -194,7 +229,7 @@ missing species in chunks of 50 codes and preserve existing keyed records; recen
 observations are written incrementally after each species.
 
 Semantic retrieval runs through `src/ai/services/retrieval.service.js` and
-`src/db/vector/vector.repository.js`, with optional metadata filters for fields
+`src/db/repositories/vector/vector.repository.js`, with optional metadata filters for fields
 such as source, category, document type, locale, tags, and JSON metadata. If
 PostgreSQL or `pgvector` is unavailable, chat continues without RAG context.
 Chat requests do not run ingestion, generate embeddings for source documents, or
@@ -256,13 +291,14 @@ When LangSmith tracing is enabled, voice chat creates one `voice_chat` parent tr
 ## Scripts
 ```bash
 npm start      # npm run start:api
-npm run dev    # npm run dev:api
+npm run dev    # run API and worker together
 npm run dev:api
 npm run dev:worker
 npm run start:api
 npm run start:worker
 npm run enrich -- birds # refresh bird data, generate birds.json, and ingest pgvector documents
-npm run ai:evals       # run offline AI evaluation gates against the baseline
+npm run ai:evals:self-test # validate deterministic scorers with synthetic labels
+npm run ai:evals -- --results path/to/real-output.json # portfolio regression gate
 npm test       # Jest ESM test runner
 ```
 
@@ -336,12 +372,15 @@ and creates indexes for semantic search and metadata filtering.
 ## AI Evaluations
 Offline evaluation infrastructure lives under `src/evaluations/`:
 - `datasets/golden-dataset.json` contains 100 representative birdwatching AI cases with questions, expected behaviors, criteria, and edge cases.
-- `datasets/ai-eval-baseline.json` stores the checked-in quality and retrieval baseline.
+- `datasets/ai-eval-baseline.json` stores portfolio thresholds and honest provenance; it is unavailable until created from a reviewed real-pipeline artifact.
+- `datasets/scorer-self-test-baseline.json` stores synthetic scorer-validation values that are not model or RAG quality.
+- `datasets/real-output-artifact.schema.json` defines the real-output input contract.
 - `scorers/` measures answer quality, relevance, grounding, correctness, completeness, retrieval precision/recall, and tool correctness.
 - `runners/` executes dataset evaluation, prompt regression comparison, and LangSmith-compatible evaluation reporting.
 - `dashboards/` prepares quality trend, regression detection, and retrieval performance summaries.
 
-Run `npm run ai:evals` before changing prompt behavior or evaluation logic. The
-GitHub Actions workflow `.github/workflows/ai-evals.yml` runs the same gate on
-pull requests to `main` and fails when score or retrieval quality drops below
-the baseline.
+Run `npm run ai:evals:self-test` after scorer changes. Run `npm run ai:evals
+-- --results <artifact>` after prompt, retrieval, model, or orchestration
+changes. The portfolio command fails closed without actual pipeline output and
+never constructs responses or retrieval evidence from labels. See
+`docs/testing.md` for provenance, capture, CI, and migration details.

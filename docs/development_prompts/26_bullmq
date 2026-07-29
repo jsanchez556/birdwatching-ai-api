@@ -247,7 +247,7 @@ src/workers/embedding.worker.js
 src/services/embeddingJob.service.js
 src/ai/services/embeddings.service.js
 src/ingestion/services/ingest.service.js
-src/db/vector/vector.repository.js
+src/db/repositories/vector/vector.repository.js
 src/db/migrations/*
 src/db/queries/*
 __tests__/workers/embedding.worker.test.js
@@ -344,7 +344,7 @@ src/workers/ingestion.worker.js
 src/services/documentIngestion.service.js
 src/services/embeddingJob.service.js
 src/ingestion/services/ingest.service.js
-src/db/vector/vector.repository.js
+src/db/repositories/vector/vector.repository.js
 src/api/controllers/ingestion.controller.js
 src/api/routes/ingestion.routes.js
 src/db/migrations/*

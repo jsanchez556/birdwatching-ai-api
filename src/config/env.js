@@ -37,11 +37,26 @@ const numericEnvKeys = [
   'BULLMQ_WORKER_CONCURRENCY',
   'BIRD_IDENTIFICATION_JOB_STALL_TIMEOUT_MS',
   'STRIPE_WEBHOOK_TOLERANCE_SECONDS',
+  'DEPENDENCY_HEALTH_TIMEOUT_MS',
+  'SHUTDOWN_GRACE_PERIOD_MS',
+  'SHUTDOWN_HARD_TIMEOUT_MS',
+  'REDIS_CONNECT_TIMEOUT_MS',
 ];
 
 for (const key of numericEnvKeys) {
   if (process.env[key] && Number.isNaN(Number(process.env[key]))) {
     throw new Error(`${key} must be a number`);
+  }
+}
+
+for (const key of [
+  'REDIS_CONNECT_TIMEOUT_MS',
+  'DEPENDENCY_HEALTH_TIMEOUT_MS',
+  'SHUTDOWN_GRACE_PERIOD_MS',
+  'SHUTDOWN_HARD_TIMEOUT_MS',
+]) {
+  if (process.env[key] && Number(process.env[key]) <= 0) {
+    throw new Error(`${key} must be greater than zero`);
   }
 }
 
@@ -66,6 +81,26 @@ if (
   throw new Error('POSTHOG_ENABLED must be true or false');
 }
 
+if (
+  process.env.RATE_LIMIT_REDIS_FAILURE_MODE
+  && !['local', 'deny'].includes(process.env.RATE_LIMIT_REDIS_FAILURE_MODE)
+) {
+  throw new Error('RATE_LIMIT_REDIS_FAILURE_MODE must be local or deny');
+}
+
+const shutdownGracePeriodMs = parsePositiveInteger(
+  process.env.SHUTDOWN_GRACE_PERIOD_MS,
+  15000
+);
+const shutdownHardTimeoutMs = parsePositiveInteger(
+  process.env.SHUTDOWN_HARD_TIMEOUT_MS,
+  30000
+);
+
+if (shutdownHardTimeoutMs <= shutdownGracePeriodMs) {
+  throw new Error('SHUTDOWN_HARD_TIMEOUT_MS must be greater than SHUTDOWN_GRACE_PERIOD_MS');
+}
+
 if (nodeEnv !== 'test') {
   for (const key of required) {
     if (!process.env[key]) {
@@ -87,7 +122,17 @@ const corsOrigins = (process.env.CORS_ORIGINS || '')
   .filter(Boolean);
 
 const corsAllowedHeaders = (
-  process.env.CORS_ALLOWED_HEADERS || 'Content-Type, Authorization, X-Filename'
+  process.env.CORS_ALLOWED_HEADERS
+    || [
+      'Content-Type',
+      'Authorization',
+      'X-Filename',
+      'X-Conversation-Id',
+      'X-Role',
+      'X-Response-Mode',
+      'X-Customer-Context',
+      'X-Conversation-Context',
+    ].join(', ')
 )
   .split(',')
   .map((header) => header.trim())
@@ -128,6 +173,13 @@ const env = {
   rateLimitMaxRequests: Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 60,
   aiRateLimitWindowMs: Number(process.env.AI_RATE_LIMIT_WINDOW_MS) || 60 * 1000,
   aiRateLimitMaxRequests: Number(process.env.AI_RATE_LIMIT_MAX_REQUESTS) || 12,
+  rateLimitRedisFailureMode: process.env.RATE_LIMIT_REDIS_FAILURE_MODE || 'local',
+  dependencyHealthTimeoutMs: parsePositiveInteger(
+    process.env.DEPENDENCY_HEALTH_TIMEOUT_MS,
+    1000
+  ),
+  shutdownGracePeriodMs,
+  shutdownHardTimeoutMs,
   externalApiRateLimitWindowMs: Number(process.env.EXTERNAL_API_RATE_LIMIT_WINDOW_MS) || 60 * 1000,
   externalApiRateLimitMaxRequests: Number(process.env.EXTERNAL_API_RATE_LIMIT_MAX_REQUESTS) || 40,
   eBirdApiBaseUrl: process.env.E_BIRD_API_BASE_URL,

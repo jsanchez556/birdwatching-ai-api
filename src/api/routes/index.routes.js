@@ -1,5 +1,5 @@
 import express from 'express';
-import adminRoutes from '../../admin/admin.routes.js';
+import adminRoutes from './admin.routes.js';
 import authRoutes from './auth.routes.js';
 import billingRoutes from './billing.routes.js';
 import birdIdentificationRoutes from './birdIdentification.routes.js';

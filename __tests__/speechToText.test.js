@@ -35,7 +35,7 @@ await jest.unstable_mockModule('../src/ai/tools/index.js', () => ({
   executeToolCall: jest.fn(),
 }));
 
-const { default: speechToText, normalizeTranscript } = await import('../src/ai/audio/speechToText.js');
+const { default: speechToText, normalizeTranscript } = await import('../src/ai/audio/speechToText.adapter.js');
 
 describe('speechToText audio adapter', () => {
   beforeEach(() => {

@@ -19,4 +19,4 @@ export {
 
 export {
   runTourRecommendationPromptExperiment,
-} from './experiments/tourRecommendation.experiment.js';
+} from './comparisons/tourRecommendation.comparison.js';
