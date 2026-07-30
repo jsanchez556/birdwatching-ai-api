@@ -50,6 +50,8 @@ Controllers translate HTTP into application calls. Services own workflows. Repos
 
 ## 4. System architecture diagram
 
+Shows the API/worker process boundary and the different roles of durable storage, queue/cache state, and external providers.
+
 ```mermaid
 flowchart LR
   subgraph Browser["Browser trust boundary"]
@@ -57,57 +59,49 @@ flowchart LR
   end
 
   subgraph API["API process"]
-    MW["Security, auth, limits, validation"]
-    Routes["Express routes"]
-    Chat["Chat and RAG services"]
-    Agent["Agent planner and tools"]
-    Billing["Billing and usage"]
-    Producer["Job producers"]
+    HTTP["HTTP middleware"]
+    Services["Domain services"]
+    Agent["RAG and agent"]
+    Producer["Queue producers"]
   end
 
-  subgraph Workers["Worker process"]
-    Consumer["BullMQ workers"]
-    Image["Image identification"]
-    Ingest["Ingestion and embeddings"]
+  subgraph Worker["Worker process"]
+    Consumers["BullMQ workers"]
+    Async["Image and ingestion"]
   end
 
   PG[("PostgreSQL and pgvector")]
-  Redis[("Redis cache and queues")]
+  Redis[("Redis and BullMQ")]
   OpenAI["OpenAI"]
-  S3["S3 and CloudFront"]
+  Media["S3 and CloudFront"]
   Stripe["Stripe"]
-  LangSmith["LangSmith"]
-  PostHog["PostHog"]
+  Telemetry["LangSmith and PostHog"]
 
-  UI -->|"JSON requests"| MW
-  MW --> Routes
-  Routes -->|"SSE response"| UI
-  Routes --> Chat
-  Chat --> Agent
-  Chat --> PG
-  Chat --> Redis
+  UI -->|"JSON requests"| HTTP
+  HTTP -->|"SSE stream"| UI
+  HTTP --> Services
+  Services --> Agent
+  Services --> PG
+  Services --> Redis
+  Services --> Stripe
+  Services --> Media
+  Services --> Producer
   Agent --> OpenAI
   Agent --> PG
-  Routes --> Billing
-  Billing --> PG
-  Billing --> Stripe
-  Routes --> Producer
   Producer --> Redis
-  Redis --> Consumer
-  Consumer --> Image
-  Consumer --> Ingest
-  Image --> OpenAI
-  Image --> PG
-  Ingest --> OpenAI
-  Ingest --> PG
-  Routes --> S3
-  Image --> S3
-  Chat --> LangSmith
-  Consumer --> LangSmith
-  Routes --> PostHog
+  Redis --> Consumers
+  Consumers --> Async
+  Async --> OpenAI
+  Async --> PG
+  Services -.-> Telemetry
+  Consumers -.-> Telemetry
 ```
 
-The API and worker share code and data services but run as separate processes. Redis is queue transport; PostgreSQL remains the durable job/domain record.
+Reading notes:
+
+- The API and worker share a runtime artifact but start as separate processes.
+- PostgreSQL is the durable source of truth; Redis holds rate-limit, cache, queue, and retained BullMQ state.
+- OpenAI, media, billing, and telemetry integrations require explicit configuration and are not implied to be live in every deployment.
 
 ## 5. End-to-end request lifecycle
 
@@ -200,6 +194,37 @@ Migration `004_create_vector_knowledge.sql` enables `vector` and creates `knowle
 
 The vector repository combines cosine similarity with PostgreSQL text search, normalizes semantic/keyword weights, supports metadata filters, applies score thresholds, and orders media-aware results. Query embeddings and retrieval results can be cached in Redis. Any cache error falls through; a PostgreSQL/vector error is recorded as degraded RAG and chat continues without retrieved context.
 
+### RAG request flow
+
+Shows how validated chat input becomes grounded context while preserving explicit cache and retrieval degradation paths.
+
+```mermaid
+flowchart TD
+  Request["Chat request"] --> Validate["Auth, limits, schema"]
+  Validate --> Memory["Recent memory"]
+  Memory --> Normalize["Normalize query"]
+  Normalize --> Embed["OpenAI embedding"]
+  Embed -.->|"embedding failure"| Empty["Empty RAG context"]
+  Embed --> Cache["Retrieval cache"]
+  Cache -->|"hit"| Assemble["Context assembly"]
+  Cache -->|"miss"| Hybrid["Hybrid pgvector search"]
+  Cache -.->|"cache failure"| Hybrid
+  Hybrid --> Assemble
+  Hybrid -.->|"retrieval failure"| Empty
+  Assemble --> Agent["Agent execution"]
+  Empty --> Agent
+  Agent --> Model["OpenAI stream"]
+  Model --> SSE["SSE response"]
+  Model --> Persist[("Messages and usage")]
+  Model -.-> Trace["Sanitized trace"]
+```
+
+Reading notes:
+
+- Hybrid search combines embedding similarity with PostgreSQL text search; PostgreSQL/pgvector is authoritative.
+- Redis failures bypass caching, while retrieval failures continue with an empty context and degraded metadata.
+- Conversation memory and usage are persisted separately from the retrieved prompt context.
+
 ### Memory
 
 - `conversations` and `messages` store durable owner-aware history.
@@ -226,6 +251,38 @@ The current runtime is a single domain agent with deterministic multi-tool plann
 Schemas and handlers are registered together so a missing handler or duplicate tool fails registration. The planner constructs dependent steps; the executor stores intermediate results, validates arguments, records trace events, retries transient results/errors twice by default with exponential delay, and marks remaining steps skipped after a blocking failure.
 
 The OpenAI model is used to produce the final natural-language answer, not to choose arbitrary executable code. Unknown tools and invalid arguments return controlled structured failures.
+
+### AI agent tool-execution flow
+
+Shows the deterministic planning and execution boundary that separates model language from transactional outcomes.
+
+```mermaid
+flowchart TD
+  Intent["User intent"] --> PlanInput["Planning input"]
+  PlanInput --> Planner["Deterministic planner"]
+  Flags["Feature controls"] --> Planner
+  Planner --> Plan["Ordered tool plan"]
+  Plan -.->|"no tools"| Final["Final prompt"]
+  Plan --> Validate["Validate arguments"]
+  Validate --> Execute["Execute next tool"]
+  Execute --> State["Intermediate state"]
+  State --> More{"More steps?"}
+  More -->|"yes"| Validate
+  Execute -.->|"retryable"| Retry["Bounded retry"]
+  Retry --> Execute
+  Execute -.->|"terminal"| Stop["Skip dependents"]
+  Execute -->|"reservation"| Tx["PostgreSQL transaction"]
+  More -->|"no"| Final
+  Stop --> Final
+  Tx --> Final
+  Final --> Model["Streamed answer"]
+```
+
+Reading notes:
+
+- Planning is constrained by registered schemas, current conversation state, feature controls, and deterministic rules.
+- Retryable failures use bounded backoff; terminal failures stop dependent steps and enter the final prompt as failure context.
+- Only a successful PostgreSQL reservation transaction can support a confirmed booking; model wording alone cannot.
 
 ## 11. Streaming and multimodal workflows
 
@@ -254,6 +311,39 @@ Image uploads are capped and type-validated by middleware, then stored before qu
 ### BullMQ
 
 Queues: `bird-identification`, `ingestion`, `embedding`, and `dead-letter`.
+
+### Asynchronous worker flow
+
+Shows how durable job or document state surrounds BullMQ’s retryable delivery path for image identification, ingestion, and embeddings.
+
+```mermaid
+flowchart TD
+  Request["API request"] --> API["Validate and authorize"]
+  API --> State[("Job or document state")]
+  State --> Producer["BullMQ producer"]
+  Producer --> Redis[("Redis queue")]
+  Redis --> Worker["Worker processor"]
+  Worker --> Kind{"Job type"}
+  Kind --> Image["Image analysis"]
+  Kind --> Ingest["Ingestion"]
+  Kind --> Embed["Embedding"]
+  Image --> OpenAI["OpenAI"]
+  Ingest --> OpenAI
+  Embed --> OpenAI
+  Image --> Result[("Update durable state")]
+  Ingest --> Result
+  Embed --> Result
+  Result --> State
+  Worker -.->|"retry and backoff"| Redis
+  Worker -.->|"terminal failure"| DLQ["Sanitized DLQ"]
+  Client["Authenticated client"] -.->|"poll queued jobs"| API
+```
+
+Reading notes:
+
+- PostgreSQL job records provide identification/ingestion status; embedding jobs update durable document chunks rather than a public job record.
+- Unsupported or invalid payloads are non-retryable; classified transient failures use exponential backoff.
+- The worker has no public HTTP listener, and BullMQ delivery is not documented as exactly once.
 
 The shared default is three attempts with exponential backoff from 5 seconds, completion retention of one day/1,000 jobs, failure retention of seven days/5,000 jobs, and worker concurrency two. Environment variables can change these values. Unrecoverable payload errors do not retry. Queue/worker events update structured telemetry; sanitized terminal failures can be copied to the DLQ.
 
@@ -296,6 +386,34 @@ No repository evidence proves an external dashboard is configured or receiving d
 ## 14. Billing and AI cost governance
 
 Internal plan, subscription, quota, usage, and feature-economics models are provider-neutral. Stripe is the only concrete provider adapter.
+
+### Billing and subscription lifecycle
+
+Shows the verified-webhook path that converts provider activity into durable entitlement, quota, and reporting state.
+
+```mermaid
+flowchart TD
+  User["Authenticated user"] --> API["Billing API"]
+  API --> Session["Plan mapping and session"]
+  Session --> Stripe["Stripe checkout"]
+  Stripe -->|"browser redirect"| Return["Return notice"]
+  Return -.-> NoGrant["Not entitlement"]
+  Stripe -->|"signed webhook"| Verify["Verify and normalize"]
+  Verify --> Event[("Record event ID")]
+  Event -->|"new or replayable"| Sync["Sync subscription"]
+  Event -.->|"processed duplicate"| Ack["Acknowledge"]
+  Sync --> Subscription[("Subscription state")]
+  Subscription --> Quota["Entitlements and quotas"]
+  Quota --> Usage[("Usage and cost")]
+  Usage --> Reports["Billing reports"]
+  Sync -.-> Analytics["Subscription analytics"]
+```
+
+Reading notes:
+
+- Checkout is provider-hosted, but only a verified and normalized webhook can change durable subscription state.
+- Provider event IDs support idempotent duplicate handling; webhook processing is synchronous rather than queue-backed.
+- Daily quotas reserve access before AI execution, while usage/cost records feed user, admin, and feature-economics reports.
 
 Implemented mechanisms:
 
