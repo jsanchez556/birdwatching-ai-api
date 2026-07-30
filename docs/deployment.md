@@ -36,8 +36,16 @@ Required outside tests:
 Optional:
 - `PORT`, defaults to `3000`
 - `NODE_ENV`, defaults to `development`; allowed values are `development`, `test`, `production`
-- `OPENAI_MODEL`, defaults to `gpt-4o`
+- `OPENAI_MODEL`, backward-compatible balanced-generation alias; defaults to `gpt-4o`
+- `OPENAI_ECONOMY_MODEL`, defaults to `gpt-4o-mini`
+- `OPENAI_BALANCED_MODEL`, overrides `OPENAI_MODEL` for balanced routes
+- `OPENAI_ADVANCED_MODEL`, defaults to the balanced model
+- `OPENAI_STRUCTURED_MODEL`, defaults to the balanced model
+- `OPENAI_VISION_MODEL`, defaults to the balanced model
+- `OPENAI_EVALUATION_MODEL`, defaults to the advanced model
 - `OPENAI_EMBEDDING_MODEL`, defaults to `text-embedding-3-small`
+- `OPENAI_TRANSCRIPTION_MODEL`, defaults to `gpt-4o-mini-transcribe`
+- `OPENAI_SPEECH_MODEL`, defaults to `gpt-4o-mini-tts`
 - `REDIS_URL`, defaults to `redis://localhost:6379`
 - `REDIS_CONNECT_TIMEOUT_MS`, defaults to `1000`
 - `REDIS_KEY_PREFIX`, defaults to `birdwatching-ai:`
@@ -392,7 +400,7 @@ npm run ai:evals
 Also verify:
 - required environment variables are present in the host
 - `CORS_ORIGINS` matches the frontend origin
-- OpenAI model access is available for `OPENAI_MODEL`
+- OpenAI model access is available for every configured routing model
 - OpenAI embedding model access is available for `OPENAI_EMBEDDING_MODEL`
 - Redis is reachable from the host when cache optimization is expected; verify with `redis-cli` against `REDIS_URL`
 - `JWT_SECRET` is set to a strong secret and not exposed to the frontend

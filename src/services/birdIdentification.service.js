@@ -4,7 +4,7 @@ import birdIdentificationAgent, {
 } from '../ai/agents/birdIdentification.agent.js';
 import birdImageAnalysisService from './birdImageAnalysis.service.js';
 import birdIdentificationImageStorage from './birdIdentificationImageStorage.service.js';
-import env from '../config/env.js';
+import { routeModel } from '../ai/routing/modelRouter.js';
 import {
   traceBirdIdentificationFinalResponse,
   traceBirdIdentificationPipeline,
@@ -41,6 +41,10 @@ import {
   recordBirdIdentificationHistory,
 } from './birdIdentification/responseAssembly.js';
 
+const BIRD_IDENTIFICATION_MODEL = routeModel({
+  task: 'bird_image_analysis',
+}).primaryModel.modelId;
+
 function addIdentificationUsage(metadata = {}, response) {
   if (!metadata || typeof metadata !== 'object') {
     return;
@@ -53,7 +57,7 @@ function addIdentificationUsage(metadata = {}, response) {
     hasEstimatedCost: false,
     modelUsage: [],
   };
-  const model = response?.model || env.openAiModel;
+  const model = response?.model || BIRD_IDENTIFICATION_MODEL;
   const modelUsage = [...(current.modelUsage || [])];
   const existingModelUsage = modelUsage.find((entry) => entry.model === model);
   const nextModelUsage = buildModelUsageEntry(model, {
@@ -132,7 +136,7 @@ class BirdIdentificationService {
 
     logger.info('Bird identification finished', {
       event: 'bird_identification',
-      model: response.model || env.openAiModel,
+      model: response.model || BIRD_IDENTIFICATION_MODEL,
       requestId: response.id,
       promptVersion: BIRD_IDENTIFICATION_PROMPT_VERSION,
       candidateCount: identification.candidates.length,
@@ -143,28 +147,54 @@ class BirdIdentificationService {
     return {
       ...identification,
       promptVersion: BIRD_IDENTIFICATION_PROMPT_VERSION,
-      model: response.model || env.openAiModel,
+      model: response.model || BIRD_IDENTIFICATION_MODEL,
       providerRequestId: response.id,
     };
   }
 
   async verifyAndRerankBirdCandidates({ imageAnalysis, candidates, retrievedProfiles, metadata = {} }) {
+    let providerRequestId;
+
     try {
-      const response = await birdIdentificationAgent.verifyAndRerank({
-        imageAnalysis,
-        candidates,
-        retrievedProfiles,
-        metadata,
-      });
-      addIdentificationUsage(metadata, response);
-      const verification = normalizeBirdVerification(parseProviderJson(response), {
-        imageAnalysis,
-        fallbackCandidates: candidates,
-      });
+      let response;
+      let verification;
+
+      for (let malformedAttempt = 0; malformedAttempt < 2; malformedAttempt += 1) {
+        response = await birdIdentificationAgent.verifyAndRerank({
+          imageAnalysis,
+          candidates,
+          retrievedProfiles,
+          metadata,
+        });
+        providerRequestId = response?.id;
+        addIdentificationUsage(metadata, response);
+
+        try {
+          verification = normalizeBirdVerification(parseProviderJson(response), {
+            imageAnalysis,
+            fallbackCandidates: candidates,
+          });
+          break;
+        } catch (error) {
+          const retryableMalformedContent = error.code === 'provider_malformed_response'
+            && ['empty_content', 'invalid_json'].includes(error.failureStage);
+
+          if (!retryableMalformedContent || malformedAttempt === 1) {
+            throw error;
+          }
+
+          logger.warn('Bird verification provider content was malformed; retrying once', {
+            event: 'bird_identification_verification_malformed_retry',
+            errorCode: error.code,
+            failureStage: error.failureStage,
+            providerRequestId,
+          });
+        }
+      }
 
       logger.info('Bird identification verification finished', {
         event: 'bird_identification_verification',
-        model: response.model || env.openAiModel,
+        model: response.model || BIRD_IDENTIFICATION_MODEL,
         requestId: response.id,
         promptVersion: BIRD_IDENTIFICATION_VERIFICATION_PROMPT_VERSION,
         candidateCount: verification.candidates.length,
@@ -175,7 +205,7 @@ class BirdIdentificationService {
       return {
         ...verification,
         promptVersion: BIRD_IDENTIFICATION_VERIFICATION_PROMPT_VERSION,
-        model: response.model || env.openAiModel,
+        model: response.model || BIRD_IDENTIFICATION_MODEL,
         providerRequestId: response.id,
       };
     } catch (error) {
@@ -183,6 +213,8 @@ class BirdIdentificationService {
         event: 'bird_identification_verification_failed',
         errorName: error.name,
         errorCode: error.code,
+        failureStage: error.failureStage,
+        providerRequestId,
         status: error.status,
       });
 

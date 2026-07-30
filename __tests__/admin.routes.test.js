@@ -113,6 +113,7 @@ describe('admin routes', () => {
   });
 
   it.each([
+    ['/admin/model-routing/preview', { task: 'general_chat' }, 'previewModelRouting'],
     ['/admin/jobs/job-1/retry', {}, 'retryFailedJob'],
     ['/admin/users/7/suspend', { reasonCode: 'abuse' }, 'suspendUser'],
     ['/admin/ai-features/voice_ai/disable', { durationMinutes: 30 }, 'disableAiFeature'],
@@ -133,7 +134,56 @@ describe('admin routes', () => {
     expect(forbidden.status).toBe(403);
     expect(success.status).toBe(200);
     expect(success.body).toMatchObject({ success: true, meta: {} });
-    expect(adminOperationsServiceMock[method]).toHaveBeenCalledTimes(1);
+    if (method !== 'previewModelRouting') {
+      expect(adminOperationsServiceMock[method]).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('returns a sanitized model-routing preview for an admin', async () => {
+    const response = await request(buildApp())
+      .post('/admin/model-routing/preview')
+      .set('Authorization', authHeader('admin'))
+      .send({
+        task: 'reservation_planning',
+        estimatedInputTokens: 2200,
+        userPlan: 'pro',
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      success: true,
+      data: {
+        task: 'reservation_planning',
+        route: 'advanced',
+        reasonCode: 'MULTI_STEP_RESERVATION',
+        reason: 'Multi-step reservation workflow',
+        primaryModelKey: 'advanced_reasoning',
+        fallbackCount: expect.any(Number),
+        reasoningEffort: 'medium',
+        timeoutMs: 30000,
+        maxRetries: 2,
+      },
+      meta: {},
+    });
+    expect(JSON.stringify(response.body)).not.toMatch(
+      /gpt-|OPENAI_|api.?key|authorization|provider.*error/i
+    );
+  });
+
+  it('rejects invalid routing previews without leaking submitted secrets', async () => {
+    const response = await request(buildApp())
+      .post('/admin/model-routing/preview')
+      .set('Authorization', authHeader('admin'))
+      .send({
+        task: 'not_a_task',
+        estimatedInputTokens: -1,
+        userPlan: 'enterprise',
+        secret: 'sk-live-must-not-leak',
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    expect(JSON.stringify(response.body)).not.toContain('sk-live-must-not-leak');
   });
 
   it('rejects malformed admin operation payloads before service execution', async () => {

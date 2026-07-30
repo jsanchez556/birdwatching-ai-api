@@ -23,19 +23,24 @@ function compactObject(value = {}) {
   );
 }
 
-function malformed(message = 'Bird identification provider returned an invalid response.') {
-  return new HttpError(502, message, { code: 'provider_malformed_response' });
+function malformed(
+  message = 'Bird identification provider returned an invalid response.',
+  failureStage = 'semantic_validation'
+) {
+  const error = new HttpError(502, message, { code: 'provider_malformed_response' });
+  error.failureStage = failureStage;
+  return error;
 }
 
 export function parseBirdProviderJson(response) {
   const rawContent = response.choices?.[0]?.message?.content;
   if (typeof rawContent !== 'string' || !rawContent.trim()) {
-    throw malformed('Bird identification provider returned an empty response.');
+    throw malformed('Bird identification provider returned an empty response.', 'empty_content');
   }
   try {
     return JSON.parse(rawContent);
   } catch {
-    throw malformed('Bird identification provider returned invalid JSON.');
+    throw malformed('Bird identification provider returned invalid JSON.', 'invalid_json');
   }
 }
 

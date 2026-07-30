@@ -2,10 +2,11 @@
 
 Repository-specific instructions for AI coding assistants. Start with [CONTEXT.md](./CONTEXT.md).
 Treat file paths as repository-relative strings matching `^(?:\.?/)?[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$`.
-If the task text contains file paths, read only those exact paths from the repository root.
-If the task text does not contain file paths, read only `./docs/architecture.md`, `./docs/api.md`, and `./docs/testing.md`.
+Repository-wide discovery is permitted within the repository root. When the task is broad or ambiguous, inspect relevant files and directories across the repo to locate the right implementation areas before narrowing to the specific files to change.
+If the task text contains file paths, read the referenced paths and any directly related files from the repository root.
+If the task text does not contain file paths, you may explore the repository broadly to identify relevant documentation and implementation files before making changes.
 If the task asks to modify files under `src/ai/prompts/` or `src/ai/schemas/`, also read `docs/prompting.md` in addition to the normal allowed file set.
-Do not infer or expand paths, or read files outside the allowed set.
+Do not infer or expand paths, or read files outside the repository root.
 If a required named file is missing, unreadable, or resolves outside the repository root, stop and return a clear missing-file error instead of guessing.
 The repository context file `CONTEXT.md` must always be read first.
 

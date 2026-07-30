@@ -19,7 +19,6 @@ import { injectResponseModeMessage } from '../ai/prompts/prompt.builder.js';
 import { FIELD_ASSISTANT_RESPONSE_MODE } from '../ai/prompts/system.prompt.js';
 import analytics from '../analytics/analytics.service.js';
 import { ANALYTICS_EVENTS } from '../analytics/events.js';
-import env from '../config/env.js';
 
 const STREAM_GUARDRAIL_BUFFER_CHARS = 48;
 const VISITOR_ROLE = 'visitor';
@@ -348,7 +347,6 @@ class ChatService {
       conversationId: activeConversationId,
       role,
       ...(responseMode ? { responseMode } : {}),
-      model: env.openAiModel,
       promptVersion: CHAT_SYSTEM_PROMPT_VERSION,
       promptVersions: {
         chat: CHAT_SYSTEM_PROMPT_VERSION,

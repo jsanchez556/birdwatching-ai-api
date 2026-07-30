@@ -36,6 +36,7 @@ This repository is a Node.js backend for Costa Rica birdwatching assistance, spl
 - AI feature economics and contribution margin: [docs/feature-economics.md](./docs/feature-economics.md)
 - Backend implementation rules: [docs/backend-guidelines.md](./docs/backend-guidelines.md)
 - Testing, AI evaluations, and CI gates: [docs/testing.md](./docs/testing.md)
+- Model registry, routing policies, and admin preview: [docs/model-routing.md](./docs/model-routing.md)
 
 ## Current Architecture
 The app uses a controller-service-query split:
@@ -103,6 +104,10 @@ GET /chat/latest
 - Visitor chat is limited to bird-related questions, cannot execute tour/reservation tools, and uses a stricter in-memory IP limit.
 - `NODE_ENV=test` bypasses required `OPENAI_API_KEY`, `DATABASE_URL`, and `JWT_SECRET` validation.
 - OpenAI retry behavior lives in `src/utils/async.utils.js` and is used for transient OpenAI statuses.
+- AI generation tasks use the centralized registry and deterministic policies
+  under `src/ai/routing/`. The router returns a compatible primary/fallback
+  chain without making provider calls; `POST /admin/model-routing/preview`
+  exposes an authenticated, key-only operator projection.
 - Redis cache configuration is optional and environment-driven through `REDIS_URL`, `REDIS_KEY_PREFIX`, `REDIS_CACHE_TTL_SECONDS`, `AI_RESPONSE_CACHE_TTL_SECONDS`, `RETRIEVAL_CACHE_TTL_SECONDS`, `SEMANTIC_CACHE_TTL_SECONDS`, `SEMANTIC_CACHE_SIMILARITY_THRESHOLD`, `SEMANTIC_CACHE_MAX_ENTRIES`, and `EMBEDDING_CACHE_TTL_SECONDS`. Redis failures are logged and fall back to the normal OpenAI or pgvector path.
 - Cache key hashing, positive numeric parsing/formatting, and whitespace normalization live in `src/utils/hash.utils.js`, `src/utils/number.utils.js`, and `src/utils/text.utils.js`; reuse those helpers for new cache-safe deterministic keys or metric formatting.
 - Shared filesystem and media path helpers live in `src/utils/fs.utils.js` and `src/utils/file.utils.js`; use them instead of duplicating JSON file IO, freshness checks, or media URL/path normalization.

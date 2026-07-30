@@ -5,9 +5,9 @@ import {
   BIRD_IMAGE_ANALYSIS_SYSTEM_PROMPT,
 } from '../ai/prompts/birdImageAnalysis.prompt.js';
 import { BIRD_IMAGE_ANALYSIS_RESPONSE_SCHEMA } from '../ai/schemas/birdImageAnalysis.schema.js';
-import env from '../config/env.js';
 import { traceLlmCall } from '../tracing/aiTracing.middleware.js';
 import { asyncRetry } from '../utils/async.utils.js';
+import { routeModel } from '../ai/routing/modelRouter.js';
 import HttpError from '../utils/httpError.js';
 import logger from '../utils/logger.js';
 import { getCompletionUsageSummary } from '../ai/telemetry/tokenUsage.js';
@@ -114,13 +114,15 @@ export function normalizeBirdImageAnalysis(rawAnalysis) {
 
 class BirdImageAnalysisService {
   async analyze({ imageUrl, metadata = {} }) {
+    const modelRoute = routeModel({ task: 'bird_image_analysis' });
+    const model = modelRoute.primaryModel.modelId;
     const response = await traceLlmCall('bird_image_analysis', {
-      model: env.openAiModel,
+      model,
       promptVersion: BIRD_IMAGE_ANALYSIS_PROMPT_VERSION,
       parentTraceId: metadata.parentTraceId,
       cacheStatus: 'not_applicable',
     }, () => asyncRetry(() => openaiClient.client.chat.completions.create({
-      model: env.openAiModel,
+      model,
       messages: [
         {
           role: 'system',
@@ -157,7 +159,7 @@ class BirdImageAnalysisService {
       tokenUsage: null,
       outputMetadata: (result) => ({
         requestId: result.id,
-        model: result.model || env.openAiModel,
+        model: result.model || model,
       }),
     });
 
@@ -176,7 +178,7 @@ class BirdImageAnalysisService {
     } catch (error) {
       logger.warn('Image analysis provider returned invalid JSON; using low-confidence fallback', {
         event: 'bird_image_analysis_parse_failed',
-        model: response.model || env.openAiModel,
+        model: response.model || model,
         requestId: response.id,
       });
       parsed = DEFAULT_IMAGE_ANALYSIS;
@@ -186,7 +188,7 @@ class BirdImageAnalysisService {
 
     logger.info('Bird image analysis finished', {
       event: 'bird_image_analysis',
-      model: response.model || env.openAiModel,
+      model: response.model || model,
       requestId: response.id,
       promptVersion: BIRD_IMAGE_ANALYSIS_PROMPT_VERSION,
       colorCount: analysis.dominantColors.length,
@@ -202,7 +204,7 @@ class BirdImageAnalysisService {
       estimatedCost: usage.estimatedCostUsd,
       traceId: metadata.parentTraceId,
       modelUsage: [
-        buildModelUsageEntry(response.model || env.openAiModel, {
+        buildModelUsageEntry(response.model || model, {
           promptTokens: usage.promptTokens,
           completionTokens: usage.completionTokens,
           totalTokens: usage.totalTokens,
@@ -214,7 +216,7 @@ class BirdImageAnalysisService {
     return {
       ...analysis,
       promptVersion: BIRD_IMAGE_ANALYSIS_PROMPT_VERSION,
-      model: response.model || env.openAiModel,
+      model: response.model || model,
       providerRequestId: response.id,
     };
   }

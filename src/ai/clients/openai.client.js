@@ -11,6 +11,7 @@ import { traceLlmCall } from '../../tracing/aiTracing.middleware.js';
 import aiTelemetry from '../../monitoring/aiTelemetry.js';
 import createResponseCache from '../../cache/responseCache.js';
 import { getRedisConfig } from '../../cache/redisClient.js';
+import { getModel, MODEL_KEYS, MODEL_REGISTRY } from '../routing/modelRegistry.js';
 
 const retryableStatuses = new Set([408, 409, 429, 500, 502, 503, 504]);
 
@@ -70,8 +71,8 @@ class OpenAIClient {
     this.client = new OpenAI({
       apiKey: env.openAiApiKey,
     });
-    this.model = env.openAiModel;
-    this.embeddingModel = env.openAiEmbeddingModel;
+    this.model = getModel(MODEL_REGISTRY, MODEL_KEYS.BALANCED_GENERAL).modelId;
+    this.embeddingModel = getModel(MODEL_REGISTRY, MODEL_KEYS.EMBEDDING_GENERAL).modelId;
     this.embeddingCache = embeddingCache;
     this.redisConfig = redisConfig;
     this.logger = log;
@@ -83,6 +84,7 @@ class OpenAIClient {
     const metadata = options.metadata || {};
     const usage = options.usage || {};
     const signal = options.signal;
+    const model = options.model || this.model;
     const maxToolIterations = options.maxToolIterations || 3;
     const conversation = [...messages];
 
@@ -90,7 +92,7 @@ class OpenAIClient {
       const completion = await traceLlmCall('chat_completion_tool_resolution', {
         parentTraceId: metadata.agentTraceId || metadata.parentTraceId,
         conversationId: metadata.conversationId,
-        model: this.model,
+        model,
         promptVersion: metadata.promptVersion,
         experiment: metadata.experiment,
         experimentVariant: metadata.experimentVariant,
@@ -100,7 +102,7 @@ class OpenAIClient {
         messageCount: conversation.length,
         toolCount: tools.length,
       }, () => asyncRetry(() => this.client.chat.completions.create({
-        model: this.model,
+        model,
         messages: conversation,
         tools,
         tool_choice: 'auto',
@@ -111,7 +113,7 @@ class OpenAIClient {
       }), {
         outputMetadata: (result) => ({
           requestId: result.id,
-          model: result.model || this.model,
+          model: result.model || model,
           toolCallCount: result.choices[0]?.message?.tool_calls?.length || 0,
           toolCalls: (result.choices[0]?.message?.tool_calls || [])
             .map((toolCall) => toolCall.function?.name)
@@ -121,7 +123,7 @@ class OpenAIClient {
 
       this.logCompletionUsage('chat_completion_stream_tool_resolution', completion, {
         toolIteration: iteration,
-      }, usage);
+      }, usage, model);
 
       const assistantMessage = completion.choices[0]?.message;
       const toolCalls = assistantMessage?.tool_calls || [];
@@ -165,14 +167,15 @@ class OpenAIClient {
     const usage = options.usage || {};
     const onChunk = options.onChunk || (() => {});
     const signal = options.signal;
+    const model = options.model || this.model;
     let response = '';
-    let streamModel = this.model;
+    let streamModel = model;
     let streamId;
 
     return traceLlmCall('chat_completion_stream', {
       parentTraceId: options.metadata?.agentTraceId || options.metadata?.parentTraceId,
       conversationId: options.metadata?.conversationId,
-      model: this.model,
+      model,
       promptVersion: options.metadata?.promptVersion,
       experiment: options.metadata?.experiment,
       experimentVariant: options.metadata?.experimentVariant,
@@ -183,7 +186,7 @@ class OpenAIClient {
       groundingContext: options.metadata?.groundingContext,
     }, async (trace) => {
       const stream = await asyncRetry(() => this.client.chat.completions.create({
-        model: this.model,
+        model,
         messages,
         stream: true,
         stream_options: {
@@ -411,12 +414,12 @@ class OpenAIClient {
     }
   }
 
-  logCompletionUsage(event, completion, logMetadata = {}, usageCollector = null) {
-    const usage = addCompletionUsage(usageCollector, completion, this.model);
+  logCompletionUsage(event, completion, logMetadata = {}, usageCollector = null, fallbackModel = this.model) {
+    const usage = addCompletionUsage(usageCollector, completion, fallbackModel);
 
     logger.info('OpenAI completion finished', {
       event,
-      model: completion.model || this.model,
+      model: completion.model || fallbackModel,
       requestId: completion.id,
       promptTokens: usage.promptTokens,
       completionTokens: usage.completionTokens,

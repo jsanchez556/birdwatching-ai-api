@@ -10,6 +10,14 @@ import {
   normalizeEnrichedCandidates,
 } from './evidenceRetrieval.js';
 
+function malformedVerification(failureStage) {
+  const error = new HttpError(502, 'Bird verification provider returned an invalid response.', {
+    code: 'provider_malformed_response',
+  });
+  error.failureStage = failureStage;
+  return error;
+}
+
 function normalizeText(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -62,14 +70,10 @@ export function normalizeBirdVerification(rawVerification, {
   fallbackCandidates = [],
 } = {}) {
   if (!rawVerification || typeof rawVerification !== 'object' || Array.isArray(rawVerification)) {
-    throw new HttpError(502, 'Bird verification provider returned an invalid response.', {
-      code: 'provider_malformed_response',
-    });
+    throw malformedVerification('invalid_verification_object');
   }
   if (!Array.isArray(rawVerification.candidates) || rawVerification.candidates.length > 5) {
-    throw new HttpError(502, 'Bird verification provider returned an invalid response.', {
-      code: 'provider_malformed_response',
-    });
+    throw malformedVerification('invalid_verification_candidates');
   }
   const verifierCandidates = rawVerification.candidates.length
     ? rawVerification.candidates

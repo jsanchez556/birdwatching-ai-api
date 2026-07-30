@@ -177,4 +177,52 @@ describe('birdIdentificationAgent', () => {
       },
     ]);
   });
+
+  it('declares verifier output that cannot contain empty placeholder candidates', async () => {
+    mockCreate.mockResolvedValue({
+      id: 'verify-1',
+      model: 'gpt-4o',
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            status: 'unknown',
+            bestMatch: null,
+            candidates: [],
+            notes: ['Insufficient visible evidence.'],
+          }),
+        },
+      }],
+    });
+
+    await birdIdentificationAgent.verifyAndRerank({
+      imageAnalysis: {
+        dominantColors: ['olive'],
+        fieldMarks: ['short bill'],
+        confidence: 0.45,
+      },
+      candidates: [{
+        commonName: 'Variable Seedeater',
+        scientificName: 'Sporophila corvina',
+        confidence: 0.5,
+        reasoning: 'Small seed-eating bird.',
+        visualEvidence: ['short bill'],
+      }],
+      retrievedProfiles: [],
+    });
+
+    const request = mockCreate.mock.calls[0][0];
+    const schemaCandidate = request.response_format.json_schema.schema
+      .properties.candidates.items.properties;
+
+    expect(schemaCandidate.commonName.minLength).toBe(1);
+    expect(schemaCandidate.reasoning.minLength).toBe(1);
+    expect(schemaCandidate.visualEvidence.minItems).toBe(1);
+    expect(schemaCandidate.visualEvidence.items.minLength).toBe(1);
+    expect(request.messages[0].content).toContain(
+      'never emit an empty-string placeholder candidate'
+    );
+    expect(request.messages[0].content).toContain(
+      'preserve their commonName and scientificName exactly'
+    );
+  });
 });

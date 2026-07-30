@@ -10,9 +10,9 @@ import {
   BIRD_IDENTIFICATION_RESPONSE_SCHEMA,
   BIRD_IDENTIFICATION_VERIFICATION_RESPONSE_SCHEMA,
 } from '../schemas/birdIdentification.schema.js';
-import env from '../../config/env.js';
 import { traceLlmCall } from '../../tracing/aiTracing.middleware.js';
 import { asyncRetry } from '../../utils/async.utils.js';
+import { routeModel } from '../routing/modelRouter.js';
 
 class BirdIdentificationAgent {
   buildCandidateUserContent({ imageAnalysis, imageUrl }) {
@@ -37,14 +37,16 @@ class BirdIdentificationAgent {
   }
 
   async identify({ imageAnalysis, imageUrl, metadata = {} }) {
+    const modelRoute = routeModel({ task: 'bird_image_analysis' });
+    const model = modelRoute.primaryModel.modelId;
     return traceLlmCall('bird_identification_agent', {
-      model: env.openAiModel,
+      model,
       promptVersion: BIRD_IDENTIFICATION_PROMPT_VERSION,
       parentTraceId: metadata.parentTraceId,
       cacheStatus: 'not_applicable',
       hasImageUrl: Boolean(imageUrl),
     }, () => asyncRetry(() => openaiClient.client.chat.completions.create({
-      model: env.openAiModel,
+      model,
       messages: [
         {
           role: 'system',
@@ -70,14 +72,16 @@ class BirdIdentificationAgent {
       tokenUsage: null,
       outputMetadata: (result) => ({
         requestId: result.id,
-        model: result.model || env.openAiModel,
+        model: result.model || model,
       }),
     });
   }
 
   async verifyAndRerank({ imageAnalysis, candidates, retrievedProfiles, metadata = {} }) {
+    const modelRoute = routeModel({ task: 'bird_image_analysis' });
+    const model = modelRoute.primaryModel.modelId;
     return traceLlmCall('bird_identification_verification', {
-      model: env.openAiModel,
+      model,
       promptVersion: BIRD_IDENTIFICATION_VERIFICATION_PROMPT_VERSION,
       parentTraceId: metadata.parentTraceId,
       ragUsed: Array.isArray(retrievedProfiles) && retrievedProfiles.length > 0,
@@ -85,7 +89,7 @@ class BirdIdentificationAgent {
       candidateCount: Array.isArray(candidates) ? candidates.length : 0,
       retrievedProfileCount: Array.isArray(retrievedProfiles) ? retrievedProfiles.length : 0,
     }, () => asyncRetry(() => openaiClient.client.chat.completions.create({
-      model: env.openAiModel,
+      model,
       messages: [
         {
           role: 'system',
@@ -118,7 +122,7 @@ class BirdIdentificationAgent {
       tokenUsage: null,
       outputMetadata: (result) => ({
         requestId: result.id,
-        model: result.model || env.openAiModel,
+        model: result.model || model,
       }),
     });
   }

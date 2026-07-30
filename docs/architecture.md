@@ -100,6 +100,9 @@ use-case coordinator.
 - Services own application behavior and call AI or query modules.
 - Query modules own SQL and should use parameterized queries.
 - AI modules own prompt text, prompt versions, schemas, provider calls, retry, and token usage logging.
+- `src/ai/routing/` owns provider-neutral task policies, the authoritative
+  model registry, deterministic task classification, and pure model selection.
+  Provider clients consume selected model IDs but do not own routing policy.
 - Evaluation modules own offline datasets, quality/retrieval/tool scorers, prompt regression runners, LangSmith-compatible reports, and dashboard summaries.
 - The admin AI-quality read path stays offline:
   `admin.routes -> admin.controller -> admin.service -> aiQuality.service ->

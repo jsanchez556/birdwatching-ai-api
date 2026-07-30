@@ -600,8 +600,16 @@ Variables below are referenced by executable code/configuration. “Optional cap
 | Variable | Required | Used by | Purpose | Safe local default or notes |
 |---|---:|---|---|---|
 | `OPENAI_API_KEY` | Yes | OpenAI client | Text, embeddings, speech, and vision authentication | No default; secret. |
-| `OPENAI_MODEL` | No | Text/vision client | Configured generation model | Repository default `gpt-4o`; verify provider availability in the target account. |
+| `OPENAI_MODEL` | No | Model registry | Backward-compatible balanced generation model | Repository default `gpt-4o`; `OPENAI_BALANCED_MODEL` takes precedence. |
+| `OPENAI_ECONOMY_MODEL` | No | Model registry | Economy generation route | `gpt-4o-mini`. |
+| `OPENAI_BALANCED_MODEL` | No | Model registry | Balanced generation route | Falls back to `OPENAI_MODEL`, then `gpt-4o`. |
+| `OPENAI_ADVANCED_MODEL` | No | Model registry | Advanced reasoning route | Falls back to the balanced model. |
+| `OPENAI_STRUCTURED_MODEL` | No | Model registry | Structured/tool-reliable route | Falls back to the balanced model. |
+| `OPENAI_VISION_MODEL` | No | Model registry | Multimodal image route | Falls back to the balanced model. |
+| `OPENAI_EVALUATION_MODEL` | No | Model registry | Evaluation/judge route | Falls back to the advanced model. |
 | `OPENAI_EMBEDDING_MODEL` | No | Embeddings | Query/document embedding model | `text-embedding-3-small`; changing it requires compatible re-embedding. |
+| `OPENAI_TRANSCRIPTION_MODEL` | No | Voice transcription | Speech-to-text model | `gpt-4o-mini-transcribe`. |
+| `OPENAI_SPEECH_MODEL` | No | Voice synthesis | Text-to-speech model | `gpt-4o-mini-tts`. |
 | `BIRD_IDENTIFICATION_JOB_STALL_TIMEOUT_MS` | No | Job status service | Mark durable queued/active jobs stale | `300000`. |
 | `HEAD_LINE_BIRDS` | No | Homepage service | Comma-separated highlight names | Empty; alias below is supported. |
 | `HOMEPAGE_BIRD_HIGHLIGHTS` | No | Homepage service | Legacy alias for highlight names | Used only when `HEAD_LINE_BIRDS` is empty. |

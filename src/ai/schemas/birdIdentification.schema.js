@@ -1,13 +1,13 @@
 const candidateProperties = {
-  commonName: { type: 'string' },
+  commonName: { type: 'string', minLength: 1 },
   scientificName: { type: 'string' },
   confidence: { type: 'number', minimum: 0, maximum: 1 },
-  reasoning: { type: 'string' },
+  reasoning: { type: 'string', minLength: 1 },
   visualEvidence: {
     type: 'array',
-    minItems: 0,
+    minItems: 1,
     maxItems: 8,
-    items: { type: 'string' },
+    items: { type: 'string', minLength: 1 },
   },
   possibleConfusions: {
     type: 'array',
@@ -24,15 +24,15 @@ const candidateProperties = {
 };
 
 const verifiedCandidateProperties = {
-  commonName: { type: 'string' },
+  commonName: { type: 'string', minLength: 1 },
   scientificName: { type: 'string' },
   confidence: { type: 'number', minimum: 0, maximum: 1 },
-  reasoning: { type: 'string' },
+  reasoning: { type: 'string', minLength: 1 },
   visualEvidence: {
     type: 'array',
-    minItems: 0,
+    minItems: 1,
     maxItems: 8,
-    items: { type: 'string' },
+    items: { type: 'string', minLength: 1 },
   },
   ragSupport: {
     type: 'array',

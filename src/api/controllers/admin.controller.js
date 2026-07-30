@@ -1,5 +1,6 @@
 import adminService from '../../services/admin/admin.service.js';
 import adminOperationsService from '../../services/admin/adminOperations.service.js';
+import modelRoutingService from '../../services/admin/modelRouting.service.js';
 import { sendSuccess } from '../../utils/apiResponse.js';
 
 class AdminController {
@@ -53,6 +54,10 @@ class AdminController {
   async getErrors(req, res) {
     const result = await adminService.getErrors(req.query);
     return sendSuccess(res, result.data, result.meta);
+  }
+
+  async previewModelRouting(req, res) {
+    return sendSuccess(res, modelRoutingService.preview(req.body));
   }
 
   async retryJob(req, res) {

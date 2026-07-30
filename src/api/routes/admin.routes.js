@@ -10,6 +10,7 @@ import {
   validateSuspendUser,
   validateUnsuspendUser,
 } from '../validators/adminOperations.validator.js';
+import { validateModelRoutingPreview } from '../validators/modelRouting.validator.js';
 
 const router = express.Router();
 
@@ -25,6 +26,11 @@ router.get('/reservations', asyncHandler(adminController.getReservations.bind(ad
 router.get('/queue-health', asyncHandler(adminController.getQueueHealth.bind(adminController)));
 router.get('/failures', asyncHandler(adminController.getFailures.bind(adminController)));
 router.get('/errors', asyncHandler(adminController.getErrors.bind(adminController)));
+router.post(
+  '/model-routing/preview',
+  validate(validateModelRoutingPreview),
+  asyncHandler(adminController.previewModelRouting.bind(adminController))
+);
 router.post(
   '/jobs/:jobId/retry',
   validate(validateRetryJob),

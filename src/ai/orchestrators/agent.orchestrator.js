@@ -14,6 +14,8 @@ import {
 } from '../../experiments/tourRecommendation.experiment.js';
 import { getTourRecommendationPrompt } from '../prompts/tourRecommendation.prompt.js';
 import HttpError from '../../utils/httpError.js';
+import { routeModel } from '../routing/modelRouter.js';
+import { classifyTask } from '../routing/taskClassifier.js';
 
 const BOOKING_TOOLS = new Set([
   'createReservation',
@@ -238,12 +240,16 @@ export class AgentOrchestrator {
     aiClient = openaiClient,
     featureFlagService = featureFlags,
     experimentAssignments = experimentAssignmentService,
+    modelRouter = routeModel,
+    taskClassifier = classifyTask,
     log = logger,
   } = {}) {
     this.agent = agent;
     this.aiClient = aiClient;
     this.featureFlags = featureFlagService;
     this.experimentAssignments = experimentAssignments;
+    this.modelRouter = modelRouter;
+    this.taskClassifier = taskClassifier;
     this.logger = log;
   }
 
@@ -448,9 +454,31 @@ export class AgentOrchestrator {
       finalMessageCount: finalMessages.length,
     });
 
+    const routingTask = this.taskClassifier({
+      operation: metadata.operation,
+      hasRagContext: Number(metadata.ragTrace?.retrievedChunkCount || 0) > 0,
+      plan,
+    });
+    const modelRoute = this.modelRouter({
+      task: routingTask,
+      estimatedInputTokens: metadata.estimatedInputTokens,
+      userPlan: metadata.authUser?.plan,
+      complexity: metadata.complexity,
+    });
+    metadata.model = modelRoute.primaryModel.modelId;
+    metadata.modelRouting = {
+      task: modelRoute.task,
+      route: modelRoute.route,
+      primaryModelKey: modelRoute.primaryModel.key,
+      fallbackModelKeys: modelRoute.fallbackModels.map((model) => model.key),
+      reasoningEffort: modelRoute.reasoningEffort,
+      reasonCode: modelRoute.reasonCode,
+    };
+
     return this.aiClient.streamChatCompletion(finalMessages, {
       usage,
       onChunk,
+      model: modelRoute.primaryModel.modelId,
       metadata: {
         ...metadata,
         finalPromptMessageCount: finalMessages.length,

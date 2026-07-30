@@ -80,6 +80,8 @@ maximum range of 366 days.
   below. It accepts `page` and `limit` (maximum `100`), the same bounded
   `startDate`/`endDate` range used by other admin reports, and an optional
   exact `type` filter.
+- `POST /admin/model-routing/preview` validates a task and optional routing
+  signals, then returns a sanitized route projection with stable model keys.
 - `POST /admin/jobs/:jobId/retry` retries a retained BullMQ job only when both
   its safe PostgreSQL status and current BullMQ state are `failed`.
 - `POST /admin/users/:userId/suspend` suspends a non-admin user and revokes all
@@ -87,6 +89,48 @@ maximum range of 366 days.
   suspended through this endpoint.
 - `POST /admin/ai-features/:feature/disable` disables an allowlisted boolean AI
   feature for a bounded period.
+
+### `POST /admin/model-routing/preview`
+
+```http
+POST /admin/model-routing/preview
+Authorization: Bearer <admin token>
+Content-Type: application/json
+
+{
+  "task": "reservation_planning",
+  "estimatedInputTokens": 2200,
+  "userPlan": "PRO"
+}
+```
+
+`task` is required and must be one of the eight categories documented in
+[Model Registry And Routing](./model-routing.md). Optional
+`estimatedInputTokens` is an integer from `0` through `1000000`; `userPlan`
+normalizes to `FREE`, `PRO`, or `GUIDE`; `complexity` accepts `low`, `medium`,
+or `high`; and `evaluatedModelKey` must be a stable configured model key.
+Unknown fields are rejected.
+
+```json
+{
+  "success": true,
+  "data": {
+    "task": "reservation_planning",
+    "route": "advanced",
+    "reasonCode": "MULTI_STEP_RESERVATION",
+    "reason": "Multi-step reservation workflow",
+    "primaryModelKey": "advanced_reasoning",
+    "fallbackCount": 1,
+    "reasoningEffort": "medium",
+    "timeoutMs": 30000,
+    "maxRetries": 2
+  },
+  "meta": {}
+}
+```
+
+The response never includes provider model IDs, environment values, API keys,
+request headers, provider errors, prompts, user data, or stack traces.
 
 ### Safe admin mutations
 

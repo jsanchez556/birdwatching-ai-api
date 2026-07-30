@@ -13,8 +13,8 @@ const mockTraceBirdIdentificationRagRetrieval = jest.fn();
 const mockTraceBirdIdentificationFinalResponse = jest.fn();
 
 await jest.unstable_mockModule('../src/ai/agents/birdIdentification.agent.js', () => ({
-  BIRD_IDENTIFICATION_PROMPT_VERSION: '2.0.0',
-  BIRD_IDENTIFICATION_VERIFICATION_PROMPT_VERSION: '1.0.0',
+  BIRD_IDENTIFICATION_PROMPT_VERSION: '2.1.0',
+  BIRD_IDENTIFICATION_VERIFICATION_PROMPT_VERSION: '1.1.0',
   default: {
     identify: mockIdentify,
     verifyAndRerank: mockVerifyAndRerank,
@@ -182,7 +182,7 @@ describe('birdIdentificationService', () => {
           visualEvidence: ['green plumage', 'yellow beak'],
         },
       ],
-      promptVersion: '2.0.0',
+      promptVersion: '2.1.0',
       model: 'gpt-4o',
       providerRequestId: 'identify-1',
     });
@@ -427,8 +427,8 @@ describe('birdIdentificationService', () => {
       ],
       promptVersions: {
         birdImageAnalysis: '1.3.0',
-        birdIdentification: '2.0.0',
-        birdVerification: '1.0.0',
+        birdIdentification: '2.1.0',
+        birdVerification: '1.1.0',
       },
       model: 'gpt-4o',
       providerRequestId: 'identify-1',
@@ -1046,6 +1046,72 @@ describe('birdIdentificationService', () => {
       notes: [
         'Candidate verification used fallback confidence calibration because the verifier did not return a usable response.',
       ],
+    });
+  });
+
+  it('retries malformed verifier content once before using a valid response', async () => {
+    mockVerifyAndRerank
+      .mockResolvedValueOnce({
+        id: 'verify-malformed',
+        model: 'gpt-4o',
+        choices: [{ message: { content: '{invalid-json' } }],
+      })
+      .mockResolvedValueOnce({
+        id: 'verify-valid',
+        model: 'gpt-4o',
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              status: 'identified',
+              bestMatch: {
+                commonName: 'Resplendent Quetzal',
+                scientificName: 'Pharomachrus mocinno',
+                confidence: 0.82,
+                reasoning: 'Visible green upperparts and red underparts match.',
+                visualEvidence: ['green upperparts', 'red underparts'],
+                ragSupport: ['Retrieved profile supports these field marks.'],
+                contradictions: [],
+                missingEvidence: [],
+              },
+              candidates: [{
+                commonName: 'Resplendent Quetzal',
+                scientificName: 'Pharomachrus mocinno',
+                confidence: 0.82,
+                reasoning: 'Visible green upperparts and red underparts match.',
+                visualEvidence: ['green upperparts', 'red underparts'],
+                ragSupport: ['Retrieved profile supports these field marks.'],
+                contradictions: [],
+                missingEvidence: [],
+              }],
+              notes: [],
+            }),
+          },
+        }],
+      });
+
+    const result = await birdIdentificationService.verifyAndRerankBirdCandidates({
+      imageAnalysis: {
+        dominantColors: ['green', 'red'],
+        fieldMarks: ['red underparts'],
+        confidence: 0.82,
+      },
+      candidates: [{
+        commonName: 'Resplendent Quetzal',
+        scientificName: 'Pharomachrus mocinno',
+        confidence: 0.8,
+        reasoning: 'Green and red plumage.',
+        visualEvidence: ['green upperparts', 'red underparts'],
+      }],
+      retrievedProfiles: [],
+    });
+
+    expect(mockVerifyAndRerank).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({
+      status: 'identified',
+      bestMatch: {
+        commonName: 'Resplendent Quetzal',
+      },
+      providerRequestId: 'verify-valid',
     });
   });
 

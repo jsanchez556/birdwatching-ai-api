@@ -3,8 +3,9 @@ import { traceLlmCall } from '../../tracing/aiTracing.middleware.js';
 import { asyncRetry } from '../../utils/async.utils.js';
 import logger from '../../utils/logger.js';
 import { isRetryableOpenAIError } from '../utils/openaiRetry.utils.js';
+import { getModel, MODEL_KEYS, MODEL_REGISTRY } from '../routing/modelRegistry.js';
 
-const SPEECH_MODEL = 'gpt-4o-mini-tts';
+const SPEECH_MODEL = getModel(MODEL_REGISTRY, MODEL_KEYS.AUDIO_SPEECH).modelId;
 const SPEECH_VOICE = 'alloy';
 
 async function responseToBuffer(response) {

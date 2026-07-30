@@ -31,6 +31,13 @@ Bird identification uses three model-facing stages, all returning JSON through s
 2. `birdIdentification.agent.js` uses `BIRD_CANDIDATE_GENERATION_SYSTEM_PROMPT` to generate 0-5 conservative candidates from the visual evidence and, when available, the provider-readable image URL. Candidates include `commonName`, optional `scientificName`, confidence, reasoning, visible evidence, possible confusions, and missing evidence. Weak evidence should return multiple candidates or `unknown`, not a forced species.
 3. `birdIdentification.agent.js` uses `BIRD_IDENTIFICATION_VERIFICATION_SYSTEM_PROMPT` to compare candidates against retrieved bird-profile RAG, preserve visual evidence as primary, add `ragSupport`, note contradictions/missing evidence, rerank, and calibrate final confidence.
 
+Candidate and verification schemas require non-empty candidate names,
+reasoning, and visible evidence. An `unknown` result uses an empty candidate
+array (and `bestMatch: null` during verification) rather than a placeholder
+candidate. Verification may only rerank the supplied candidates and must
+preserve their common and scientific names so service-level evidence merging
+remains deterministic.
+
 Confidence calibration is enforced in service code as well as prompts: `0.90+` requires distinctive diagnostic traits, `0.70-0.89` is likely, `0.40-0.69` is plausible/uncertain, best candidate below `0.55` returns `uncertain`, and below `0.40` returns `unknown`. Blurry, distant, obscured, cropped, backlit, or otherwise weak images cap confidence so final responses do not claim certainty from poor evidence.
 
 ## Chat Prompt Flow
