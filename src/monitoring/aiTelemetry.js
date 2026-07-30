@@ -94,6 +94,7 @@ class AiTelemetry {
       errors: 0,
       aiErrors: 0,
       aiEvaluations: 0,
+      aiRetries: 0,
       promptTokens: 0,
       completionTokens: 0,
       totalTokens: 0,
@@ -228,6 +229,14 @@ class AiTelemetry {
     this.counters.aiEvaluations += 1;
     this.logger.info('AI evaluation tracked', {
       event,
+      ...sanitizeTelemetryValue(details),
+    });
+  }
+
+  recordAiRetry(details = {}) {
+    this.counters.aiRetries += 1;
+    this.logger.warn('AI request retry scheduled', {
+      event: 'ai_retry_scheduled',
       ...sanitizeTelemetryValue(details),
     });
   }

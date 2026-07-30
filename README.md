@@ -610,6 +610,10 @@ Variables below are referenced by executable code/configuration. “Optional cap
 | `OPENAI_EMBEDDING_MODEL` | No | Embeddings | Query/document embedding model | `text-embedding-3-small`; changing it requires compatible re-embedding. |
 | `OPENAI_TRANSCRIPTION_MODEL` | No | Voice transcription | Speech-to-text model | `gpt-4o-mini-transcribe`. |
 | `OPENAI_SPEECH_MODEL` | No | Voice synthesis | Text-to-speech model | `gpt-4o-mini-tts`. |
+| `AI_REQUEST_TIMEOUT_MS` | No | OpenAI retry policy | Per-attempt request deadline | `30000`. |
+| `AI_MAX_RETRIES` | No | OpenAI retry policy | Maximum transient retry count | `5`; accepted range is `0`-`5`. |
+| `AI_RETRY_BASE_DELAY_MS` | No | OpenAI retry policy | Exponential backoff base delay | `250`. |
+| `AI_RETRY_MAX_DELAY_MS` | No | OpenAI retry policy | Exponential backoff delay cap | `8000`. |
 | `BIRD_IDENTIFICATION_JOB_STALL_TIMEOUT_MS` | No | Job status service | Mark durable queued/active jobs stale | `300000`. |
 | `HEAD_LINE_BIRDS` | No | Homepage service | Comma-separated highlight names | Empty; alias below is supported. |
 | `HOMEPAGE_BIRD_HIGHLIGHTS` | No | Homepage service | Legacy alias for highlight names | Used only when `HEAD_LINE_BIRDS` is empty. |

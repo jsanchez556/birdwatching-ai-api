@@ -1,9 +1,8 @@
 import { File } from 'node:buffer';
 import openaiClient from '../clients/openai.client.js';
 import { traceLlmCall } from '../../tracing/aiTracing.middleware.js';
-import { asyncRetry } from '../../utils/async.utils.js';
 import logger from '../../utils/logger.js';
-import { isRetryableOpenAIError } from '../utils/openaiRetry.utils.js';
+import { executeOpenAIWithRetry } from '../utils/openaiRetry.utils.js';
 import { getModel, MODEL_KEYS, MODEL_REGISTRY } from '../routing/modelRegistry.js';
 
 const TRANSCRIPTION_MODEL = getModel(MODEL_REGISTRY, MODEL_KEYS.AUDIO_TRANSCRIPTION).modelId;
@@ -27,12 +26,11 @@ class SpeechToText {
       fileSizeBytes: buffer.length,
       parentTraceId: metadata.parentTraceId,
       cacheStatus: 'not_applicable',
-    }, () => asyncRetry(() => openaiClient.client.audio.transcriptions.create({
+    }, () => executeOpenAIWithRetry(() => openaiClient.client.audio.transcriptions.create({
       file,
       model: TRANSCRIPTION_MODEL,
     }), {
-      retries: 2,
-      shouldRetry: isRetryableOpenAIError,
+      operation: 'audio_transcription',
     }), {
       tokenUsage: (result) => {
         const completionTokens = Math.max(1, Math.ceil(String(result?.text || '').length / 4));

@@ -41,6 +41,10 @@ const numericEnvKeys = [
   'SHUTDOWN_GRACE_PERIOD_MS',
   'SHUTDOWN_HARD_TIMEOUT_MS',
   'REDIS_CONNECT_TIMEOUT_MS',
+  'AI_REQUEST_TIMEOUT_MS',
+  'AI_MAX_RETRIES',
+  'AI_RETRY_BASE_DELAY_MS',
+  'AI_RETRY_MAX_DELAY_MS',
 ];
 
 for (const key of numericEnvKeys) {
@@ -54,6 +58,9 @@ for (const key of [
   'DEPENDENCY_HEALTH_TIMEOUT_MS',
   'SHUTDOWN_GRACE_PERIOD_MS',
   'SHUTDOWN_HARD_TIMEOUT_MS',
+  'AI_REQUEST_TIMEOUT_MS',
+  'AI_RETRY_BASE_DELAY_MS',
+  'AI_RETRY_MAX_DELAY_MS',
 ]) {
   if (process.env[key] && Number(process.env[key]) <= 0) {
     throw new Error(`${key} must be greater than zero`);
@@ -114,6 +121,17 @@ if (
   && Number(process.env.EXTERNAL_API_RATE_LIMIT_MAX_REQUESTS) > 40
 ) {
   throw new Error('EXTERNAL_API_RATE_LIMIT_MAX_REQUESTS cannot exceed 40');
+}
+
+if (
+  process.env.AI_MAX_RETRIES
+  && (
+    !Number.isInteger(Number(process.env.AI_MAX_RETRIES))
+    || Number(process.env.AI_MAX_RETRIES) < 0
+    || Number(process.env.AI_MAX_RETRIES) > 5
+  )
+) {
+  throw new Error('AI_MAX_RETRIES must be an integer from 0 to 5');
 }
 
 const corsOrigins = (process.env.CORS_ORIGINS || '')
@@ -182,6 +200,15 @@ const env = {
   rateLimitMaxRequests: Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 60,
   aiRateLimitWindowMs: Number(process.env.AI_RATE_LIMIT_WINDOW_MS) || 60 * 1000,
   aiRateLimitMaxRequests: Number(process.env.AI_RATE_LIMIT_MAX_REQUESTS) || 12,
+  aiRetry: {
+    requestTimeoutMs: parsePositiveInteger(process.env.AI_REQUEST_TIMEOUT_MS, 30000),
+    maxRetries: Number.isInteger(Number(process.env.AI_MAX_RETRIES))
+      && Number(process.env.AI_MAX_RETRIES) >= 0
+      ? Number(process.env.AI_MAX_RETRIES)
+      : 5,
+    baseDelayMs: parsePositiveInteger(process.env.AI_RETRY_BASE_DELAY_MS, 250),
+    maxDelayMs: parsePositiveInteger(process.env.AI_RETRY_MAX_DELAY_MS, 8000),
+  },
   rateLimitRedisFailureMode: process.env.RATE_LIMIT_REDIS_FAILURE_MODE || 'local',
   dependencyHealthTimeoutMs: parsePositiveInteger(
     process.env.DEPENDENCY_HEALTH_TIMEOUT_MS,

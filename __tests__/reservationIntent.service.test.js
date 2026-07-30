@@ -165,6 +165,27 @@ describe('reservation intent structured extraction', () => {
     expect(client.parseStructuredChatCompletion).toHaveBeenCalledTimes(2);
   });
 
+  it('does not retry terminal provider failures in the corrective schema loop', async () => {
+    const client = {
+      parseStructuredChatCompletion: jest.fn().mockRejectedValue(
+        Object.assign(new Error('Invalid API key'), {
+          status: 401,
+          code: 'invalid_api_key',
+        })
+      ),
+    };
+    const extractor = new ReservationIntentExtractor({ client, log: mockLogger });
+
+    await expect(extractor.extract({
+      message: 'Book a tour.',
+    })).resolves.toEqual({
+      success: false,
+      code: 'RESERVATION_INTENT_INVALID_OUTPUT',
+      reason: 'structured_parse_failed',
+    });
+    expect(client.parseStructuredChatCompletion).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     ['unknown fields', { extraField: 'not allowed' }],
     ['invalid intent enum', { intent: 'delete_reservation' }],

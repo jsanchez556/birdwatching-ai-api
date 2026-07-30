@@ -1,7 +1,6 @@
 import OpenAI from 'openai';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import env from '../../config/env.js';
-import { asyncRetry } from '../../utils/async.utils.js';
 import logger from '../../utils/logger.js';
 import { buildHashKey } from '../../utils/hash.utils.js';
 import { normalizeWhitespace } from '../../utils/text.utils.js';
@@ -13,16 +12,7 @@ import aiTelemetry from '../../monitoring/aiTelemetry.js';
 import createResponseCache from '../../cache/responseCache.js';
 import { getRedisConfig } from '../../cache/redisClient.js';
 import { getModel, MODEL_KEYS, MODEL_REGISTRY } from '../routing/modelRegistry.js';
-
-const retryableStatuses = new Set([408, 409, 429, 500, 502, 503, 504]);
-
-function isRetryableOpenAIError(error) {
-  if (error?.name === 'AbortError' || error?.code === 'ABORT_ERR') {
-    return false;
-  }
-
-  return retryableStatuses.has(error.status) || error.code === 'ETIMEDOUT';
-}
+import { executeOpenAIWithRetry } from '../utils/openaiRetry.utils.js';
 
 function appendToolMetadata(metadata, toolName, result) {
   if (!metadata || typeof metadata !== 'object') {
@@ -71,6 +61,8 @@ class OpenAIClient {
   } = {}) {
     this.client = new OpenAI({
       apiKey: env.openAiApiKey,
+      maxRetries: 0,
+      timeout: env.aiRetry.requestTimeoutMs,
     });
     this.model = getModel(MODEL_REGISTRY, MODEL_KEYS.BALANCED_GENERAL).modelId;
     this.embeddingModel = getModel(MODEL_REGISTRY, MODEL_KEYS.EMBEDDING_GENERAL).modelId;
@@ -102,15 +94,17 @@ class OpenAIClient {
         toolIteration: iteration,
         messageCount: conversation.length,
         toolCount: tools.length,
-      }, () => asyncRetry(() => this.client.chat.completions.create({
+      }, () => executeOpenAIWithRetry(({ signal: requestSignal }) => (
+        this.client.chat.completions.create({
         model,
         messages: conversation,
         tools,
         tool_choice: 'auto',
         parallel_tool_calls: false,
-      }, { signal }), {
-        retries: 2,
-        shouldRetry: isRetryableOpenAIError,
+        }, { signal: requestSignal })
+      ), {
+        operation: 'chat_completion_tool_resolution',
+        signal,
       }), {
         outputMetadata: (result) => ({
           requestId: result.id,
@@ -174,11 +168,14 @@ class OpenAIClient {
       operation: options.metadata?.operation,
       messageCount: messages.length,
       schemaName: options.schemaName,
-    }, () => this.client.chat.completions.parse({
-      model,
-      messages,
-      response_format: zodResponseFormat(options.schema, options.schemaName),
-    }, { signal: options.signal }), {
+    }, () => executeOpenAIWithRetry(() => this.client.chat.completions.parse({
+        model,
+        messages,
+        response_format: zodResponseFormat(options.schema, options.schemaName),
+      }, { signal: options.signal }), {
+      operation: 'chat_completion_structured_parse',
+      signal: options.signal,
+    }), {
       outputMetadata: (result) => ({
         requestId: result.id,
         model: result.model || model,
@@ -219,16 +216,18 @@ class OpenAIClient {
       finalPromptMessageCount: options.metadata?.finalPromptMessageCount,
       groundingContext: options.metadata?.groundingContext,
     }, async (trace) => {
-      const stream = await asyncRetry(() => this.client.chat.completions.create({
-        model,
-        messages,
-        stream: true,
-        stream_options: {
-          include_usage: true,
-        },
-      }, { signal }), {
-        retries: 2,
-        shouldRetry: isRetryableOpenAIError,
+      const stream = await executeOpenAIWithRetry(({ signal: requestSignal }) => (
+        this.client.chat.completions.create({
+          model,
+          messages,
+          stream: true,
+          stream_options: {
+            include_usage: true,
+          },
+        }, { signal: requestSignal })
+      ), {
+        operation: 'chat_completion_stream',
+        signal,
       });
 
       for await (const chunk of stream) {
@@ -305,12 +304,11 @@ class OpenAIClient {
       promptVersion: 'not_applicable',
       cacheStatus: 'miss',
       inputCount: missingInputs.length,
-    }, () => asyncRetry(() => this.client.embeddings.create({
-      model: this.embeddingModel,
-      input: missingInputs,
-    }), {
-      retries: 2,
-      shouldRetry: isRetryableOpenAIError,
+    }, () => executeOpenAIWithRetry(() => this.client.embeddings.create({
+        model: this.embeddingModel,
+        input: missingInputs,
+      }), {
+      operation: 'embedding_generation',
     }), {
       outputMetadata: (result) => ({
         requestId: result.id,

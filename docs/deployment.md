@@ -46,6 +46,10 @@ Optional:
 - `OPENAI_EMBEDDING_MODEL`, defaults to `text-embedding-3-small`
 - `OPENAI_TRANSCRIPTION_MODEL`, defaults to `gpt-4o-mini-transcribe`
 - `OPENAI_SPEECH_MODEL`, defaults to `gpt-4o-mini-tts`
+- `AI_REQUEST_TIMEOUT_MS`, per-attempt OpenAI deadline; defaults to `30000`
+- `AI_MAX_RETRIES`, maximum transient retries from `0` to `5`; defaults to `5`
+- `AI_RETRY_BASE_DELAY_MS`, exponential backoff base; defaults to `250`
+- `AI_RETRY_MAX_DELAY_MS`, exponential backoff cap; defaults to `8000`
 - `REDIS_URL`, defaults to `redis://localhost:6379`
 - `REDIS_CONNECT_TIMEOUT_MS`, defaults to `1000`
 - `REDIS_KEY_PREFIX`, defaults to `birdwatching-ai:`
@@ -85,6 +89,23 @@ Optional:
 - `POSTHOG_ENABLED`, `true` or `false`; defaults to `false`
 - `POSTHOG_API_KEY`, PostHog project API key used only when analytics is enabled
 - `POSTHOG_HOST`, PostHog ingest host; defaults to `https://us.i.posthog.com`
+
+### OpenAI retry policy
+
+OpenAI requests use bounded exponential backoff with 20% jitter and a
+per-attempt deadline. Timeouts, ordinary `429` rate limits, transient network
+failures, and transient `500`, `502`, `503`, or `504` responses retry.
+Authentication, invalid requests,
+quota/spend limits, business or tool validation failures, cancellations, and
+safety refusals are terminal. Quota/spend failures emit an operational alert
+event rather than being treated as ordinary rate limits.
+
+Schema-invalid output may take one separately classified corrective retry.
+Context-limit and tool-validation classifications return actions for the
+calling orchestration to compact context or correct/request input; they do not
+blindly repeat the same provider call. Every scheduled transient or corrective
+retry emits `ai_retry_scheduled` telemetry with the safe operation, category,
+attempt, retry ceiling, and delay.
 
 For local Stripe test-mode checkout, forward signed subscription events before
 opening Checkout:

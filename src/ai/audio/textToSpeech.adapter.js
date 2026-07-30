@@ -1,8 +1,7 @@
 import openaiClient from '../clients/openai.client.js';
 import { traceLlmCall } from '../../tracing/aiTracing.middleware.js';
-import { asyncRetry } from '../../utils/async.utils.js';
 import logger from '../../utils/logger.js';
-import { isRetryableOpenAIError } from '../utils/openaiRetry.utils.js';
+import { executeOpenAIWithRetry } from '../utils/openaiRetry.utils.js';
 import { getModel, MODEL_KEYS, MODEL_REGISTRY } from '../routing/modelRegistry.js';
 
 const SPEECH_MODEL = getModel(MODEL_REGISTRY, MODEL_KEYS.AUDIO_SPEECH).modelId;
@@ -41,14 +40,13 @@ class TextToSpeech {
       textLength: text.length,
       parentTraceId: metadata.parentTraceId,
       cacheStatus: 'not_applicable',
-    }, () => asyncRetry(() => openaiClient.client.audio.speech.create({
+    }, () => executeOpenAIWithRetry(() => openaiClient.client.audio.speech.create({
       model: SPEECH_MODEL,
       voice: SPEECH_VOICE,
       input: text,
       response_format: 'mp3',
     }), {
-      retries: 2,
-      shouldRetry: isRetryableOpenAIError,
+      operation: 'audio_speech_generation',
     }), {
       tokenUsage: {
         promptTokens: Math.max(1, Math.ceil(text.length / 4)),

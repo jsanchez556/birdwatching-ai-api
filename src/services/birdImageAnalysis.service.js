@@ -1,12 +1,11 @@
 import openaiClient from '../ai/clients/openai.client.js';
-import { isRetryableOpenAIError } from '../ai/utils/openaiRetry.utils.js';
+import { executeOpenAIWithRetry } from '../ai/utils/openaiRetry.utils.js';
 import {
   BIRD_IMAGE_ANALYSIS_PROMPT_VERSION,
   BIRD_IMAGE_ANALYSIS_SYSTEM_PROMPT,
 } from '../ai/prompts/birdImageAnalysis.prompt.js';
 import { BIRD_IMAGE_ANALYSIS_RESPONSE_SCHEMA } from '../ai/schemas/birdImageAnalysis.schema.js';
 import { traceLlmCall } from '../tracing/aiTracing.middleware.js';
-import { asyncRetry } from '../utils/async.utils.js';
 import { routeModel } from '../ai/routing/modelRouter.js';
 import HttpError from '../utils/httpError.js';
 import logger from '../utils/logger.js';
@@ -121,40 +120,41 @@ class BirdImageAnalysisService {
       promptVersion: BIRD_IMAGE_ANALYSIS_PROMPT_VERSION,
       parentTraceId: metadata.parentTraceId,
       cacheStatus: 'not_applicable',
-    }, () => asyncRetry(() => openaiClient.client.chat.completions.create({
-      model,
-      messages: [
-        {
-          role: 'system',
-          content: BIRD_IMAGE_ANALYSIS_SYSTEM_PROMPT,
-        },
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: 'Describe the visible bird characteristics in this image.',
-            },
-            {
-              type: 'image_url',
-              image_url: {
-                url: imageUrl,
+    }, () => executeOpenAIWithRetry(() => (
+      openaiClient.client.chat.completions.create({
+        model,
+        messages: [
+          {
+            role: 'system',
+            content: BIRD_IMAGE_ANALYSIS_SYSTEM_PROMPT,
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'Describe the visible bird characteristics in this image.',
               },
-            },
-          ],
+              {
+                type: 'image_url',
+                image_url: {
+                  url: imageUrl,
+                },
+              },
+            ],
+          },
+        ],
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'bird_image_analysis',
+            strict: true,
+            schema: BIRD_IMAGE_ANALYSIS_RESPONSE_SCHEMA,
+          },
         },
-      ],
-      response_format: {
-        type: 'json_schema',
-        json_schema: {
-          name: 'bird_image_analysis',
-          strict: true,
-          schema: BIRD_IMAGE_ANALYSIS_RESPONSE_SCHEMA,
-        },
-      },
-    }), {
-      retries: 2,
-      shouldRetry: isRetryableOpenAIError,
+      })
+    ), {
+      operation: 'bird_image_analysis',
     }), {
       tokenUsage: null,
       outputMetadata: (result) => ({

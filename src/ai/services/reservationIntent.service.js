@@ -6,6 +6,8 @@ import {
 import { ReservationIntentSchema } from '../schemas/reservationIntent.schema.js';
 import { getModel, MODEL_KEYS, MODEL_REGISTRY } from '../routing/modelRegistry.js';
 import logger from '../../utils/logger.js';
+import aiTelemetry from '../../monitoring/aiTelemetry.js';
+import { classifyOpenAIError } from '../utils/openaiRetry.utils.js';
 
 const MAX_EXTRACTION_ATTEMPTS = 2;
 
@@ -130,24 +132,48 @@ class ReservationIntentExtractor {
         if (attempt === MAX_EXTRACTION_ATTEMPTS) {
           return validation;
         }
+
+        aiTelemetry.recordAiRetry({
+          operation: 'reservation_intent_schema_correction',
+          category: 'invalid_schema',
+          retryKind: 'corrective',
+          attempt,
+          maximumRetryCount: 1,
+          delayMs: 0,
+        });
       } catch (error) {
         if (error?.name === 'AbortError' || error?.code === 'ABORT_ERR') {
           throw error;
         }
 
+        const classification = classifyOpenAIError(error);
+
         this.logger.warn('Reservation intent structured parsing failed', {
           model: this.model,
           attempt,
           errorName: error?.name,
+          errorCategory: classification.category,
         });
 
-        if (attempt === MAX_EXTRACTION_ATTEMPTS) {
+        if (
+          classification.retryKind !== 'corrective'
+          || attempt === MAX_EXTRACTION_ATTEMPTS
+        ) {
           return {
             success: false,
             code: 'RESERVATION_INTENT_INVALID_OUTPUT',
             reason: 'structured_parse_failed',
           };
         }
+
+        aiTelemetry.recordAiRetry({
+          operation: 'reservation_intent_schema_correction',
+          category: classification.category,
+          retryKind: classification.retryKind,
+          attempt,
+          maximumRetryCount: 1,
+          delayMs: 0,
+        });
       }
     }
 

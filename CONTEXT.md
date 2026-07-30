@@ -103,7 +103,11 @@ GET /chat/latest
 - `POST /birds/identify` requires JWT bearer auth. JSON URL requests preserve the existing `{ imageUrl }` flow; raw JPEG, PNG, WebP, or GIF uploads are capped at 10 MB, uploaded to S3 under `bird-identification/`, converted to a CloudFront URL, and passed into the same image-analysis pipeline. The multimodal bird identification pipeline now returns `status`, `bestMatch`, `candidates`, rich `imageAnalysis`, compatibility `imageObservations`, and conservative `notes`; confidence below `0.55` is `uncertain`, and below `0.40` is `unknown`.
 - Visitor chat is limited to bird-related questions, cannot execute tour/reservation tools, and uses a stricter in-memory IP limit.
 - `NODE_ENV=test` bypasses required `OPENAI_API_KEY`, `DATABASE_URL`, and `JWT_SECRET` validation.
-- OpenAI retry behavior lives in `src/utils/async.utils.js` and is used for transient OpenAI statuses.
+- OpenAI retry behavior is centralized in `src/ai/utils/openaiRetry.utils.js` on
+  top of `src/utils/async.utils.js`: classified transient failures use bounded
+  exponential backoff with jitter and per-attempt deadlines, schema correction
+  is limited to one retry, terminal provider/business/safety errors do not
+  retry, and every scheduled retry emits safe telemetry.
 - AI generation tasks use the centralized registry and deterministic policies
   under `src/ai/routing/`. The router returns a compatible primary/fallback
   chain without making provider calls; `POST /admin/model-routing/preview`

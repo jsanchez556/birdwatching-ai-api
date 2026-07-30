@@ -13,6 +13,7 @@ import {
 import logger from '../utils/logger.js';
 import { getCompletionUsageSummary } from '../ai/telemetry/tokenUsage.js';
 import usageService, { buildModelUsageEntry } from './usage.service.js';
+import aiTelemetry from '../monitoring/aiTelemetry.js';
 import {
   calibrateIdentificationResult as enforceConfidenceStatus,
   normalizeConfidence,
@@ -188,6 +189,14 @@ class BirdIdentificationService {
             errorCode: error.code,
             failureStage: error.failureStage,
             providerRequestId,
+          });
+          aiTelemetry.recordAiRetry({
+            operation: 'bird_identification_verification_schema_correction',
+            category: 'invalid_schema',
+            retryKind: 'corrective',
+            attempt: malformedAttempt + 1,
+            maximumRetryCount: 1,
+            delayMs: 0,
           });
         }
       }
