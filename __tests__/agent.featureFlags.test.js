@@ -2,6 +2,25 @@ import { jest } from '@jest/globals';
 import { AgentOrchestrator } from '../src/ai/orchestrators/agent.orchestrator.js';
 import { FEATURE_FLAGS } from '../src/featureFlags/flags.js';
 
+function createValidIntentExtractor(intent) {
+  return {
+    extract: jest.fn().mockResolvedValue({
+      success: true,
+      data: {
+        intent,
+        tourId: null,
+        location: null,
+        date: null,
+        participants: null,
+        transportationRequired: null,
+        pickupLocation: null,
+        missingFields: [],
+        confidence: 1,
+      },
+    }),
+  };
+}
+
 describe('AgentOrchestrator feature flags', () => {
   it('prevents booking tool execution when agent_booking is disabled', async () => {
     const executor = {
@@ -28,6 +47,7 @@ describe('AgentOrchestrator feature flags', () => {
         executor,
       },
       aiClient,
+      intentExtractor: createValidIntentExtractor('create_reservation'),
       featureFlagService,
       experimentAssignments: {
         getPersisted: jest.fn().mockResolvedValue(null),
@@ -101,6 +121,7 @@ describe('AgentOrchestrator feature flags', () => {
         executor,
       },
       aiClient,
+      intentExtractor: createValidIntentExtractor('search'),
       experimentAssignments,
       log: {
         info: jest.fn(),
@@ -181,6 +202,7 @@ describe('AgentOrchestrator feature flags', () => {
         },
       },
       aiClient,
+      intentExtractor: createValidIntentExtractor('search'),
       experimentAssignments: {
         resolve: jest.fn().mockResolvedValue({
           experiment: 'tour_recommendation_prompt',

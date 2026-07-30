@@ -86,6 +86,7 @@ function buildBaseArgs(context = {}, extracted = {}) {
     tourId: extracted.tourId || context.selectedTourId || selectedTour.tourId || context.recentMetadata?.selectedTourId || context.tourId,
     tourName: selectedTour.name || context.tourName,
     location: extracted.location || selectedTour.location || contextLocation,
+    origin: extracted.pickupLocation || context.origin,
     participants: extracted.participants || contextParticipants,
     discountCode: extracted.discountCode || context.discountCode,
     customerName: customerContext.customerName,
@@ -192,6 +193,7 @@ function isAffirmativeDetailsRequest(text, context = {}) {
 export class ToolPlanner {
   plan({ message, context = {} } = {}) {
     const originalMessage = normalizeTextOrEmpty(message);
+    const structuredIntent = context.reservationIntent;
     const guidedIntent = parseGuidedIntent(originalMessage, context);
     const detailsFollowUp = guidedIntent?.intent === 'show_details'
       || isAffirmativeDetailsRequest(originalMessage, context);
@@ -200,12 +202,14 @@ export class ToolPlanner {
       : originalMessage;
     const text = normalizeTextOrEmpty(planningMessage).toLowerCase();
     const extracted = {
-      participants: extractParticipants(planningMessage)
-        || extractParticipantActionSelection(originalMessage, context),
-      tourId: extractTourId(planningMessage),
+      participants: structuredIntent?.participants
+        ?? extractParticipants(planningMessage)
+        ?? extractParticipantActionSelection(originalMessage, context),
+      tourId: structuredIntent?.tourId ?? extractTourId(planningMessage),
       customerName: extractCustomerName(planningMessage),
       customerEmail: extractEmail(planningMessage),
-      location: extractLocation(planningMessage),
+      location: structuredIntent?.location ?? extractLocation(planningMessage),
+      pickupLocation: structuredIntent?.pickupLocation,
       budget: extractBudget(planningMessage),
       difficulty: extractDifficulty(planningMessage),
       discountCode: extractDiscountCode(planningMessage),
@@ -231,22 +235,37 @@ export class ToolPlanner {
       || context.selectedTransportation
       || context.recentMetadata?.selectedTransportation;
     const transportationDeclined = guidedIntent?.intent === 'decline_transportation'
+      || structuredIntent?.transportationRequired === false
       || context.transportationDeclined
       || context.recentMetadata?.transportationDeclined
       || extractTransportationDecline(originalMessage)
       || extractFromRecentUserMessages(context.messages, extractTransportationDecline);
 
-    const asksForBooking = includesAny(text, BOOKING_KEYWORDS);
+    const asksForBooking = structuredIntent
+      ? structuredIntent.intent === 'create_reservation'
+      : includesAny(text, BOOKING_KEYWORDS);
     const confirmsBooking = includesAny(text, CONFIRMATION_KEYWORDS) || context.confirmedReservation === true;
-    const asksForPrice = /\b(price|pricing|cost|total|how much|quote|discount)\b/i.test(planningMessage);
-    const asksForAvailability = /\b(available|availability|slots?|space)\b/i.test(planningMessage);
-    const asksForTransportation = /\b(transport|transportation|transfer|shuttle|pickup|drive|travel time|full cost)\b/i.test(planningMessage);
-    const asksForTour = /\b(tour|birdwatching|bird watching)\b/i.test(planningMessage)
-      || includesAny(text, TOUR_KEYWORDS);
-    const asksForRecommendation = /\b(recommend|suggest|best|options?|available tours?|show me|find)\b/i.test(planningMessage)
-      || includesAny(text, TOUR_KEYWORDS);
+    const asksForPrice = structuredIntent
+      ? structuredIntent.intent === 'calculate_price'
+      : /\b(price|pricing|cost|total|how much|quote|discount)\b/i.test(planningMessage);
+    const asksForAvailability = structuredIntent
+      ? structuredIntent.intent === 'check_availability'
+      : /\b(available|availability|slots?|space)\b/i.test(planningMessage);
+    const asksForTransportation = structuredIntent
+      ? structuredIntent.transportationRequired === true
+      : /\b(transport|transportation|transfer|shuttle|pickup|drive|travel time|full cost)\b/i.test(planningMessage);
+    const asksForTour = structuredIntent
+      ? structuredIntent.intent === 'search'
+      : /\b(tour|birdwatching|bird watching)\b/i.test(planningMessage)
+        || includesAny(text, TOUR_KEYWORDS);
+    const asksForRecommendation = structuredIntent
+      ? structuredIntent.intent === 'search'
+      : /\b(recommend|suggest|best|options?|available tours?|show me|find)\b/i.test(planningMessage)
+        || includesAny(text, TOUR_KEYWORDS);
     const needsTourDiscovery = !hasSelectedTour(context) && !selectedArgs.tourId && !selectedArgs.tourName;
     const asksForTransportationAndBooking = asksForTransportation && asksForBooking;
+    const needsPickupLocation = structuredIntent?.transportationRequired === true
+      && structuredIntent.pickupLocation === null;
     const selectedParticipantCount = extractParticipantActionSelection(originalMessage, context);
     const transportationPreferenceKnown = hasTransportationPreference({
       ...context,
@@ -347,11 +366,13 @@ export class ToolPlanner {
         });
       }
 
-      steps.push({
-        tool: 'calculateTransportation',
-        args: selectedArgs,
-        stopOnFailure: false,
-      });
+      if (!needsPickupLocation) {
+        steps.push({
+          tool: 'calculateTransportation',
+          args: selectedArgs,
+          stopOnFailure: false,
+        });
+      }
 
       if (hasTourSelector(selectedArgs)) {
         steps.push({
@@ -363,7 +384,9 @@ export class ToolPlanner {
 
       return {
         status: 'needs_clarification',
-        message: 'The user needs transportation and a reservation. Execute available discovery/logistics steps, then let them choose a transportation option before reservation confirmation.',
+        message: needsPickupLocation
+          ? 'Ask for the pickup location before calculating transportation. Do not assume a pickup origin.'
+          : 'The user needs transportation and a reservation. Execute available discovery/logistics steps, then let them choose a transportation option before reservation confirmation.',
         steps,
       };
     }
@@ -511,6 +534,14 @@ export class ToolPlanner {
     }
 
     if (asksForTransportation && asksForPrice) {
+      if (needsPickupLocation) {
+        return {
+          status: 'needs_clarification',
+          message: 'Ask for the pickup location before calculating transportation or a full price. Do not assume a pickup origin.',
+          steps: [],
+        };
+      }
+
       if (!hasTourSelector(args)) {
         return {
           status: 'needs_clarification',
@@ -573,20 +604,30 @@ export class ToolPlanner {
         stopOnFailure: false,
       }];
 
-      if (hasTransportationSelector(args)) {
+      if (hasTransportationSelector(args) && !needsPickupLocation) {
         steps.push({ tool: 'calculateTransportation', args, stopOnFailure: false });
       }
 
       return {
-        status: hasTransportationSelector(args) ? 'ready' : 'needs_clarification',
-        message: hasTransportationSelector(args)
-          ? undefined
-          : 'Show matching tours first, then ask which tour or destination they want transportation for.',
+        status: hasTransportationSelector(args) && !needsPickupLocation ? 'ready' : 'needs_clarification',
+        message: needsPickupLocation
+          ? 'Show matching tours, then ask for the pickup location before calculating transportation. Do not assume a pickup origin.'
+          : hasTransportationSelector(args)
+            ? undefined
+            : 'Show matching tours first, then ask which tour or destination they want transportation for.',
         steps,
       };
     }
 
     if (asksForTransportation) {
+      if (needsPickupLocation) {
+        return {
+          status: 'needs_clarification',
+          message: 'Ask for the pickup location before calculating transportation. Do not assume a pickup origin.',
+          steps: [],
+        };
+      }
+
       if (!hasTransportationSelector(args)) {
         return {
           status: 'needs_clarification',

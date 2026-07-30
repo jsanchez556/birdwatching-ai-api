@@ -19,6 +19,7 @@ import { injectResponseModeMessage } from '../ai/prompts/prompt.builder.js';
 import { FIELD_ASSISTANT_RESPONSE_MODE } from '../ai/prompts/system.prompt.js';
 import analytics from '../analytics/analytics.service.js';
 import { ANALYTICS_EVENTS } from '../analytics/events.js';
+import { buildTourRecommendation } from '../ai/services/tourRecommendation.service.js';
 
 const STREAM_GUARDRAIL_BUFFER_CHARS = 48;
 const VISITOR_ROLE = 'visitor';
@@ -173,6 +174,7 @@ function buildToolMeta(metadata = {}) {
     ...(recentMetadata.reservationEntry ? { reservationEntry: recentMetadata.reservationEntry } : {}),
     ...(metadata.toolsCalled?.length ? { toolsCalled: metadata.toolsCalled } : {}),
     ...(metadata.tours ? { tours: metadata.tours } : {}),
+    ...(metadata.tourRecommendation ? { tourRecommendation: metadata.tourRecommendation } : {}),
     ...(metadata.requestedTransportation ? { requestedTransportation: metadata.requestedTransportation } : {}),
     ...(metadata.transportationDeclined ? { transportationDeclined: metadata.transportationDeclined } : {}),
     ...(metadata.pricing ? { pricing: metadata.pricing } : {}),
@@ -438,6 +440,15 @@ class ChatService {
 
     const finalResponse = outputGuardrail.response;
     throwIfAborted(signal);
+    if (openAiMetadata.tourRecommendationRequested && Array.isArray(openAiMetadata.tours)) {
+      openAiMetadata.tourRecommendation = buildTourRecommendation({
+        summary: finalResponse,
+        tours: openAiMetadata.tours,
+        followUpQuestion: typeof openAiMetadata.uiAction?.prompt === 'string'
+          ? openAiMetadata.uiAction.prompt
+          : null,
+      });
+    }
     const usageRecord = await usageService.recordOpenAiUsage(userId, openAiMetadata.openAiUsage, {
       usageEventId: options.usageEventId,
       traceId: options.aiExecutionTraceId,

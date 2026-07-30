@@ -16,6 +16,25 @@ const { calculateTransportation } = await import('../src/ai/tools/transportation
 const { AgentOrchestrator } = await import('../src/ai/orchestrators/agent.orchestrator.js');
 const { validateChatBody } = await import('../src/api/validators/chat.validator.js');
 
+function createValidIntentExtractor(intent = 'create_reservation') {
+  return {
+    extract: jest.fn().mockResolvedValue({
+      success: true,
+      data: {
+        intent,
+        tourId: null,
+        location: null,
+        date: null,
+        participants: null,
+        transportationRequired: null,
+        pickupLocation: null,
+        missingFields: [],
+        confidence: 1,
+      },
+    }),
+  };
+}
+
 describe('multi-tool agent planning and orchestration', () => {
   it('plans a single tour search tool for discovery requests', () => {
     const planner = new ToolPlanner();
@@ -1986,6 +2005,7 @@ describe('multi-tool agent planning and orchestration', () => {
     const orchestrator = new AgentOrchestrator({
       agent: { planner, executor },
       aiClient,
+      intentExtractor: createValidIntentExtractor(),
     });
     const metadata = { conversationId: 'conversation-123' };
 
@@ -2041,6 +2061,7 @@ describe('multi-tool agent planning and orchestration', () => {
     const orchestrator = new AgentOrchestrator({
       agent: { planner, executor },
       aiClient,
+      intentExtractor: createValidIntentExtractor(),
     });
     const metadata = {
       conversationId: 'conversation-123',
@@ -2111,6 +2132,7 @@ describe('multi-tool agent planning and orchestration', () => {
     const orchestrator = new AgentOrchestrator({
       agent: { planner, executor },
       aiClient,
+      intentExtractor: createValidIntentExtractor(),
     });
     const metadata = { conversationId: 'conversation-123' };
 
@@ -2161,6 +2183,7 @@ describe('multi-tool agent planning and orchestration', () => {
     const orchestrator = new AgentOrchestrator({
       agent: { planner, executor },
       aiClient,
+      intentExtractor: createValidIntentExtractor('check_availability'),
     });
 
     await orchestrator.generateResponse([
@@ -2208,6 +2231,7 @@ describe('multi-tool agent planning and orchestration', () => {
     const orchestrator = new AgentOrchestrator({
       agent: { planner, executor },
       aiClient,
+      intentExtractor: createValidIntentExtractor('search'),
       log,
     });
     const metadata = { conversationId: 'conversation-123' };

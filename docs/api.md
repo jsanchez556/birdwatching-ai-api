@@ -1296,6 +1296,49 @@ Done `meta` may include frontend-ready tool data collected during agent executio
 }
 ```
 
+When `searchTours` runs in recommendation mode, `done.meta.tourRecommendation`
+contains the stable, schema-validated card contract. The assistant prose remains
+in `done.response`; clients must not parse it to reconstruct cards.
+
+```json
+{
+  "tourRecommendation": {
+    "summary": "I found one tour that matches your preferences.",
+    "recommendations": [
+      {
+        "tourId": "1",
+        "tourName": "Monteverde Quetzal Tour",
+        "location": "Monteverde",
+        "estimatedPrice": {
+          "amount": 120,
+          "currency": "USD"
+        },
+        "matchReasons": ["Matches Monteverde", "Fits moderate budget"],
+        "availabilityStatus": "available",
+        "confidence": 0.6667
+      }
+    ],
+    "sources": [],
+    "assumptions": [],
+    "followUpQuestion": "Which tour are you interested in?"
+  }
+}
+```
+
+The contract is owned by
+`src/ai/schemas/tourRecommendation.schema.js`. `availabilityStatus` is one of
+`available`, `limited`, `unavailable`, or `unknown`; 1–3 known remaining slots
+are `limited`. Unknown price is represented as
+`estimatedPrice: { "amount": null, "currency": null }`, and unknown availability
+as `availabilityStatus: "unknown"`. Known currency values are uppercase ISO
+4217 codes and known amounts are non-negative. Confidence is the existing
+database-backed recommendation score normalized as `score / (score + 5)` and
+bounded to `0–1`; it is not a claim about live inventory. Sources and
+assumptions are empty unless supported data exists, and `followUpQuestion` is
+`null` when no clarification is needed. An empty `recommendations` array is
+valid. If any item fails validation, the API emits the existing safe stream
+error and returns no partial recommendation contract.
+
 Bird RAG responses may also include frontend-ready bird matches in `done.meta`.
 Media files are not embedded in pgvector; the vector store embeds searchable
 bird text and stores media references as document metadata. `meta.birdMatches`
@@ -1358,6 +1401,8 @@ Tour tool notes:
 - The pgvector RAG tables are `knowledge_documents` and `knowledge_chunks`; they are the source for retrieved text and `birdMatches`, while the birding reference graph supports structured tour/location relationships and seed data.
 - Available tour tools are `searchTours`, `calculateTransportation`, `checkAvailability`, `calculatePricing`, and `createReservation`.
 - Users should receive available or recommended tours through response metadata and explicitly select one before pricing or reservation creation.
+- Recommendation-mode results expose `done.meta.tourRecommendation`; legacy
+  `meta.tours` remains available for existing guided booking controls.
 - `searchTours` supports broad listing and recommendation mode. `checkAvailability`, `calculatePricing`, and `createReservation` can accept a selected `tourId` or clear/partial `tourName`; the service resolves matching tour names before validating availability.
 - Species or topic queries such as `where can I see quetzals?` are passed into tour ranking so direct name/location matches like `Monteverde Quetzal Tour` outrank weak generic availability matches.
 - When availability is checked for a selected tour and participant count is still missing, `done.meta.uiAction` may contain a `participant_count` action with `min`, `max`, and numeric `options` from `1` through `availableSlots`.

@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { zodResponseFormat } from 'openai/helpers/zod';
 import env from '../../config/env.js';
 import { asyncRetry } from '../../utils/async.utils.js';
 import logger from '../../utils/logger.js';
@@ -161,6 +162,39 @@ class OpenAIClient {
     });
 
     return conversation;
+  }
+
+  async parseStructuredChatCompletion(messages, options = {}) {
+    const model = options.model || this.model;
+    const completion = await traceLlmCall('chat_completion_structured_parse', {
+      parentTraceId: options.metadata?.parentTraceId,
+      conversationId: options.metadata?.conversationId,
+      model,
+      promptVersion: options.metadata?.promptVersion,
+      operation: options.metadata?.operation,
+      messageCount: messages.length,
+      schemaName: options.schemaName,
+    }, () => this.client.chat.completions.parse({
+      model,
+      messages,
+      response_format: zodResponseFormat(options.schema, options.schemaName),
+    }, { signal: options.signal }), {
+      outputMetadata: (result) => ({
+        requestId: result.id,
+        model: result.model || model,
+        refused: Boolean(result.choices?.[0]?.message?.refusal),
+        hasParsedOutput: Boolean(result.choices?.[0]?.message?.parsed),
+      }),
+    });
+
+    this.logCompletionUsage(
+      'chat_completion_structured_parse',
+      completion,
+      { schemaName: options.schemaName },
+      options.usage,
+      model
+    );
+    return completion;
   }
 
   async streamChatCompletion(messages, options = {}) {

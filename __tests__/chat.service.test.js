@@ -292,6 +292,11 @@ describe('ChatService streaming orchestration', () => {
       {
         tourId: 1,
         name: 'Monteverde Quetzal Tour',
+        location: 'Monteverde',
+        pricePerPerson: 120,
+        availableSlots: 4,
+        recommendationScore: 10,
+        reasons: ['Matches Monteverde'],
       },
     ];
 
@@ -299,6 +304,7 @@ describe('ChatService streaming orchestration', () => {
     mockStreamResponseWithTools.mockImplementation(async (messages, metadata, options) => {
       metadata.toolsCalled = ['searchTours'];
       metadata.tours = tours;
+      metadata.tourRecommendationRequested = true;
       metadata.agentDebugTrace = {
         plan: { tools: ['searchTours'] },
         executions: [{ tool: 'searchTours' }],
@@ -337,6 +343,24 @@ describe('ChatService streaming orchestration', () => {
       },
       toolsCalled: ['searchTours'],
       tours,
+      tourRecommendation: {
+        summary: 'I found a Monteverde tour.',
+        recommendations: [{
+          tourId: '1',
+          tourName: 'Monteverde Quetzal Tour',
+          location: 'Monteverde',
+          estimatedPrice: {
+            amount: 120,
+            currency: 'USD',
+          },
+          matchReasons: ['Matches Monteverde'],
+          availabilityStatus: 'available',
+          confidence: 0.6667,
+        }],
+        sources: [],
+        assumptions: [],
+        followUpQuestion: null,
+      },
       selectedTransportation: {
         transportationOption: 'shared_shuttle',
         origin: 'San Jose',

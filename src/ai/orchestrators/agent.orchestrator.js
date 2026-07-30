@@ -16,10 +16,19 @@ import { getTourRecommendationPrompt } from '../prompts/tourRecommendation.promp
 import HttpError from '../../utils/httpError.js';
 import { routeModel } from '../routing/modelRouter.js';
 import { classifyTask } from '../routing/taskClassifier.js';
+import reservationIntentExtractor from '../services/reservationIntent.service.js';
 
 const BOOKING_TOOLS = new Set([
   'createReservation',
 ]);
+const BUSINESS_TOOLS = new Set([
+  'searchTours',
+  'calculateTransportation',
+  'calculatePricing',
+  'checkAvailability',
+  'createReservation',
+]);
+const RESERVATION_LANGUAGE = /\b(book|booking|reserve|reservation|tour|availability|available|price|pricing|cost|transport|transportation|transfer|shuttle|pickup)\b/i;
 
 function safeJson(value) {
   return JSON.stringify(value, null, 2);
@@ -210,6 +219,23 @@ function getLatestUserMessage(messages = []) {
   return [...messages].reverse().find((message) => message.role === 'user')?.content || '';
 }
 
+function requiresReservationIntentExtraction(message, plan = {}) {
+  return RESERVATION_LANGUAGE.test(message)
+    || (plan.steps || []).some((step) => BUSINESS_TOOLS.has(step.tool));
+}
+
+function buildExtractionFailurePlan(extraction) {
+  const refused = extraction?.code === 'RESERVATION_INTENT_REFUSED';
+
+  return {
+    status: refused ? 'intent_extraction_refused' : 'intent_extraction_failed',
+    steps: [],
+    message: refused
+      ? 'I could not safely interpret that booking request. Ask the user to rephrase it without executing any tour or reservation action.'
+      : 'I could not validate the booking details. Ask the user to rephrase the request without executing any tour or reservation action.',
+  };
+}
+
 function buildConversationContext(messages = [], metadata = {}) {
   const recentMetadata = metadata.conversationContext?.recentAssistantMetadata || {};
   const entryTours = Array.isArray(recentMetadata.reservationEntry?.tours)
@@ -242,6 +268,7 @@ export class AgentOrchestrator {
     experimentAssignments = experimentAssignmentService,
     modelRouter = routeModel,
     taskClassifier = classifyTask,
+    intentExtractor = reservationIntentExtractor,
     log = logger,
   } = {}) {
     this.agent = agent;
@@ -250,6 +277,7 @@ export class AgentOrchestrator {
     this.experimentAssignments = experimentAssignments;
     this.modelRouter = modelRouter;
     this.taskClassifier = taskClassifier;
+    this.intentExtractor = intentExtractor;
     this.logger = log;
   }
 
@@ -308,6 +336,42 @@ export class AgentOrchestrator {
         message: userMessage,
         context: conversationContext,
       })));
+
+    if (metadata.role !== 'visitor' && requiresReservationIntentExtraction(userMessage, plan)) {
+      const extraction = await this.intentExtractor.extract({
+        message: userMessage,
+        signal: options.signal,
+        metadata: {
+          agentTraceId: metadata.agentTraceId,
+          parentTraceId: metadata.parentTraceId,
+          conversationId: metadata.conversationId,
+          usage,
+        },
+      });
+
+      if (!extraction.success) {
+        plan = buildExtractionFailurePlan(extraction);
+        this.logger.warn('Reservation intent extraction blocked business tool planning', {
+          conversationId: metadata.conversationId,
+          code: extraction.code,
+          reason: extraction.reason,
+        });
+      } else if (extraction.data.intent === 'unknown') {
+        plan = {
+          status: 'intent_unknown',
+          steps: [],
+          message: 'The request is too ambiguous to identify a supported tour or reservation action. Ask a brief clarifying question without executing any business tool.',
+        };
+      } else {
+        plan = await this.agent.planner.plan({
+          message: userMessage,
+          context: {
+            ...conversationContext,
+            reservationIntent: extraction.data,
+          },
+        });
+      }
+    }
 
     if (hasRecommendationStep(plan)) {
       activeExperimentAssignment = activeExperimentAssignment || await this.experimentAssignments.resolve({

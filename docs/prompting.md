@@ -14,6 +14,9 @@ Back to [Project Context](../CONTEXT.md). See [Memory](./memory.md) for how chat
 - Chat tour tool schemas: `src/ai/schemas/tour.schema.js`
 - Bird image analysis response schema: `src/ai/schemas/birdImageAnalysis.schema.js`
 - Bird identification response schema: `src/ai/schemas/birdIdentification.schema.js`
+- Reservation-intent prompt and strict Structured Outputs schema:
+  `src/ai/prompts/reservationIntent.prompt.js` and
+  `src/ai/schemas/reservationIntent.schema.js`
 
 Prompt modules export both content and a semantic prompt version. Keep version changes intentional and loggable.
 
@@ -87,12 +90,28 @@ is streamed after tool work is complete. Tool steps are executed in plan order
 so availability, transportation, pricing, and reservation steps cannot race each
 other in one model turn.
 
+Before any tour, transportation, availability, pricing, or reservation tool
+executes, `reservationIntent.service.js` uses the OpenAI SDK Structured Outputs
+parser with the strict Zod reservation-intent schema. Refusals, absent parsed
+output, schema failures, inconsistent missing-field markers, and unknown intent
+produce a no-tool clarification plan. Extracted nulls remain explicit, including
+the distinction between an unstated transportation preference and `false`.
+Structured extraction does not validate tour existence, dates, capacity,
+authorization, transportation rules, pricing, or discounts; the existing
+backend services and database remain authoritative for those rules.
+
 Tour discovery should happen before booking: use `searchTours` to list or
 recommend database-backed tours, return tour details through stream `done` event
 metadata, ask the user to select a specific tour by ID or clear/partial name,
 then check availability, estimate transportation when requested, price, and
 create the reservation. When tours are returned, the assistant text should be
 minimal, for example: `I found 2 tours that match your preferences.`
+
+Recommendation-mode tool results are assembled and Zod-validated at the
+application boundary as `done.meta.tourRecommendation`. Tour identifiers,
+price, availability, reasons, and normalized confidence come only from the
+database-backed `searchTours` result; the final model response supplies the
+short `summary` text but is never scraped for card fields.
 
 Pricing supports optional discount codes and group discounts. Reservation
 creation requires participant count and customer name, and can resolve the tour

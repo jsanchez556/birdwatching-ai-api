@@ -123,6 +123,10 @@ export function appendToolResponseMetadata(metadata, toolName, result, args = {}
   if (!metadata || typeof metadata !== 'object') return;
   metadata.toolsCalled = [...(metadata.toolsCalled || []), toolName];
 
+  if (toolName === 'searchTours' && args.recommend === true) {
+    metadata.tourRecommendationRequested = true;
+  }
+
   if (args.participants) metadata.participants = Number(args.participants);
   else if (result?.participants) metadata.participants = Number(result.participants);
 

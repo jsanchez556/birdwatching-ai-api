@@ -528,4 +528,38 @@ describe('ReservationService', () => {
       message: 'participants must be a positive integer',
     });
   });
+
+  it('keeps operational capacity rejection authoritative after structurally valid extraction', async () => {
+    mockGetTourById.mockResolvedValue({
+      id: 1,
+      name: 'Monteverde Quetzal Tour',
+      price: 120,
+      availableSlots: 8,
+      location: 'Monteverde',
+      durationHours: 4,
+      difficulty: 'moderate',
+    });
+    mockCreateReservation.mockResolvedValue({
+      success: false,
+      code: 'INSUFFICIENT_AVAILABILITY',
+      message: 'Only 8 seats are available.',
+      availableSlots: 8,
+    });
+
+    await expect(reservationService.createReservation({
+      tourId: 1,
+      participants: 500,
+      customerName: 'Ana Gomez',
+      itineraryStartDate: 'yesterday',
+      itineraryEndDate: 'yesterday',
+    })).resolves.toMatchObject({
+      success: false,
+      code: 'INSUFFICIENT_AVAILABILITY',
+      availableSlots: 8,
+    });
+    expect(mockCreateReservation).toHaveBeenCalledWith(expect.objectContaining({
+      tourId: 1,
+      participants: 500,
+    }));
+  });
 });
