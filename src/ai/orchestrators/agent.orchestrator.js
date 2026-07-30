@@ -17,6 +17,7 @@ import HttpError from '../../utils/httpError.js';
 import { routeModel } from '../routing/modelRouter.js';
 import { classifyTask } from '../routing/taskClassifier.js';
 import reservationIntentExtractor from '../services/reservationIntent.service.js';
+import { executeModelRoute } from '../utils/modelRouteExecution.utils.js';
 
 const BOOKING_TOOLS = new Set([
   'createReservation',
@@ -176,14 +177,23 @@ function buildReservationFailureMessage(toolResults = {}) {
     return null;
   }
 
+  const indeterminate = failedReservation.code === 'TOOL_RESULT_INDETERMINATE';
+
   return {
     role: 'system',
-    content: [
-      'Reservation creation failed.',
-      'The reservation was not saved in the database, so do not say it is confirmed.',
-      'Apologize briefly, explain that the booking could not be completed right now, and ask the customer to try again or contact support.',
-      failedReservation.message ? `Safe failure message: ${failedReservation.message}` : null,
-    ].filter(Boolean).join('\n'),
+    content: indeterminate
+      ? [
+        'Reservation creation returned an indeterminate result.',
+        'Do not say whether the reservation succeeded or failed.',
+        'Tell the customer the reservation status must be verified before any new booking attempt. Do not ask them to retry the booking automatically.',
+        failedReservation.message ? `Safe failure message: ${failedReservation.message}` : null,
+      ].filter(Boolean).join('\n')
+      : [
+        'Reservation creation failed.',
+        'The reservation was not saved in the database, so do not say it is confirmed.',
+        'Apologize briefly, explain that the booking could not be completed right now, and ask the customer to try again or contact support.',
+        failedReservation.message ? `Safe failure message: ${failedReservation.message}` : null,
+      ].filter(Boolean).join('\n'),
   };
 }
 
@@ -269,6 +279,7 @@ export class AgentOrchestrator {
     modelRouter = routeModel,
     taskClassifier = classifyTask,
     intentExtractor = reservationIntentExtractor,
+    modelRouteExecutor = executeModelRoute,
     log = logger,
   } = {}) {
     this.agent = agent;
@@ -278,6 +289,7 @@ export class AgentOrchestrator {
     this.modelRouter = modelRouter;
     this.taskClassifier = taskClassifier;
     this.intentExtractor = intentExtractor;
+    this.modelRouteExecutor = modelRouteExecutor;
     this.logger = log;
   }
 
@@ -539,21 +551,49 @@ export class AgentOrchestrator {
       reasonCode: modelRoute.reasonCode,
     };
 
-    return this.aiClient.streamChatCompletion(finalMessages, {
-      usage,
+    const finalGenerationMetadata = {
+      ...metadata,
+      finalPromptMessageCount: finalMessages.length,
+      groundingContext: metadata.ragTrace ? {
+        retrievedChunkCount: metadata.ragTrace.retrievedChunkCount,
+        sourceCount: metadata.ragTrace.sourceCount,
+        contextMessageLength: metadata.ragTrace.contextMessageLength,
+        retrievedChunks: metadata.ragTrace.retrievedChunks,
+      } : undefined,
+    };
+
+    return this.modelRouteExecutor({
+      modelRoute,
+      metadata,
       onChunk,
-      model: modelRoute.primaryModel.modelId,
-      metadata: {
-        ...metadata,
-        finalPromptMessageCount: finalMessages.length,
-        groundingContext: metadata.ragTrace ? {
-          retrievedChunkCount: metadata.ragTrace.retrievedChunkCount,
-          sourceCount: metadata.ragTrace.sourceCount,
-          contextMessageLength: metadata.ragTrace.contextMessageLength,
-          retrievedChunks: metadata.ragTrace.retrievedChunks,
-        } : undefined,
-      },
       signal: options.signal,
+      executeAttempt: ({
+        model,
+        signal,
+        timeoutMs,
+        routePosition,
+        attemptRole,
+        sameModelAttempt,
+        attemptContext,
+        onChunk: attemptOnChunk,
+      }) => this.aiClient.streamChatCompletion(finalMessages, {
+        usage,
+        onChunk: attemptOnChunk,
+        model: model.modelId,
+        maxRetries: 0,
+        timeoutMs,
+        attemptContext,
+        metadata: {
+          ...finalGenerationMetadata,
+          modelRouteAttempt: {
+            modelKey: model.key,
+            attemptRole,
+            routePosition,
+            sameModelAttempt,
+          },
+        },
+        signal,
+      }),
     });
   }
 }

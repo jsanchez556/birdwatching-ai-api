@@ -7,7 +7,7 @@ import {
 } from './operationalErrors.js';
 
 const SENSITIVE_KEY_PATTERN = /(password|secret|token|apiKey|authorization|databaseUrl|customerEmail|customerName|email|phone|content|prompt|message|input|output|^answer$|answerText|assistantAnswer|finalAnswer|text|args|arguments|customer)/i;
-const SAFE_TELEMETRY_KEY_PATTERN = /^(promptVersion|promptVersions|promptTokens|completionTokens|totalTokens|inputTokens|outputTokens|requestTokens|prompt_tokens|completion_tokens|total_tokens|input_tokens|output_tokens|tokenUsage)$/;
+const SAFE_TELEMETRY_KEY_PATTERN = /^(promptVersion|promptVersions|promptTokens|completionTokens|totalTokens|inputTokens|outputTokens|requestTokens|prompt_tokens|completion_tokens|total_tokens|input_tokens|output_tokens|tokenUsage|clientOutputStarted)$/;
 const MAX_ARRAY_ITEMS = 8;
 const MAX_OBJECT_KEYS = 24;
 const MAX_STRING_LENGTH = 240;
@@ -95,6 +95,7 @@ class AiTelemetry {
       aiErrors: 0,
       aiEvaluations: 0,
       aiRetries: 0,
+      modelRouteAttempts: 0,
       promptTokens: 0,
       completionTokens: 0,
       totalTokens: 0,
@@ -237,6 +238,14 @@ class AiTelemetry {
     this.counters.aiRetries += 1;
     this.logger.warn('AI request retry scheduled', {
       event: 'ai_retry_scheduled',
+      ...sanitizeTelemetryValue(details),
+    });
+  }
+
+  recordModelRouteAttempt(details = {}) {
+    this.counters.modelRouteAttempts += 1;
+    this.logger.info('AI model route attempt completed', {
+      event: 'ai_model_route_attempt',
       ...sanitizeTelemetryValue(details),
     });
   }

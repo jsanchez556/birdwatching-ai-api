@@ -332,6 +332,53 @@ describe('OpenAIClient tool calling', () => {
     });
   });
 
+  it('does not emit a buffered first chunk when the stream fails before output begins', async () => {
+    async function* failedBeforeEmission() {
+      yield {
+        id: 'stream-failed',
+        model: 'gpt-4o',
+        choices: [{ delta: { content: 'buffered partial' } }],
+      };
+      throw Object.assign(new Error('temporary provider failure'), { status: 503 });
+    }
+
+    const onChunk = jest.fn();
+    mockCreate.mockResolvedValueOnce(failedBeforeEmission());
+
+    await expect(openaiClient.streamChatCompletion(
+      [{ role: 'user', content: 'Tell me about quetzals.' }],
+      { onChunk, maxRetries: 0, timeoutMs: 1000 }
+    )).rejects.toMatchObject({ status: 503 });
+
+    expect(onChunk).not.toHaveBeenCalled();
+  });
+
+  it('preserves emitted output and surfaces a later stream failure without replacement output', async () => {
+    async function* failedAfterEmission() {
+      yield {
+        id: 'stream-partial',
+        model: 'gpt-4o',
+        choices: [{ delta: { content: 'first ' } }],
+      };
+      yield {
+        id: 'stream-partial',
+        model: 'gpt-4o',
+        choices: [{ delta: { content: 'second' } }],
+      };
+      throw Object.assign(new Error('temporary provider failure'), { status: 503 });
+    }
+
+    const onChunk = jest.fn();
+    mockCreate.mockResolvedValueOnce(failedAfterEmission());
+
+    await expect(openaiClient.streamChatCompletion(
+      [{ role: 'user', content: 'Tell me about quetzals.' }],
+      { onChunk, maxRetries: 0, timeoutMs: 1000 }
+    )).rejects.toMatchObject({ status: 503 });
+
+    expect(onChunk.mock.calls.map(([chunk]) => chunk)).toEqual(['first ', 'second']);
+  });
+
   it('monitors invalid JSON tool-call output', () => {
     const args = openaiClient.parseToolArguments({
       function: {

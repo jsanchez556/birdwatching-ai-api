@@ -75,12 +75,84 @@ Fallback ordering is deterministic:
 - economy primary: other economy, balanced, then advanced models.
 
 `maxRetries` is the retry budget for one selected model; it is not the number
-of fallbacks. The current streaming provider path uses the selected primary
-and its established transient retry handling. Automatic cross-model execution
-is intentionally deferred because a stream may already have emitted content
-before failing; replaying another model could duplicate or contradict output.
-The complete compatible chain is available for a future execution abstraction
-that can track pre-stream versus post-stream failure safely.
+of fallbacks. Final routed generation uses `primaryModel` first, applies that
+same-model retry budget, and then visits `fallbackModels` in their returned
+order. It never calls the router again, independently selects a model, or
+revisits a provider model ID.
+
+The shared OpenAI classifier decides both retry and fallback eligibility.
+Transient timeouts, network failures, rate limits, temporary provider
+unavailability, and the existing one-time corrective invalid-output category
+are eligible. A fallback is considered only after the selected model has no
+eligible retry remaining. Cancellation, explicitly non-retryable errors,
+authentication/configuration failures, spend or quota exhaustion, safety
+refusals, invalid requests, context limits, and tool/business validation
+failures stop immediately. The current registry describes OpenAI model routes,
+not independently billed providers, so quota or spend-limit failures never
+cross-fail over.
+
+`timeoutMs` is one wall-clock deadline for final routed generation. It covers
+stream establishment and consumption, every same-model attempt, retry
+backoff, and all fallback models. Each provider attempt receives only the
+remaining budget. Deadline expiration aborts the active request, prevents any
+later attempt, cleans up its timer and abort listener, and produces
+`MODEL_ROUTES_EXHAUSTED`.
+
+## Streaming Safety
+
+The provider client temporarily holds the first content chunk. If the stream
+fails before another content chunk or clean completion proves the stream can
+continue, that buffered content is discarded and an eligible retry or fallback
+may start. Once content is passed to the chat streaming pipeline, no retry or
+fallback is allowed. A later failure follows the existing safe SSE error path;
+output from another model is never appended.
+
+This conservative boundary composes with the chat output-guardrail buffer.
+The routed executor treats a successful call to its downstream chunk handler
+as output having begun even if a later layer is still buffering, so it can
+stop failover earlier but can never combine attempts.
+
+## Tool And Side-Effect Boundary
+
+Planning and `executePlan` finish before routed final generation begins. The
+final prompt, including completed tool results, is assembled once and reused
+unchanged for every model attempt. Model fallback therefore cannot rerun a
+tool plan.
+
+Read-only tools retain classified retry behavior. `createReservation` is
+always non-retryable at the tool executor, including when global or per-step
+settings request retries. The current reservation write is transactional and
+uses a unique confirmation code, but it does not expose the complete stable
+idempotency-key and commit-verification contract required to safely repeat an
+ambiguous write. A thrown timeout or transport failure is reported as
+`TOOL_RESULT_INDETERMINATE` and tells the caller to verify reservation status
+before another booking attempt. Confirmation-code collision handling remains
+inside the database service path because the failed unique insert did not
+commit; it is not an automatic replay of an ambiguous reservation result.
+
+## Attempts, Tracing, And Usage
+
+The original route metadata remains intact. Each provider invocation creates a
+child LLM trace under the same agent parent and keeps the request AI trace,
+conversation ID, prompt version, experiment assignment, and LangSmith parent
+relationship. Safe attempt history records model key, permitted internal
+provider ID, primary/fallback role, route position, same-model attempt number,
+timing, outcome, classified error code/category, fallback eligibility, output
+state, provider request ID, remaining deadline, and available token usage.
+
+Usage is collected as provider usage arrives, including a failed attempt that
+reported usage before failing. On success, `selectedModelKey`,
+`selectedRoutePosition`, and `usedFallback` identify the serving model without
+overwriting the original primary or ordered fallback route. Attempt telemetry
+uses the repository sanitizer and contains no prompt, response, PII, secret,
+stack trace, or raw provider error. Tracing and telemetry export failures are
+best effort and do not fail generation.
+
+When every eligible model is exhausted, the internal error code is
+`MODEL_ROUTES_EXHAUSTED`; the exposed retryable message is generic:
+“I’m having trouble completing that request right now. Please try again in a
+moment.” Terminal client, validation, safety, authorization, and cancellation
+errors keep their existing behavior instead of being converted to exhaustion.
 
 An empty compatible fallback chain fails with
 `MODEL_FALLBACK_UNAVAILABLE`. Missing vision capability uses

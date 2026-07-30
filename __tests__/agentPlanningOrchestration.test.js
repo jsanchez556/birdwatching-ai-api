@@ -1458,6 +1458,36 @@ describe('multi-tool agent planning and orchestration', () => {
     expect(result.debugTrace.executions[0].attempts).toHaveLength(3);
   });
 
+  it('never automatically retries createReservation even when retry overrides request it', async () => {
+    const createReservation = jest.fn().mockRejectedValue(
+      Object.assign(new Error('ambiguous database timeout'), {
+        code: 'ETIMEDOUT',
+        retryable: true,
+      })
+    );
+    const executor = new ToolExecutor({ createReservation }, {
+      retry: { retries: 5, baseDelayMs: 0 },
+    });
+
+    const result = await executor.executePlan({
+      status: 'ready',
+      steps: [{
+        tool: 'createReservation',
+        args: { tourId: 1, participants: 2 },
+        retries: 5,
+      }],
+    }, { conversationId: 'conversation-123' });
+
+    expect(createReservation).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(false);
+    expect(result.steps[0].result).toMatchObject({
+      code: 'TOOL_RESULT_INDETERMINATE',
+      retryable: false,
+      message: expect.stringContaining('check its status'),
+    });
+    expect(result.debugTrace.executions[0].attempts).toHaveLength(1);
+  });
+
   it('adds contact-agent UI choices when no tours are found', async () => {
     const handlers = {
       searchTours: jest.fn().mockResolvedValue({ success: true, tours: [] }),
@@ -2208,6 +2238,90 @@ describe('multi-tool agent planning and orchestration', () => {
         onChunk: expect.any(Function),
       })
     );
+  });
+
+  it('reuses finalized tool results and executes the tool plan only once during model fallback', async () => {
+    const planner = {
+      plan: jest.fn().mockReturnValue({
+        status: 'ready',
+        steps: [{ tool: 'searchTours', args: { location: 'Monteverde' } }],
+      }),
+    };
+    const executor = {
+      executePlan: jest.fn().mockResolvedValue({
+        success: true,
+        steps: [{
+          tool: 'searchTours',
+          result: { success: true, tours: [{ tourId: 1, name: 'Quetzal Tour' }] },
+        }],
+        errors: [],
+      }),
+    };
+    const providerFailure = Object.assign(new Error('temporary outage'), { status: 503 });
+    const aiClient = {
+      streamChatCompletion: jest.fn()
+        .mockRejectedValueOnce(providerFailure)
+        .mockResolvedValueOnce('Fallback answer from the same tool results.'),
+    };
+    const modelRouter = jest.fn().mockReturnValue({
+      task: 'tour_recommendation',
+      route: 'balanced',
+      primaryModel: { key: 'primary', modelId: 'provider-primary' },
+      fallbackModels: [{ key: 'fallback', modelId: 'provider-fallback' }],
+      reasoningEffort: 'medium',
+      timeoutMs: 10_000,
+      maxRetries: 0,
+      reasonCode: 'TEST_ROUTE',
+    });
+    const orchestrator = new AgentOrchestrator({
+      agent: { planner, executor },
+      aiClient,
+      modelRouter,
+      taskClassifier: jest.fn().mockReturnValue('tour_recommendation'),
+      intentExtractor: createValidIntentExtractor('search'),
+    });
+
+    await expect(orchestrator.generateResponse([
+      { role: 'system', content: 'System prompt' },
+      { role: 'user', content: 'Find tours in Monteverde' },
+    ], {
+      conversationId: 'conversation-123',
+    })).resolves.toBe('Fallback answer from the same tool results.');
+
+    expect(executor.executePlan).toHaveBeenCalledTimes(1);
+    expect(aiClient.streamChatCompletion).toHaveBeenCalledTimes(2);
+    const primaryMessages = aiClient.streamChatCompletion.mock.calls[0][0];
+    const fallbackMessages = aiClient.streamChatCompletion.mock.calls[1][0];
+    expect(fallbackMessages).toEqual(primaryMessages);
+    expect(aiClient.streamChatCompletion.mock.calls.map(([, options]) => options.model))
+      .toEqual(['provider-primary', 'provider-fallback']);
+    expect(aiClient.streamChatCompletion.mock.calls.map(([, options]) => ({
+      parentTraceId: options.metadata.parentTraceId,
+      agentTraceId: options.metadata.agentTraceId,
+      conversationId: options.metadata.conversationId,
+      modelRouteAttempt: options.metadata.modelRouteAttempt,
+    }))).toEqual([
+      expect.objectContaining({
+        agentTraceId: expect.any(String),
+        conversationId: 'conversation-123',
+        modelRouteAttempt: {
+          modelKey: 'primary',
+          attemptRole: 'primary',
+          routePosition: 0,
+          sameModelAttempt: 1,
+        },
+      }),
+      expect.objectContaining({
+        agentTraceId: expect.any(String),
+        conversationId: 'conversation-123',
+        modelRouteAttempt: {
+          modelKey: 'fallback',
+          attemptRole: 'fallback',
+          routePosition: 1,
+          sameModelAttempt: 1,
+        },
+      }),
+    ]);
   });
 
   it('logs orchestration phases and appends orchestration trace events', async () => {

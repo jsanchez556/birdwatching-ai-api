@@ -202,6 +202,9 @@ class OpenAIClient {
     let response = '';
     let streamModel = model;
     let streamId;
+    let pendingFirstContent = null;
+    let clientOutputStarted = false;
+    const attemptContext = options.attemptContext || {};
 
     return traceLlmCall('chat_completion_stream', {
       parentTraceId: options.metadata?.agentTraceId || options.metadata?.parentTraceId,
@@ -215,43 +218,88 @@ class OpenAIClient {
       messageCount: messages.length,
       finalPromptMessageCount: options.metadata?.finalPromptMessageCount,
       groundingContext: options.metadata?.groundingContext,
+      modelKey: options.metadata?.modelRouteAttempt?.modelKey,
+      attemptRole: options.metadata?.modelRouteAttempt?.attemptRole,
+      routePosition: options.metadata?.modelRouteAttempt?.routePosition,
+      sameModelAttempt: options.metadata?.modelRouteAttempt?.sameModelAttempt,
+      remainingDeadlineMs: options.timeoutMs,
     }, async (trace) => {
-      const stream = await executeOpenAIWithRetry(({ signal: requestSignal }) => (
-        this.client.chat.completions.create({
-          model,
-          messages,
-          stream: true,
-          stream_options: {
-            include_usage: true,
-          },
-        }, { signal: requestSignal })
-      ), {
-        operation: 'chat_completion_stream',
-        signal,
-      });
+      try {
+        const stream = await executeOpenAIWithRetry(({ signal: requestSignal }) => (
+          this.client.chat.completions.create({
+            model,
+            messages,
+            stream: true,
+            stream_options: {
+              include_usage: true,
+            },
+          }, { signal: requestSignal })
+        ), {
+          operation: 'chat_completion_stream',
+          signal,
+          maxRetries: options.maxRetries,
+          timeoutMs: options.timeoutMs,
+        });
 
-      for await (const chunk of stream) {
-        streamId ||= chunk.id;
-        streamModel = chunk.model || streamModel;
+        for await (const chunk of stream) {
+          streamId ||= chunk.id;
+          streamModel = chunk.model || streamModel;
+          attemptContext.providerRequestId ||= chunk.id;
+          attemptContext.providerModel = streamModel;
 
-        if (chunk.usage) {
-          trace.recordTokenUsage(chunk.usage);
-          this.logCompletionUsage('chat_completion_stream', {
-            id: streamId,
-            model: streamModel,
-            usage: chunk.usage,
-          }, {}, usage);
-        }
+          if (chunk.usage) {
+            attemptContext.tokenUsage = chunk.usage;
+            trace.recordTokenUsage(chunk.usage);
+            this.logCompletionUsage('chat_completion_stream', {
+              id: streamId,
+              model: streamModel,
+              usage: chunk.usage,
+            }, {}, usage);
+          }
 
-        const content = chunk.choices?.[0]?.delta?.content;
+          const content = chunk.choices?.[0]?.delta?.content;
 
-        if (content) {
+          if (!content) continue;
           response += content;
+
+          if (pendingFirstContent === null) {
+            pendingFirstContent = content;
+            continue;
+          }
+
+          if (!clientOutputStarted) {
+            await onChunk(pendingFirstContent);
+            clientOutputStarted = true;
+            pendingFirstContent = null;
+          }
+
           await onChunk(content);
         }
-      }
 
-      return response;
+        if (!response) {
+          throw Object.assign(new Error('Provider returned empty streaming output'), {
+            code: 'provider_malformed_response',
+          });
+        }
+
+        if (!clientOutputStarted && pendingFirstContent !== null) {
+          await onChunk(pendingFirstContent);
+          clientOutputStarted = true;
+          pendingFirstContent = null;
+        }
+
+        return response;
+      } catch (error) {
+        const headerRequestId = typeof error?.headers?.get === 'function'
+          ? error.headers.get('x-request-id')
+          : undefined;
+        attemptContext.providerRequestId ||= streamId
+          || error?.providerRequestId
+          || error?.request_id
+          || error?.requestId
+          || headerRequestId;
+        throw error;
+      }
     }, {
       tokenUsage: null,
       outputMetadata: () => ({
@@ -259,6 +307,7 @@ class OpenAIClient {
         model: streamModel,
         responseLength: response.length,
         toolCalls: options.metadata?.toolsCalled || [],
+        clientOutputStarted,
       }),
     });
   }

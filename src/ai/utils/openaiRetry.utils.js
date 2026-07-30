@@ -109,6 +109,10 @@ export function classifyOpenAIError(error) {
     return result('cancelled');
   }
 
+  if (error?.retryable === false) {
+    return result('explicitly_non_retryable');
+  }
+
   if (TIMEOUT_CODES.has(code) || status === 408) {
     return result('timeout', {
       action: 'retry_with_backoff',

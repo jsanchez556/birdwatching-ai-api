@@ -20,7 +20,10 @@ import {
 } from './toolExecutionState.js';
 
 export const TOOL_EXECUTION_FAILED_MESSAGE = 'I could not complete that action right now. Please try again in a moment.';
+export const TOOL_RESULT_INDETERMINATE_MESSAGE =
+  'The reservation status could not be verified. Please check its status before trying again.';
 const VISITOR_BLOCKED_TOOL_MESSAGE = 'Visitors can ask about birds only. Please log in to plan tours or make reservations.';
+const NON_RETRYABLE_SIDE_EFFECT_TOOLS = new Set(['createReservation']);
 const wait = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs));
 
 /**
@@ -40,12 +43,16 @@ export class ToolExecutor {
   }
 
   getRetryOptions(name, step = {}) {
-    return normalizeRetryOptions({
+    const retryOptions = normalizeRetryOptions({
       ...this.retryOptions,
       ...(this.retryOptions.tools?.[name] || this.retryOptions.byTool?.[name] || {}),
       ...(step.retry || {}),
       ...(step.retries !== undefined ? { retries: step.retries } : {}),
     });
+
+    return NON_RETRYABLE_SIDE_EFFECT_TOOLS.has(name)
+      ? { ...retryOptions, retries: 0 }
+      : retryOptions;
   }
 
   async execute(name, args = {}, metadata = {}, options = {}) {
@@ -112,7 +119,9 @@ export class ToolExecutor {
     for (let attempt = 0; attempt <= retryOptions.retries; attempt += 1) {
       try {
         const result = await handler(validatedArgs, metadata);
-        const retryable = isRetryableToolResult(result);
+        const retryable = NON_RETRYABLE_SIDE_EFFECT_TOOLS.has(name)
+          ? false
+          : isRetryableToolResult(result);
         const shouldRetry = retryable && attempt < retryOptions.retries;
         attempts.push({
           attempt: attempt + 1,
@@ -150,7 +159,9 @@ export class ToolExecutor {
         });
         return attachToolAttempts(result, attempts, TOOL_EXECUTION_FAILED_MESSAGE);
       } catch (error) {
-        const retryable = isRetryableToolError(error);
+        const retryable = NON_RETRYABLE_SIDE_EFFECT_TOOLS.has(name)
+          ? false
+          : isRetryableToolError(error);
         const shouldRetry = retryable && attempt < retryOptions.retries;
         const failure = summarizeToolError(error);
         attempts.push({
@@ -177,11 +188,13 @@ export class ToolExecutor {
           attempts: attempts.length,
           conversationId: metadata.conversationId,
         });
+        const indeterminate = NON_RETRYABLE_SIDE_EFFECT_TOOLS.has(name);
         return attachToolAttempts({
           success: false,
-          code: 'TOOL_EXECUTION_FAILED',
-          message: TOOL_EXECUTION_FAILED_MESSAGE,
-        }, attempts, TOOL_EXECUTION_FAILED_MESSAGE);
+          code: indeterminate ? 'TOOL_RESULT_INDETERMINATE' : 'TOOL_EXECUTION_FAILED',
+          message: indeterminate ? TOOL_RESULT_INDETERMINATE_MESSAGE : TOOL_EXECUTION_FAILED_MESSAGE,
+          retryable: false,
+        }, attempts, indeterminate ? TOOL_RESULT_INDETERMINATE_MESSAGE : TOOL_EXECUTION_FAILED_MESSAGE);
       }
     }
 
