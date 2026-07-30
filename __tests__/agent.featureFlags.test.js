@@ -59,14 +59,15 @@ describe('AgentOrchestrator feature flags', () => {
       },
     });
 
-    await orchestrator.generateResponseUntraced([
-      { role: 'user', content: 'Book the selected tour.' },
-    ], {
+    const metadata = {
       conversationId: 'conversation-1',
       userId: 'user-1',
       role: 'customer',
       authUser: { plan: 'PRO' },
-    });
+    };
+    const response = await orchestrator.generateResponseUntraced([
+      { role: 'user', content: 'Book the selected tour.' },
+    ], metadata);
 
     expect(featureFlagService.isEnabled).toHaveBeenCalledWith({
       flag: FEATURE_FLAGS.AGENT_BOOKING,
@@ -79,6 +80,12 @@ describe('AgentOrchestrator feature flags', () => {
     });
     expect(executor.executePlan).not.toHaveBeenCalled();
     expect(aiClient.streamChatCompletion).not.toHaveBeenCalled();
+    expect(response).toContain('no reservation has been confirmed');
+    expect(metadata).toMatchObject({
+      degradedMode: true,
+      unavailableCapabilities: ['reservation_tool'],
+    });
+    expect(metadata.reservation).toBeUndefined();
   });
 
   it('injects a stable tour recommendation prompt assignment into LLM metadata', async () => {

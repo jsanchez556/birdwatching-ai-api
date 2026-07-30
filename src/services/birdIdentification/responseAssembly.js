@@ -2,6 +2,11 @@ import { BIRD_IDENTIFICATION_VERIFICATION_PROMPT_VERSION } from '../../ai/agents
 import birdIdentificationQueries from '../../db/queries/birdIdentification.queries.js';
 import logger from '../../utils/logger.js';
 import {
+  UNAVAILABLE_CAPABILITIES,
+  getDegradationMetadata,
+  withDegradationMetadata,
+} from '../../utils/degradation.utils.js';
+import {
   calibrateIdentificationResult,
   normalizeConfidence,
 } from './calibration.js';
@@ -184,10 +189,16 @@ export async function assembleBirdIdentificationResponse({
     candidates: calibratedFinal.status === 'identified' ? calibratedFinal.candidates : [],
   });
 
-  return {
+  const degradation = getDegradationMetadata(birdKnowledge);
+  const visibleSummary = degradation.unavailableCapabilities
+    .includes(UNAVAILABLE_CAPABILITIES.RAG_RECOMMENDATIONS)
+    ? `Knowledge-base verification is temporarily unavailable, so this result uses visual analysis only. ${summary}`
+    : summary;
+
+  return withDegradationMetadata({
     status: calibratedFinal.status,
     bestMatch: calibratedFinal.bestMatch,
-    summary,
+    summary: visibleSummary,
     imageAnalysis: imageObservations,
     imageObservations,
     candidates: calibratedFinal.candidates,
@@ -209,5 +220,5 @@ export async function assembleBirdIdentificationResponse({
       })),
       verificationNotes: verifiedResult.notes || [],
     } : undefined,
-  };
+  }, degradation);
 }

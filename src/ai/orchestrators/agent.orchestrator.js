@@ -13,11 +13,15 @@ import {
   normalizeTourRecommendationAssignment,
 } from '../../experiments/tourRecommendation.experiment.js';
 import { getTourRecommendationPrompt } from '../prompts/tourRecommendation.prompt.js';
-import HttpError from '../../utils/httpError.js';
 import { routeModel } from '../routing/modelRouter.js';
 import { classifyTask } from '../routing/taskClassifier.js';
 import reservationIntentExtractor from '../services/reservationIntent.service.js';
 import { executeModelRoute } from '../utils/modelRouteExecution.utils.js';
+import {
+  UNAVAILABLE_CAPABILITIES,
+  classifyCapabilityFailure,
+  markCapabilityUnavailable,
+} from '../../utils/degradation.utils.js';
 
 const BOOKING_TOOLS = new Set([
   'createReservation',
@@ -195,6 +199,39 @@ function buildReservationFailureMessage(toolResults = {}) {
         failedReservation.message ? `Safe failure message: ${failedReservation.message}` : null,
       ].filter(Boolean).join('\n'),
   };
+}
+
+function markReservationDegraded(metadata, error, { record = true } = {}) {
+  delete metadata.reservation;
+  return markCapabilityUnavailable(
+    metadata,
+    UNAVAILABLE_CAPABILITIES.RESERVATION_TOOL,
+    error,
+    {
+      context: {
+        aiTraceId: metadata.aiTraceId,
+        traceId: metadata.agentTraceId,
+      },
+      record,
+    }
+  );
+}
+
+function buildLimitedModelFallback(metadata = {}, toolResults = {}) {
+  const reservationFailed = (toolResults.errors || [])
+    .some((error) => error.tool === 'createReservation');
+
+  if (reservationFailed) {
+    return 'Booking cannot be completed right now, and no reservation has been confirmed. I can still help with the tour details already shown.';
+  }
+  if (Array.isArray(metadata.tours) && metadata.tours.length > 0) {
+    return `I can still show the ${metadata.tours.length} available tour option${metadata.tours.length === 1 ? '' : 's'} returned by the tour search, but personalized AI recommendations are temporarily unavailable.`;
+  }
+  if (metadata.selectedTour || metadata.pricing) {
+    return 'I can still show the verified tour and pricing details already retrieved, but personalized AI guidance is temporarily unavailable.';
+  }
+
+  return null;
 }
 
 function buildKnownBookingContextMessage(metadata = {}) {
@@ -414,31 +451,33 @@ export class AgentOrchestrator {
     const hasBookingSteps = (plan.steps || []).some((step) => BOOKING_TOOLS.has(step.tool));
 
     if (hasBookingSteps) {
-      const temporaryDisable = await this.featureFlags.getTemporaryDisable?.(
-        FEATURE_FLAGS.AGENT_BOOKING
-      );
-      if (temporaryDisable) {
-        throw new HttpError(503, 'AI-assisted booking is temporarily unavailable.', {
-          code: 'FEATURE_TEMPORARILY_DISABLED',
-          expose: true,
-          meta: {
-            feature: FEATURE_FLAGS.AGENT_BOOKING,
-            disabledUntil: temporaryDisable.disabledUntil,
+      let temporaryDisable;
+      let bookingEnabled;
+
+      try {
+        temporaryDisable = await this.featureFlags.getTemporaryDisable?.(
+          FEATURE_FLAGS.AGENT_BOOKING
+        );
+        bookingEnabled = temporaryDisable ? false : await this.featureFlags.isEnabled({
+          flag: FEATURE_FLAGS.AGENT_BOOKING,
+          userId: metadata.userId,
+          anonymousId: metadata.conversationId,
+          personProperties: {
+            plan: metadata.authUser?.plan,
+            role: metadata.role,
           },
         });
+      } catch (error) {
+        if (!classifyCapabilityFailure(error).recoverable) throw error;
+        temporaryDisable = { error };
+        bookingEnabled = false;
       }
-      const bookingEnabled = await this.featureFlags.isEnabled({
-        flag: FEATURE_FLAGS.AGENT_BOOKING,
-        userId: metadata.userId,
-        anonymousId: metadata.conversationId,
-        personProperties: {
-          plan: metadata.authUser?.plan,
-          role: metadata.role,
-        },
-      });
 
       if (!bookingEnabled) {
-        const unavailableMessage = 'AI-assisted booking is temporarily unavailable.';
+        const unavailableMessage = 'Booking is temporarily unavailable, and no reservation has been confirmed. I can still help you discover tours and explain the booking steps.';
+        markReservationDegraded(metadata, temporaryDisable?.error || {
+          code: temporaryDisable ? 'CIRCUIT_OPEN' : 'SERVICE_UNAVAILABLE',
+        });
         metadata.agentPlan = { status: 'booking_feature_unavailable', tools: [] };
         await onChunk(unavailableMessage);
         return unavailableMessage;
@@ -478,6 +517,14 @@ export class AgentOrchestrator {
     });
 
     const toolResults = await this.agent.executor.executePlan(plan, metadata);
+    const failedReservation = (toolResults.errors || [])
+      .find((error) => error.tool === 'createReservation');
+    if (
+      failedReservation
+      && classifyCapabilityFailure(failedReservation).recoverable
+    ) {
+      markReservationDegraded(metadata, failedReservation, { record: false });
+    }
     recordTraceEvent(metadata, 'orchestration_tools_completed', {
       status: plan.status,
       success: toolResults.success,
@@ -562,39 +609,74 @@ export class AgentOrchestrator {
       } : undefined,
     };
 
-    return this.modelRouteExecutor({
-      modelRoute,
-      metadata,
-      onChunk,
-      signal: options.signal,
-      executeAttempt: ({
-        model,
-        signal,
-        timeoutMs,
-        routePosition,
-        attemptRole,
-        sameModelAttempt,
-        attemptContext,
-        onChunk: attemptOnChunk,
-      }) => this.aiClient.streamChatCompletion(finalMessages, {
-        usage,
-        onChunk: attemptOnChunk,
-        model: model.modelId,
-        maxRetries: 0,
-        timeoutMs,
-        attemptContext,
-        metadata: {
-          ...finalGenerationMetadata,
-          modelRouteAttempt: {
-            modelKey: model.key,
-            attemptRole,
-            routePosition,
-            sameModelAttempt,
+    try {
+      const response = await this.modelRouteExecutor({
+        modelRoute,
+        metadata,
+        onChunk,
+        signal: options.signal,
+        executeAttempt: ({
+          model,
+          signal,
+          timeoutMs,
+          routePosition,
+          attemptRole,
+          sameModelAttempt,
+          attemptContext,
+          onChunk: attemptOnChunk,
+        }) => this.aiClient.streamChatCompletion(finalMessages, {
+          usage,
+          onChunk: attemptOnChunk,
+          model: model.modelId,
+          maxRetries: 0,
+          timeoutMs,
+          attemptContext,
+          metadata: {
+            ...finalGenerationMetadata,
+            modelRouteAttempt: {
+              modelKey: model.key,
+              attemptRole,
+              routePosition,
+              sameModelAttempt,
+            },
           },
-        },
-        signal,
-      }),
-    });
+          signal,
+        }),
+      });
+
+      if (metadata.modelRouting?.usedFallback) {
+        markCapabilityUnavailable(
+          metadata,
+          UNAVAILABLE_CAPABILITIES.ADVANCED_MODEL,
+          { code: 'PRIMARY_MODEL_UNAVAILABLE' },
+          {
+            context: {
+              aiTraceId: metadata.aiTraceId,
+              traceId: metadata.agentTraceId,
+            },
+          }
+        );
+      }
+      return response;
+    } catch (error) {
+      if (!classifyCapabilityFailure(error).recoverable) throw error;
+      const limitedFallback = buildLimitedModelFallback(metadata, toolResults);
+      if (!limitedFallback) throw error;
+
+      markCapabilityUnavailable(
+        metadata,
+        UNAVAILABLE_CAPABILITIES.ADVANCED_MODEL,
+        error,
+        {
+          context: {
+            aiTraceId: metadata.aiTraceId,
+            traceId: metadata.agentTraceId,
+          },
+        }
+      );
+      await onChunk(limitedFallback);
+      return limitedFallback;
+    }
   }
 }
 

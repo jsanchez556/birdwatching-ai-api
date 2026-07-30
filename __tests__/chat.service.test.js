@@ -127,6 +127,8 @@ describe('ChatService streaming orchestration', () => {
       conversationId: 'conversation-123',
       response: 'Toucans are common near Sarapiqui.',
       sources: [],
+      degradedMode: false,
+      unavailableCapabilities: [],
       meta: {
         promptVersions: {
           chat: '2.3.0',
@@ -206,6 +208,82 @@ describe('ChatService streaming orchestration', () => {
       signal: undefined,
     });
     expect(result.sources).toEqual(sources);
+  });
+
+  it('returns an explicit truthful fallback when RAG retrieval is unavailable', async () => {
+    const conversationMessages = [
+      { role: 'system', content: 'System prompt' },
+      { role: 'user', content: 'Tell me about quetzals.' },
+    ];
+    const onReplace = jest.fn();
+
+    mockBuildConversationContext.mockResolvedValue(conversationMessages);
+    mockBuildContext.mockResolvedValue({
+      messages: conversationMessages,
+      sources: [],
+      birdMatches: [],
+      degradedMode: true,
+      unavailableCapabilities: ['rag_recommendations'],
+    });
+    mockStreamResponseWithTools.mockResolvedValue('Quetzals live in cloud forest.');
+
+    const result = await chatService.processMessageStream(
+      'Tell me about quetzals.',
+      'conversation-123',
+      '127.0.0.1',
+      { onReplace },
+      { authUser: { id: '7', email: 'ana@example.com', role: 'customer' } }
+    );
+
+    expect(result).toMatchObject({
+      degradedMode: true,
+      unavailableCapabilities: ['rag_recommendations'],
+      sources: [],
+    });
+    expect(result.response).toContain('does not use RAG recommendations');
+    expect(onReplace).toHaveBeenCalledWith(result.response);
+  });
+
+  it('deduplicates and deterministically orders simultaneous capability failures', async () => {
+    const conversationMessages = [
+      { role: 'system', content: 'System prompt' },
+      { role: 'user', content: 'Show tours and book one.' },
+    ];
+
+    mockBuildConversationContext.mockResolvedValue(conversationMessages);
+    mockBuildContext.mockResolvedValue({
+      messages: conversationMessages,
+      sources: [],
+      degradedMode: true,
+      unavailableCapabilities: ['rag_recommendations', 'rag_recommendations'],
+    });
+    mockStreamResponseWithTools.mockImplementation(async (messages, metadata) => {
+      metadata.unavailableCapabilities = [
+        'reservation_tool',
+        'rag_recommendations',
+        'reservation_tool',
+      ];
+      metadata.degradedMode = true;
+      throw Object.assign(new Error('model provider unavailable'), {
+        status: 503,
+        code: 'MODEL_ROUTES_EXHAUSTED',
+      });
+    });
+
+    const result = await chatService.processMessageStream(
+      'Show tours and book one.',
+      'conversation-123',
+      '127.0.0.1',
+      {},
+      { authUser: { id: '7', email: 'ana@example.com', role: 'customer' } }
+    );
+
+    expect(result.unavailableCapabilities).toEqual([
+      'rag_recommendations',
+      'advanced_model',
+      'reservation_tool',
+    ]);
+    expect(result.response).toContain('no reservation has been confirmed');
   });
 
   it('accepts a parent trace ID for voice workflow nesting', async () => {

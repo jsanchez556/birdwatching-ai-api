@@ -442,6 +442,32 @@ describe('birdIdentificationService', () => {
     });
   });
 
+  it('asks for manual bird characteristics when image analysis is unavailable', async () => {
+    mockAnalyze.mockRejectedValue(Object.assign(new Error('private vision provider failure'), {
+      status: 503,
+    }));
+
+    const result = await birdIdentificationService.identifyFromImage({
+      imageUrl: 'https://example.test/bird.jpg',
+      userId: '7',
+      metadata: {
+        aiTraceId: '11111111-1111-4111-8111-111111111111',
+      },
+    });
+
+    expect(result).toMatchObject({
+      status: 'unknown',
+      bestMatch: null,
+      candidates: [],
+      degradedMode: true,
+      unavailableCapabilities: ['image_analysis'],
+    });
+    expect(result.summary).toContain('size, colors, bill shape, behavior, habitat, location, and observation date');
+    expect(result.summary).not.toContain('private vision provider failure');
+    expect(mockIdentify).not.toHaveBeenCalled();
+    expect(mockBuildContext).not.toHaveBeenCalled();
+  });
+
   it('uploads image input before running the existing identification pipeline', async () => {
     mockAnalyze.mockResolvedValue({
       colors: ['yellow', 'brown'],

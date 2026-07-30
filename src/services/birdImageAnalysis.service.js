@@ -176,12 +176,14 @@ class BirdImageAnalysisService {
     try {
       parsed = JSON.parse(rawContent);
     } catch (error) {
-      logger.warn('Image analysis provider returned invalid JSON; using low-confidence fallback', {
+      logger.warn('Image analysis provider returned invalid JSON', {
         event: 'bird_image_analysis_parse_failed',
         model: response.model || model,
         requestId: response.id,
       });
-      parsed = DEFAULT_IMAGE_ANALYSIS;
+      throw new HttpError(502, 'Image analysis provider returned an invalid response.', {
+        code: 'provider_malformed_response',
+      });
     }
 
     const analysis = normalizeBirdImageAnalysis(parsed);

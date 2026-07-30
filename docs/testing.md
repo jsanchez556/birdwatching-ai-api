@@ -190,4 +190,7 @@ real-output gate; the default dashboard artifact remains
 Feature-control tests cover admin authorization, current state, audited and
 idempotent disable/enable and suspend/unsuspend transitions, protected targets,
 UTC expiration, and provider/queue non-execution. Browser errors are asserted
-to use `FEATURE_TEMPORARILY_DISABLED` without stacks or provider details.
+to use `FEATURE_TEMPORARILY_DISABLED` without stacks or provider details for
+voice and bird-identification gates. Disabled booking chat is asserted to skip
+reservation tools and final model generation, report `reservation_tool`
+degradation, and omit confirmation metadata.

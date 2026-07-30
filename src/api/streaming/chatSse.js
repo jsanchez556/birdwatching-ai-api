@@ -18,5 +18,7 @@ export function sendChatStreamCompletion(res, result) {
     response: result.response,
     sources: result.sources || [],
     meta: result.meta || {},
+    degradedMode: result.degradedMode === true,
+    unavailableCapabilities: result.unavailableCapabilities || [],
   });
 }

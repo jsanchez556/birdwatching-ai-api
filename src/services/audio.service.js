@@ -1,7 +1,6 @@
 import speechToText from '../ai/audio/speechToText.adapter.js';
 import textToSpeech from '../ai/audio/textToSpeech.adapter.js';
 import HttpError from '../utils/httpError.js';
-import logger from '../utils/logger.js';
 import { estimateCost } from '../ai/telemetry/tokenUsage.js';
 import usageService, { USAGE_FEATURES, buildModelUsageEntry } from './usage.service.js';
 
@@ -67,13 +66,6 @@ class AudioService {
         transcript: result.transcript,
       };
     } catch (error) {
-      logger.warn('Audio transcription failed', {
-        event: 'audio_transcription_failed',
-        code: error?.code,
-        status: error?.status,
-        name: error?.name,
-      });
-
       throw toProviderError(error);
     }
   }
@@ -111,13 +103,6 @@ class AudioService {
 
       return result;
     } catch (error) {
-      logger.warn('Audio speech generation failed', {
-        event: 'audio_speech_generation_failed',
-        code: error?.code,
-        status: error?.status,
-        name: error?.name,
-      });
-
       throw toProviderError(error, 'speech');
     }
   }

@@ -19,6 +19,8 @@ class VoiceChatController {
       transcript: result.transcript,
       answer: result.answer,
       audioResponseUrl: result.audioResponseUrl,
+      degradedMode: result.degradedMode,
+      unavailableCapabilities: result.unavailableCapabilities,
     }, {
       conversationId: result.conversationId,
       aiTraceId: req.aiTraceId,

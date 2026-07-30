@@ -2172,6 +2172,10 @@ describe('multi-tool agent planning and orchestration', () => {
     ], metadata);
 
     expect(metadata.reservation).toBeUndefined();
+    expect(metadata).toMatchObject({
+      degradedMode: true,
+      unavailableCapabilities: ['reservation_tool'],
+    });
     expect(aiClient.streamChatCompletion).toHaveBeenCalledWith(
       expect.arrayContaining([
         expect.objectContaining({
@@ -2281,14 +2285,20 @@ describe('multi-tool agent planning and orchestration', () => {
       intentExtractor: createValidIntentExtractor('search'),
     });
 
+    const metadata = {
+      conversationId: 'conversation-123',
+    };
+
     await expect(orchestrator.generateResponse([
       { role: 'system', content: 'System prompt' },
       { role: 'user', content: 'Find tours in Monteverde' },
-    ], {
-      conversationId: 'conversation-123',
-    })).resolves.toBe('Fallback answer from the same tool results.');
+    ], metadata)).resolves.toBe('Fallback answer from the same tool results.');
 
     expect(executor.executePlan).toHaveBeenCalledTimes(1);
+    expect(metadata).toMatchObject({
+      degradedMode: true,
+      unavailableCapabilities: ['advanced_model'],
+    });
     expect(aiClient.streamChatCompletion).toHaveBeenCalledTimes(2);
     const primaryMessages = aiClient.streamChatCompletion.mock.calls[0][0];
     const fallbackMessages = aiClient.streamChatCompletion.mock.calls[1][0];
@@ -2322,6 +2332,75 @@ describe('multi-tool agent planning and orchestration', () => {
         },
       }),
     ]);
+  });
+
+  it('uses verified tour results when every model route is unavailable', async () => {
+    const planner = {
+      plan: jest.fn().mockReturnValue({
+        status: 'ready',
+        steps: [{ tool: 'searchTours', args: { location: 'Monteverde' } }],
+      }),
+    };
+    const executor = {
+      executePlan: jest.fn().mockImplementation(async (plan, metadata) => {
+        metadata.tours = [{ tourId: 1, name: 'Quetzal Tour', location: 'Monteverde' }];
+        return {
+          success: true,
+          steps: [{
+            tool: 'searchTours',
+            result: { success: true, tours: metadata.tours },
+          }],
+          errors: [],
+        };
+      }),
+    };
+    const routeError = Object.assign(new Error('routes exhausted'), {
+      status: 503,
+      code: 'MODEL_ROUTES_EXHAUSTED',
+    });
+    const modelRouteExecutor = jest.fn().mockRejectedValue(routeError);
+    const onChunk = jest.fn();
+    const metadata = { conversationId: 'conversation-123' };
+    const orchestrator = new AgentOrchestrator({
+      agent: { planner, executor },
+      modelRouteExecutor,
+      intentExtractor: createValidIntentExtractor('search'),
+    });
+
+    const response = await orchestrator.generateResponse([
+      { role: 'system', content: 'System prompt' },
+      { role: 'user', content: 'Find tours in Monteverde' },
+    ], metadata, { onChunk });
+
+    expect(response).toContain('1 available tour option');
+    expect(response).toContain('personalized AI recommendations are temporarily unavailable');
+    expect(metadata).toMatchObject({
+      degradedMode: true,
+      unavailableCapabilities: ['advanced_model'],
+    });
+    expect(executor.executePlan).toHaveBeenCalledTimes(1);
+    expect(onChunk).toHaveBeenCalledWith(response);
+  });
+
+  it('retains the normal model error when no truthful useful fallback exists', async () => {
+    const routeError = Object.assign(new Error('routes exhausted'), {
+      status: 503,
+      code: 'MODEL_ROUTES_EXHAUSTED',
+    });
+    const orchestrator = new AgentOrchestrator({
+      agent: {
+        planner: { plan: jest.fn().mockReturnValue({ status: 'ready', steps: [] }) },
+        executor: { executePlan: jest.fn().mockResolvedValue({ success: true, steps: [], errors: [] }) },
+      },
+      modelRouteExecutor: jest.fn().mockRejectedValue(routeError),
+    });
+
+    await expect(orchestrator.generateResponse([
+      { role: 'system', content: 'System prompt' },
+      { role: 'user', content: 'Hello' },
+    ], {
+      conversationId: 'conversation-123',
+    })).rejects.toBe(routeError);
   });
 
   it('logs orchestration phases and appends orchestration trace events', async () => {

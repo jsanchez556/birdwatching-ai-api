@@ -154,6 +154,21 @@ describe('birdImageAnalysisService', () => {
     })).toThrow('Image analysis provider returned an invalid response.');
   });
 
+  it('rejects invalid provider JSON instead of fabricating visual observations', async () => {
+    mockCreate.mockResolvedValue({
+      id: 'vision-invalid',
+      model: 'gpt-4o',
+      choices: [{ message: { content: '{not-json' } }],
+    });
+
+    await expect(birdImageAnalysisService.analyze({
+      imageUrl: 'https://example.test/quetzal.jpg',
+    })).rejects.toMatchObject({
+      status: 502,
+      code: 'provider_malformed_response',
+    });
+  });
+
   it('normalizes image analysis traits without exceeding the schema limits', () => {
     expect(normalizeBirdImageAnalysis({
       colors: [' green ', ' red ', ' gold '],

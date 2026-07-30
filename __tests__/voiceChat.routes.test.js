@@ -263,7 +263,7 @@ describe('voice chat endpoint', () => {
     });
   });
 
-  it('handles empty transcription safely', async () => {
+  it('asks the user to type when transcription returns no usable text', async () => {
     mockTranscribe.mockResolvedValue({ transcript: '' });
 
     const res = await request(app)
@@ -272,15 +272,39 @@ describe('voice chat endpoint', () => {
       .set('X-Filename', 'question.mp3')
       .send(Buffer.from('mp3 question'));
 
-    expect(res.statusCode).toBe(502);
+    expect(res.statusCode).toBe(200);
     expect(mockProcessMessageStream).not.toHaveBeenCalled();
     expect(res.body).toMatchObject({
-      success: false,
-      error: {
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Internal server error',
+      success: true,
+      data: {
+        transcript: null,
+        answer: expect.stringContaining('Please type your request'),
+        audioResponseUrl: null,
+        degradedMode: true,
+        unavailableCapabilities: ['voice_service'],
       },
     });
+  });
+
+  it('asks the user to type when the transcription provider is unavailable', async () => {
+    mockTranscribe.mockRejectedValue(Object.assign(new Error('private provider outage'), {
+      status: 503,
+    }));
+
+    const res = await request(app)
+      .post('/voice-chat')
+      .set('Content-Type', 'audio/mpeg')
+      .set('X-Filename', 'question.mp3')
+      .send(Buffer.from('mp3 question'));
+
+    expect(res.statusCode).toBe(200);
+    expect(mockProcessMessageStream).not.toHaveBeenCalled();
+    expect(res.body.data).toMatchObject({
+      answer: expect.stringContaining('Please type your request'),
+      degradedMode: true,
+      unavailableCapabilities: ['voice_service'],
+    });
+    expect(JSON.stringify(res.body)).not.toContain('private provider outage');
   });
 
   it('does not generate speech when chat fails', async () => {
@@ -298,8 +322,11 @@ describe('voice chat endpoint', () => {
     expect(JSON.stringify(res.body)).not.toContain('private internals');
   });
 
-  it('handles text-to-speech failures safely', async () => {
-    mockSynthesizeSpeech.mockRejectedValue(new Error('tts failed with provider details'));
+  it('returns the text answer when text-to-speech fails', async () => {
+    mockSynthesizeSpeech.mockRejectedValue(Object.assign(
+      new Error('tts failed with provider details'),
+      { status: 503 }
+    ));
 
     const res = await request(app)
       .post('/voice-chat')
@@ -307,8 +334,14 @@ describe('voice chat endpoint', () => {
       .set('X-Filename', 'question.mp3')
       .send(Buffer.from('mp3 question'));
 
-    expect(res.statusCode).toBe(500);
+    expect(res.statusCode).toBe(200);
     expect(mockUploadSpeechResponse).not.toHaveBeenCalled();
     expect(JSON.stringify(res.body)).not.toContain('provider details');
+    expect(res.body.data).toMatchObject({
+      answer: expect.stringContaining('Audio playback is temporarily unavailable'),
+      audioResponseUrl: null,
+      degradedMode: true,
+      unavailableCapabilities: ['voice_service'],
+    });
   });
 });

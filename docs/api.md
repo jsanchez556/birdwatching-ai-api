@@ -31,6 +31,25 @@ Errors use:
 }
 ```
 
+Successful AI responses also expose the degradation fields in their response
+data:
+
+```json
+{
+  "degradedMode": false,
+  "unavailableCapabilities": []
+}
+```
+
+When an optional capability fails but a truthful useful fallback completes,
+`degradedMode` is `true` and `unavailableCapabilities` contains deterministic,
+deduplicated identifiers. The supported identifiers and fallback policies are
+documented in [Graceful Degradation](./graceful-degradation.md). Streamed
+`POST /chat` responses place these fields in the final `done` event. A
+successful degraded response never implies that retrieval, analysis, speech,
+or booking succeeded; requests without a meaningful fallback keep the normal
+error contract.
+
 ## Admin Operations
 
 All `/admin/*` endpoints require a valid JWT bearer token with the server-issued
@@ -1550,6 +1569,9 @@ Request protection includes:
 - `GET /features/availability` is the safe public availability projection.
 
 Enable and unsuspend are idempotent; admin/self protection remains enforced.
-Temporarily disabled requests return the safe
+Temporarily disabled voice and bird-identification requests return the safe
 `FEATURE_TEMPORARILY_DISABLED` code, feature-specific message, and UTC
-expiration (HTTP `503` except where streaming transport has already begun).
+expiration with HTTP `503`. A disabled booking capability is handled inside
+chat orchestration: reservation tools and final model generation are skipped,
+the successful limited response reports `reservation_tool`, and no reservation
+or confirmation metadata is returned.

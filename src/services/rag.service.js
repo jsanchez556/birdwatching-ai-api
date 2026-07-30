@@ -21,6 +21,11 @@ import {
   mergeRetrievedDocuments,
   normalizeBirdMatch,
 } from './rag/retrievalFiltering.js';
+import {
+  UNAVAILABLE_CAPABILITIES,
+  classifyCapabilityFailure,
+  markCapabilityUnavailable,
+} from '../utils/degradation.utils.js';
 
 const DEFAULT_TOP_K = 3;
 const DEFAULT_BIRD_MATCH_CANDIDATE_LIMIT = 8;
@@ -288,28 +293,35 @@ class RagService {
         ragTrace,
       };
     } catch (error) {
+      const degradation = {};
+      const classification = classifyCapabilityFailure(error).classification;
       aiTelemetry.recordAiError('retrieval_failed', {
+        capability: UNAVAILABLE_CAPABILITIES.RAG_RECOMMENDATIONS,
+        classification,
         conversationId: metadata.conversationId,
         userId: metadata.userId,
         aiTraceId: metadata.aiTraceId,
         queryLength: question?.length || 0,
         topK: metadata.topK || DEFAULT_TOP_K,
-        error: {
-          name: error.name,
-          code: error.code,
-          status: error.status,
-          message: error.message,
-        },
       });
-      this.logger.warn('Failed to retrieve RAG context; continuing without it', {
-        conversationId: metadata.conversationId,
-        error: error.message,
-      });
+      markCapabilityUnavailable(
+        degradation,
+        UNAVAILABLE_CAPABILITIES.RAG_RECOMMENDATIONS,
+        error,
+        {
+          context: {
+            aiTraceId: metadata.aiTraceId,
+            traceId: metadata.parentTraceId,
+          },
+          record: false,
+        }
+      );
 
       return {
         messages,
         sources: [],
         birdMatches: [],
+        ...degradation,
         ragTrace: {
           retrievedChunkCount: 0,
           sourceCount: 0,

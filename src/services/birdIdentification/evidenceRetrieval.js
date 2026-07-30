@@ -1,6 +1,9 @@
 import ragService from '../rag.service.js';
 import { traceBirdIdentificationRagRetrieval } from '../../tracing/aiTracing.middleware.js';
-import logger from '../../utils/logger.js';
+import {
+  UNAVAILABLE_CAPABILITIES,
+  markCapabilityUnavailable,
+} from '../../utils/degradation.utils.js';
 
 const MAX_BIRD_CANDIDATES = 5;
 
@@ -166,18 +169,27 @@ async function retrieveUntraced({ query, metadata }) {
       sources: context.sources,
       birdMatches: context.birdMatches,
       ragTrace: context.ragTrace,
+      degradedMode: context.degradedMode === true,
+      unavailableCapabilities: context.unavailableCapabilities || [],
     };
   } catch (error) {
-    logger.warn('Failed to enrich bird identification with RAG; continuing without it', {
-      event: 'bird_identification_rag_failed',
-      errorName: error.name,
-      errorCode: error.code,
-      status: error.status,
-    });
+    const degradation = {};
+    markCapabilityUnavailable(
+      degradation,
+      UNAVAILABLE_CAPABILITIES.RAG_RECOMMENDATIONS,
+      error,
+      {
+        context: {
+          aiTraceId: metadata.aiTraceId,
+          traceId: metadata.parentTraceId,
+        },
+      }
+    );
     return {
       query,
       sources: [],
       birdMatches: [],
+      ...degradation,
       ragTrace: {
         retrievedChunkCount: 0,
         sourceCount: 0,

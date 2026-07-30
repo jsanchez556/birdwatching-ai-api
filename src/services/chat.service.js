@@ -20,6 +20,13 @@ import { FIELD_ASSISTANT_RESPONSE_MODE } from '../ai/prompts/system.prompt.js';
 import analytics from '../analytics/analytics.service.js';
 import { ANALYTICS_EVENTS } from '../analytics/events.js';
 import { buildTourRecommendation } from '../ai/services/tourRecommendation.service.js';
+import {
+  UNAVAILABLE_CAPABILITIES,
+  classifyCapabilityFailure,
+  getDegradationMetadata,
+  markCapabilityUnavailable,
+  withDegradationMetadata,
+} from '../utils/degradation.utils.js';
 
 const STREAM_GUARDRAIL_BUFFER_CHARS = 48;
 const VISITOR_ROLE = 'visitor';
@@ -183,6 +190,46 @@ function buildToolMeta(metadata = {}) {
   };
 }
 
+function buildDegradationNotice(capabilities = []) {
+  const notices = [];
+
+  if (capabilities.includes(UNAVAILABLE_CAPABILITIES.RAG_RECOMMENDATIONS)) {
+    notices.push('Personalized knowledge retrieval is temporarily unavailable, so this answer does not use RAG recommendations.');
+  }
+  if (capabilities.includes(UNAVAILABLE_CAPABILITIES.ADVANCED_MODEL)) {
+    notices.push('Advanced AI generation is temporarily unavailable, so I’m using a limited fallback.');
+  }
+  if (capabilities.includes(UNAVAILABLE_CAPABILITIES.RESERVATION_TOOL)) {
+    notices.push('Booking is temporarily unavailable, and no reservation has been confirmed.');
+  }
+
+  return notices.join(' ');
+}
+
+function buildRagFallbackResponse(metadata = {}) {
+  if (metadata.reservation) {
+    return 'Your reservation was completed using verified booking data. Personalized knowledge retrieval was not available for this request.';
+  }
+  if (Array.isArray(metadata.tours) && metadata.tours.length > 0) {
+    return `I can still show the ${metadata.tours.length} verified tour option${metadata.tours.length === 1 ? '' : 's'} returned by the tour search, but I cannot provide RAG-based personalization right now.`;
+  }
+  if (metadata.selectedTour || metadata.pricing) {
+    return 'I can still show the verified tour and pricing details already retrieved, but I cannot provide RAG-based personalization right now.';
+  }
+
+  return 'Knowledge retrieval is temporarily unavailable, so I cannot provide a grounded bird answer or personalized recommendation right now. Please try again later, or ask me to search the available tour catalog.';
+}
+
+function applyDegradationNotice(response, degradation, metadata = {}) {
+  if (!degradation.degradedMode) return response;
+  const notice = buildDegradationNotice(degradation.unavailableCapabilities);
+  const safeResponse = degradation.unavailableCapabilities
+    .includes(UNAVAILABLE_CAPABILITIES.RAG_RECOMMENDATIONS)
+    ? buildRagFallbackResponse(metadata)
+    : response;
+  return notice ? `${notice}\n\n${safeResponse}` : safeResponse;
+}
+
 function buildConversationMeta(metadata = {}) {
   const recentMetadata = metadata.conversationContext?.recentAssistantMetadata || {};
 
@@ -304,6 +351,8 @@ class ChatService {
         response: inputGuardrail.response,
         sources: [],
         meta: buildPromptMeta(),
+        degradedMode: false,
+        unavailableCapabilities: [],
       };
     }
 
@@ -359,6 +408,7 @@ class ChatService {
       ...(customerContext ? { customerContext } : {}),
       ...(options.conversationContext ? { conversationContext: options.conversationContext } : {}),
       ...(ragContext.ragTrace ? { ragTrace: ragContext.ragTrace } : {}),
+      ...getDegradationMetadata(ragContext),
       ...(parentTraceId ? { parentTraceId } : {}),
       aiTraceId: options.aiTraceId || parentTraceId,
     };
@@ -384,28 +434,47 @@ class ChatService {
       throwIfAborted(signal);
       await guardedEmitter.flush();
     } catch (error) {
-      if (!(error instanceof StreamingGuardrailBlockedError)) {
+      const ragUnavailable = getDegradationMetadata(ragContext)
+        .unavailableCapabilities.includes(UNAVAILABLE_CAPABILITIES.RAG_RECOMMENDATIONS);
+      if (
+        !(error instanceof StreamingGuardrailBlockedError)
+        && ragUnavailable
+        && classifyCapabilityFailure(error).recoverable
+      ) {
+        markCapabilityUnavailable(
+          openAiMetadata,
+          UNAVAILABLE_CAPABILITIES.ADVANCED_MODEL,
+          error,
+          {
+            context: {
+              aiTraceId: options.aiTraceId || parentTraceId,
+              traceId: parentTraceId,
+            },
+          }
+        );
+        response = buildRagFallbackResponse(openAiMetadata);
+      } else if (!(error instanceof StreamingGuardrailBlockedError)) {
         throw error;
+      } else {
+        const replacement = error.guardrail.response;
+        aiTelemetry.recordAiError('hallucination_event', {
+          conversationId: activeConversationId,
+          userId,
+          aiTraceId: options.aiTraceId || parentTraceId,
+          code: error.guardrail.code,
+          reason: error.guardrail.reason,
+          stage: 'streaming_output_guardrail',
+        });
+        aiTelemetry.recordAiError('invalid_output', {
+          conversationId: activeConversationId,
+          userId,
+          aiTraceId: options.aiTraceId || parentTraceId,
+          code: error.guardrail.code,
+          stage: 'streaming_output_guardrail',
+        });
+        events.onReplace?.(replacement);
+        response = replacement;
       }
-
-      const replacement = error.guardrail.response;
-      aiTelemetry.recordAiError('hallucination_event', {
-        conversationId: activeConversationId,
-        userId,
-        aiTraceId: options.aiTraceId || parentTraceId,
-        code: error.guardrail.code,
-        reason: error.guardrail.reason,
-        stage: 'streaming_output_guardrail',
-      });
-      aiTelemetry.recordAiError('invalid_output', {
-        conversationId: activeConversationId,
-        userId,
-        aiTraceId: options.aiTraceId || parentTraceId,
-        code: error.guardrail.code,
-        stage: 'streaming_output_guardrail',
-      });
-      events.onReplace?.(replacement);
-      response = replacement;
     }
 
     const outputGuardrail = applyChatOutputGuardrails(response);
@@ -438,7 +507,15 @@ class ChatService {
       }
     }
 
-    const finalResponse = outputGuardrail.response;
+    const degradation = getDegradationMetadata(ragContext, openAiMetadata);
+    const finalResponse = applyDegradationNotice(
+      outputGuardrail.response,
+      degradation,
+      openAiMetadata
+    );
+    if (finalResponse !== outputGuardrail.response) {
+      events.onReplace?.(finalResponse);
+    }
     throwIfAborted(signal);
     if (openAiMetadata.tourRecommendationRequested && Array.isArray(openAiMetadata.tours)) {
       openAiMetadata.tourRecommendation = buildTourRecommendation({
@@ -484,7 +561,7 @@ class ChatService {
       },
     });
 
-    return {
+    return withDegradationMetadata({
       conversationId: activeConversationId,
       response: finalResponse,
       sources: ragContext.sources,
@@ -494,7 +571,7 @@ class ChatService {
           ? { birdMatches: ragContext.birdMatches }
           : {}),
       }, conversationMeta),
-    };
+    }, degradation);
   }
 
   createGuardedEmitter({ conversationId, emitChunk }) {
@@ -556,5 +633,8 @@ export {
   mergeAuthenticatedCustomerContext,
   normalizeResponseMode,
   resolveChatSource,
+  applyDegradationNotice,
+  buildDegradationNotice,
+  buildRagFallbackResponse,
 };
 export default new ChatService();

@@ -41,10 +41,38 @@ import {
   normalizeUserId,
   recordBirdIdentificationHistory,
 } from './birdIdentification/responseAssembly.js';
+import {
+  UNAVAILABLE_CAPABILITIES,
+  classifyCapabilityFailure,
+  markCapabilityUnavailable,
+  withDegradationMetadata,
+} from '../utils/degradation.utils.js';
 
 const BIRD_IDENTIFICATION_MODEL = routeModel({
   task: 'bird_image_analysis',
 }).primaryModel.modelId;
+const MANUAL_IDENTIFICATION_REQUEST =
+  'Image analysis is temporarily unavailable. I cannot identify the bird from the image right now. Please provide its size, colors, bill shape, behavior, habitat, location, and observation date.';
+
+function buildManualIdentificationFallback(degradation) {
+  return withDegradationMetadata({
+    status: 'unknown',
+    bestMatch: null,
+    summary: MANUAL_IDENTIFICATION_REQUEST,
+    imageAnalysis: null,
+    imageObservations: null,
+    candidates: [],
+    notes: [MANUAL_IDENTIFICATION_REQUEST],
+    promptVersions: {},
+    ragTrace: {
+      retrievedChunkCount: 0,
+      sourceCount: 0,
+      originalMessageCount: 0,
+      groundedMessageCount: 0,
+      contextMessageLength: 0,
+    },
+  }, degradation);
+}
 
 function addIdentificationUsage(metadata = {}, response) {
   if (!metadata || typeof metadata !== 'object') {
@@ -260,10 +288,29 @@ class BirdIdentificationService {
   async identifyFromImageUntraced({ imageUrl, metadata = {}, userId }) {
     await traceImageInputBoundary({ imageUrl, metadata, userId });
 
-    const imageAnalysis = await birdImageAnalysisService.analyze({
-      imageUrl,
-      metadata,
-    });
+    let imageAnalysis;
+
+    try {
+      imageAnalysis = await birdImageAnalysisService.analyze({
+        imageUrl,
+        metadata,
+      });
+    } catch (error) {
+      if (!classifyCapabilityFailure(error).recoverable) throw error;
+      const degradation = {};
+      markCapabilityUnavailable(
+        degradation,
+        UNAVAILABLE_CAPABILITIES.IMAGE_ANALYSIS,
+        error,
+        {
+          context: {
+            aiTraceId: metadata.aiTraceId,
+            traceId: metadata.parentTraceId,
+          },
+        }
+      );
+      return buildManualIdentificationFallback(degradation);
+    }
     const identificationImageAnalysis = buildIdentificationImageAnalysis(imageAnalysis);
     const identification = await this.identify({
       imageAnalysis: identificationImageAnalysis,
@@ -332,5 +379,7 @@ export {
   normalizeRagTrace,
   normalizeUserId,
   recordBirdIdentificationHistory,
+  MANUAL_IDENTIFICATION_REQUEST,
+  buildManualIdentificationFallback,
 };
 export default new BirdIdentificationService();

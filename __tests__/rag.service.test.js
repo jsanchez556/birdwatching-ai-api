@@ -426,26 +426,28 @@ describe('RagService', () => {
 
     mockRetrieve.mockRejectedValue(new Error('PostgreSQL unavailable'));
 
-    await expect(ragService.buildContext(messages, 'Where can I see quetzals?'))
-      .resolves.toMatchObject({
-        messages,
-        sources: [],
-        birdMatches: [],
-        ragTrace: {
-          retrievedChunkCount: 0,
-          sourceCount: 0,
-          groundedMessageCount: 2,
-          error: 'rag_retrieval_failed',
-        },
-      });
+    const result = await ragService.buildContext(messages, 'Where can I see quetzals?');
+    expect(result).toMatchObject({
+      messages,
+      sources: [],
+      birdMatches: [],
+      ragTrace: {
+        retrievedChunkCount: 0,
+        sourceCount: 0,
+        groundedMessageCount: 2,
+        error: 'rag_retrieval_failed',
+      },
+    });
     expect(logger.warn).toHaveBeenCalledWith('AI error monitored', expect.objectContaining({
       event: 'retrieval_failed',
       queryLength: 'Where can I see quetzals?'.length,
-      error: expect.objectContaining({
-        name: 'Error',
-        message: '[redacted]',
-      }),
+      capability: 'rag_recommendations',
+      classification: 'provider_unavailable',
     }));
+    expect(result).toMatchObject({
+      degradedMode: true,
+      unavailableCapabilities: ['rag_recommendations'],
+    });
   });
 
   it('returns original messages when pgvector has no matching documents', async () => {

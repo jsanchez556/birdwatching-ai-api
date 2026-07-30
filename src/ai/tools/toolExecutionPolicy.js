@@ -1,4 +1,5 @@
 import aiTelemetry from '../../monitoring/aiTelemetry.js';
+import { UNAVAILABLE_CAPABILITIES } from '../../utils/degradation.utils.js';
 
 const REDACTED = '[redacted]';
 const SENSITIVE_KEY_PATTERN = /(password|secret|token|apiKey|authorization|databaseUrl|customerEmail|customerName|email|phone)/i;
@@ -71,6 +72,9 @@ export function monitorToolFailure(toolName, metadata = {}, failure = {}, detail
     || /timeout|timed out/i.test(failure.message || '');
   aiTelemetry.recordAiError(timeout ? 'tool_timeout' : 'tool_failed', {
     toolName,
+    ...(toolName === 'createReservation'
+      ? { capability: UNAVAILABLE_CAPABILITIES.RESERVATION_TOOL }
+      : {}),
     conversationId: metadata.conversationId,
     userId: metadata.userId,
     aiTraceId: metadata.aiTraceId,

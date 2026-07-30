@@ -4,6 +4,15 @@ import voiceChatAudioStorage from './voiceChatAudioStorage.service.js';
 import { withAiTrace } from '../tracing/aiTracing.middleware.js';
 import HttpError from '../utils/httpError.js';
 import logger from '../utils/logger.js';
+import {
+  UNAVAILABLE_CAPABILITIES,
+  classifyCapabilityFailure,
+  markCapabilityUnavailable,
+  withDegradationMetadata,
+} from '../utils/degradation.utils.js';
+
+const TYPE_REQUEST_FALLBACK =
+  'Voice transcription is temporarily unavailable. Please type your request so I can continue through text chat.';
 
 function assertNonEmptyText(value, message, code) {
   if (typeof value !== 'string' || !value.trim()) {
@@ -35,15 +44,39 @@ class VoiceChatService {
         hasAudioResponseUrl: Boolean(result.audioResponseUrl),
       }),
     }, async (trace) => {
-      const { transcript } = await audioService.transcribe(audioUpload, {
-        parentTraceId: trace.id,
-        userId: context.authUser?.id,
-      });
-      const normalizedTranscript = assertNonEmptyText(
-        transcript,
-        'Speech transcription returned no usable text.',
-        'EMPTY_TRANSCRIPT'
-      );
+      let normalizedTranscript;
+
+      try {
+        const { transcript } = await audioService.transcribe(audioUpload, {
+          parentTraceId: trace.id,
+          userId: context.authUser?.id,
+        });
+        normalizedTranscript = assertNonEmptyText(
+          transcript,
+          'Speech transcription returned no usable text.',
+          'EMPTY_TRANSCRIPT'
+        );
+      } catch (error) {
+        if (!classifyCapabilityFailure(error).recoverable) throw error;
+        const degradation = {};
+        markCapabilityUnavailable(
+          degradation,
+          UNAVAILABLE_CAPABILITIES.VOICE_SERVICE,
+          error,
+          {
+            context: {
+              aiTraceId: context.aiTraceId,
+              traceId: trace.id,
+            },
+          }
+        );
+        return withDegradationMetadata({
+          transcript: null,
+          answer: TYPE_REQUEST_FALLBACK,
+          audioResponseUrl: null,
+          conversationId: context.conversationId || null,
+        }, degradation);
+      }
 
       const chatResult = await chatService.processMessageStream(
         normalizedTranscript,
@@ -71,11 +104,36 @@ class VoiceChatService {
         'Chat response returned no usable text.',
         'EMPTY_CHAT_RESPONSE'
       );
-      const speech = await audioService.synthesizeSpeech({ text: answer }, {
-        parentTraceId: trace.id,
-        userId: context.authUser?.id,
-      });
-      const storedAudio = await voiceChatAudioStorage.uploadSpeechResponse(speech);
+      let speech;
+      let storedAudio;
+
+      try {
+        speech = await audioService.synthesizeSpeech({ text: answer }, {
+          parentTraceId: trace.id,
+          userId: context.authUser?.id,
+        });
+        storedAudio = await voiceChatAudioStorage.uploadSpeechResponse(speech);
+      } catch (error) {
+        if (!classifyCapabilityFailure(error).recoverable) throw error;
+        const degradation = {};
+        markCapabilityUnavailable(
+          degradation,
+          UNAVAILABLE_CAPABILITIES.VOICE_SERVICE,
+          error,
+          {
+            context: {
+              aiTraceId: context.aiTraceId,
+              traceId: trace.id,
+            },
+          }
+        );
+        return withDegradationMetadata({
+          transcript: normalizedTranscript,
+          answer: `${answer}\n\nAudio playback is temporarily unavailable, but the text response is complete.`,
+          audioResponseUrl: null,
+          conversationId: chatResult.conversationId,
+        }, chatResult, degradation);
+      }
 
       logger.info('Voice chat completed', {
         event: 'voice_chat_completed',
@@ -85,15 +143,15 @@ class VoiceChatService {
         audioBytes: speech.audio.length,
       });
 
-      return {
+      return withDegradationMetadata({
         transcript: normalizedTranscript,
         answer,
         audioResponseUrl: storedAudio.audioResponseUrl,
         conversationId: chatResult.conversationId,
-      };
+      }, chatResult);
     });
   }
 }
 
-export { assertNonEmptyText };
+export { TYPE_REQUEST_FALLBACK, assertNonEmptyText };
 export default new VoiceChatService();

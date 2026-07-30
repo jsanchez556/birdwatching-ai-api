@@ -15,7 +15,7 @@ product behavior when PostHog is disabled or unavailable.
 | `voice_ai` | Boolean | Enabled | Gates `POST /voice-chat` |
 | `advanced_rag` | Multivariate | `current_retrieval` | Selects `current_retrieval` or `new_retrieval`; the new profile expands candidates and adjusts hybrid ranking |
 | `multimodal_bird_identification` | Boolean | Enabled | Gates both bird-identification endpoints |
-| `agent_booking` | Boolean | Enabled | Prevents reservation-related agent tools from executing |
+| `agent_booking` | Boolean | Enabled | Prevents reservation tools from executing and returns truthful `reservation_tool` degradation metadata without confirmation state |
 | `tour_recommendation_prompt` | Multivariate | `recommendation_prompt_v1` | Assigns the tour recommendation response prompt; the first assignment is persisted per user |
 
 Authenticated checks use the stable user ID plus safe `plan` and `role`

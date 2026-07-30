@@ -37,6 +37,7 @@ This repository is a Node.js backend for Costa Rica birdwatching assistance, spl
 - Backend implementation rules: [docs/backend-guidelines.md](./docs/backend-guidelines.md)
 - Testing, AI evaluations, and CI gates: [docs/testing.md](./docs/testing.md)
 - Model registry, routing policies, and admin preview: [docs/model-routing.md](./docs/model-routing.md)
+- Optional capability fallbacks and response metadata: [docs/graceful-degradation.md](./docs/graceful-degradation.md)
 
 ## Current Architecture
 The app uses a controller-service-query split:
@@ -213,5 +214,7 @@ suspensions idempotently; every mutation is recorded in `admin_audit_logs`.
 `GET /features/availability` is the public state projection. Voice and bird
 checks run before uploads, providers, or queues. A disabled booking feature
 stops reservation tools and the final model call without disabling unrelated
-chat. Active shutdowns use `FEATURE_TEMPORARILY_DISABLED` and an ISO UTC
-`disabledUntil`, never provider details.
+chat; the chat response truthfully reports `reservation_tool` degradation and
+never returns confirmation metadata. Voice and bird endpoint shutdowns use
+`FEATURE_TEMPORARILY_DISABLED` and an ISO UTC `disabledUntil`, never provider
+details.
