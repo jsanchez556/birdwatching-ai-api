@@ -12,7 +12,10 @@ import {
 } from '../compaction/toolResultCompactor.js';
 import longTermMemory from '../memory/longTermMemory.js';
 import { MemoryRetriever } from '../memory/memoryRetriever.js';
-import { resolveMemoryConflicts } from '../memory/memoryConflictResolver.js';
+import {
+  buildMemoryClarificationInstruction,
+  resolveMemoryConflicts,
+} from '../memory/memoryConflictResolver.js';
 import { createContextBudget, estimateTokens } from './contextBudget.js';
 import { buildContextMetrics } from './contextMetrics.js';
 import { createProvenance } from './contextProvenance.js';
@@ -50,6 +53,8 @@ const SYSTEM_DATA_MARKERS = Object.freeze([
  * @property {Array<Object>} [toolResults]
  * @property {Object} [applicationState]
  * @property {AbortSignal} [signal]
+ * @property {string} [parentTraceId]
+ * @property {Array<number>} [excludedMemoryIds]
  *
  * @typedef {Object} ContextItem
  * @property {string} id
@@ -380,6 +385,8 @@ class ContextBuilder {
           userId: input.userId,
           query: input.userMessage,
           signal: input.signal,
+          parentTraceId: input.parentTraceId,
+          excludedMemoryIds: input.excludedMemoryIds,
         });
         memories = normalizeExternalItems(retrieved, {
           type: 'memory',
@@ -393,6 +400,21 @@ class ContextBuilder {
     }
 
     const memoryResolution = resolveMemoryConflicts(memories);
+    const conflictInstructionContent = buildMemoryClarificationInstruction(
+      memoryResolution.unresolvedConflictIds
+    );
+    const memoryConflictInstructions = conflictInstructionContent
+      ? normalizeExternalItems([{
+        id: `memory-conflict:${createStableHash(memoryResolution.unresolvedConflictIds)}`,
+        content: conflictInstructionContent,
+        required: true,
+      }], {
+        type: 'instruction',
+        source: 'memory_conflict',
+        relevanceScore: 1,
+        trustLevel: 'system',
+      }, now, this.tokenEstimator)
+      : [];
     const retrievedKnowledge = normalizeExternalItems(input.retrievedKnowledge, {
       type: 'rag_document',
       source: 'rag',
@@ -416,6 +438,7 @@ class ContextBuilder {
       : [];
     const candidates = [
       ...explicitInstructions,
+      ...memoryConflictInstructions,
       ...nonConversationItems,
       ...compactedConversation.items,
       ...suppliedSummary,

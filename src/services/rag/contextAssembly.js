@@ -29,6 +29,14 @@ export function summarizeRetrievedChunk(document = {}, index = 0) {
     semanticScore: normalizeScore(document.semanticScore),
     keywordScore: normalizeScore(document.keywordScore),
     mediaPriority: normalizeScore(document.mediaPriority),
+    rerankScore: normalizeScore(document.rerankScore),
+    queryRelevance: normalizeScore(document.queryRelevance),
+    verificationScore: normalizeScore(document.verificationScore),
+    recencyScore: normalizeScore(document.recencyScore),
+    citationId: document.citationId,
+    compressed: document.compressed === true ? true : undefined,
+    contradiction: document.metadata?.contradiction === true ? true : undefined,
+    estimatedTokens: document.estimatedTokens,
     textLength: document.text?.length || document.description?.length || 0,
   });
 }
@@ -57,6 +65,10 @@ export function buildGroundingTrace({
     groundedMessageCount: promptMessages.length,
     contextMessageLength: contextMessage?.content?.length || 0,
     retrievedChunks: summarizeRetrievedChunks(documents),
+    selectionPipeline: documents[0]?.selectionReport || {
+      candidateCount: documents.length,
+      selectedCount: documents.length,
+    },
     sources: sources.map((source, index) => compactObject({
       index,
       name: source.name,

@@ -21,6 +21,7 @@ import {
   mergeRetrievedDocuments,
   normalizeBirdMatch,
 } from './rag/retrievalFiltering.js';
+import ragContextSelector from './rag/contextSelection.js';
 import {
   UNAVAILABLE_CAPABILITIES,
   classifyCapabilityFailure,
@@ -29,6 +30,7 @@ import {
 
 const DEFAULT_TOP_K = 3;
 const DEFAULT_BIRD_MATCH_CANDIDATE_LIMIT = 8;
+const DEFAULT_MAX_CHUNKS_PER_DOCUMENT = 1;
 const ADVANCED_RETRIEVAL_OPTIONS = Object.freeze({
   candidateMultiplier: 6,
   semanticWeight: 0.7,
@@ -41,12 +43,14 @@ class RagService {
     retrievalCache = createRetrievalCache(),
     redisConfig = getRedisConfig(),
     featureFlagService = featureFlags,
+    contextSelector = ragContextSelector,
     log = logger,
   } = {}) {
     this.retriever = retriever;
     this.retrievalCache = retrievalCache;
     this.redisConfig = redisConfig;
     this.featureFlags = featureFlagService;
+    this.contextSelector = contextSelector;
     this.logger = log;
   }
 
@@ -77,8 +81,12 @@ class RagService {
       ...(options.keywordWeight === undefined
         ? {} : { keywordWeight: options.keywordWeight }),
       userId: options.userId,
+      role: options.role,
       parentTraceId: options.parentTraceId,
       aiTraceId: options.aiTraceId,
+      ragTokenBudget: options.ragTokenBudget,
+      maxChunkTokens: options.maxChunkTokens,
+      nearDuplicateThreshold: options.nearDuplicateThreshold,
     };
     const cacheKey = buildRetrievalCacheKey(question, retrievalOptions);
     const cacheLookup = await traceCacheOperation('rag_retrieval_cache_lookup', {
@@ -224,6 +232,32 @@ class RagService {
 
         documents = mergeRetrievedDocuments(documents, supplementalDocuments);
       }
+
+      const upstreamCandidateCount = documents.reduce((total, document) => (
+        total + Number(document.selectionReport?.candidateCount || 0)
+      ), 0);
+      const finalSelection = this.contextSelector.select(documents, question, {
+        filters: retrievalMetadata.filters,
+        userId: metadata.userId,
+        role: metadata.role,
+        resultLimit: supplementalFamily
+          ? Math.max(metadata.topK || DEFAULT_TOP_K, DEFAULT_BIRD_MATCH_CANDIDATE_LIMIT)
+          : metadata.topK || DEFAULT_TOP_K,
+        tokenBudget: metadata.ragTokenBudget,
+        maxChunkTokens: metadata.maxChunkTokens,
+        nearDuplicateThreshold: metadata.nearDuplicateThreshold,
+        maxChunksPerDocument: retrievalMetadata.maxChunksPerDocument
+          ?? DEFAULT_MAX_CHUNKS_PER_DOCUMENT,
+      });
+      documents = finalSelection.documents.map((document, index) => ({
+        ...document,
+        ...(index === 0 ? {
+          selectionReport: {
+            ...finalSelection.report,
+            upstreamCandidateCount: upstreamCandidateCount || documents.length,
+          },
+        } : {}),
+      }));
 
       const retrievedChunks = summarizeRetrievedChunks(documents);
 

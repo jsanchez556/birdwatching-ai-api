@@ -1,9 +1,11 @@
 import openaiClient from '../clients/openai.client.js';
 import logger from '../../utils/logger.js';
 import vectorRepository from '../../db/repositories/vector/vector.repository.js';
+import ragContextSelector from '../../services/rag/contextSelection.js';
 
 const DEFAULT_MAX_CHUNKS_PER_DOCUMENT = 1;
 const DEFAULT_CANDIDATE_MULTIPLIER = 4;
+const MAX_CANDIDATE_LIMIT = 50;
 
 function normalizeFilters(options = {}) {
   const filters = {
@@ -47,7 +49,11 @@ function normalizeResultLimit(limit) {
 }
 
 function calculateCandidateLimit(limit, multiplier = DEFAULT_CANDIDATE_MULTIPLIER) {
-  return Math.min(normalizeResultLimit(limit) * multiplier, 20);
+  const resultLimit = normalizeResultLimit(limit);
+  const normalizedMultiplier = Number.isFinite(Number(multiplier)) && Number(multiplier) > 1
+    ? Number(multiplier)
+    : DEFAULT_CANDIDATE_MULTIPLIER;
+  return Math.min(Math.max(resultLimit + 1, Math.ceil(resultLimit * normalizedMultiplier)), MAX_CANDIDATE_LIMIT);
 }
 
 function mapRetrievedChunk(row) {
@@ -74,14 +80,23 @@ function mapRetrievedChunk(row) {
     description: metadata.description || row.content,
     text: row.content,
     metadata,
+    documentMetadata,
+    chunkMetadata,
     score: Number(row.score),
     semanticScore: Number(row.semantic_score ?? row.score),
     keywordScore: Number(row.keyword_score ?? 0),
     mediaPriority: Number(row.media_priority ?? 0),
+    active: row.active !== false,
+    documentUpdatedAt: row.document_updated_at,
+    chunkUpdatedAt: row.chunk_updated_at,
   };
 }
 
 class RetrievalService {
+  constructor({ selector = ragContextSelector } = {}) {
+    this.selector = selector;
+  }
+
   async retrieve(query, options = {}) {
     if (!query || typeof query !== 'string') {
       return [];
@@ -103,10 +118,21 @@ class RetrievalService {
       semanticWeight: options.semanticWeight,
       keywordWeight: options.keywordWeight,
     });
-    const documents = diversifyByDocument(
-      rows.map(mapRetrievedChunk),
-      options.maxChunksPerDocument ?? DEFAULT_MAX_CHUNKS_PER_DOCUMENT
-    ).slice(0, resultLimit);
+    const candidates = rows.map(mapRetrievedChunk);
+    const selection = this.selector.select(candidates, query, {
+      filters,
+      userId: options.userId,
+      role: options.role,
+      resultLimit,
+      tokenBudget: options.ragTokenBudget,
+      maxChunkTokens: options.maxChunkTokens,
+      nearDuplicateThreshold: options.nearDuplicateThreshold,
+      maxChunksPerDocument: options.maxChunksPerDocument ?? DEFAULT_MAX_CHUNKS_PER_DOCUMENT,
+    });
+    const documents = selection.documents.map((document, index) => ({
+      ...document,
+      ...(index === 0 ? { selectionReport: selection.report } : {}),
+    }));
 
     logger.info('Retrieved vector RAG context', {
       resultCount: documents.length,
@@ -114,6 +140,7 @@ class RetrievalService {
       candidateLimit,
       filters,
       maxChunksPerDocument: options.maxChunksPerDocument ?? DEFAULT_MAX_CHUNKS_PER_DOCUMENT,
+      selection: selection.report,
     });
 
     return documents;
@@ -122,6 +149,7 @@ class RetrievalService {
 
 export {
   calculateCandidateLimit,
+  RetrievalService,
   diversifyByDocument,
   mapRetrievedChunk,
   normalizeFilters,

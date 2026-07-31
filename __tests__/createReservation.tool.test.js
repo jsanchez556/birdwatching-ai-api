@@ -4,7 +4,7 @@ const mockCreateReservation = jest.fn();
 
 await jest.unstable_mockModule('../src/services/reservation.service.js', () => ({
   default: {
-    createReservation: mockCreateReservation,
+    createReservationFromState: mockCreateReservation,
   },
 }));
 
@@ -25,12 +25,13 @@ describe('createReservation tool', () => {
       participants: 3,
       totalPrice: 360,
       currency: 'USD',
+      transportationRequired: true,
+      itineraryStartDate: '2026-05-17',
+      itineraryEndDate: '2026-05-17',
     });
 
     await expect(createReservation({
-      tourId: 1,
-      participants: 3,
-      customerName: 'Jose Sanchez',
+      expectedStateVersion: 4,
     }, {
       customerContext: {
         itineraryStartDate: '2026-05-17',
@@ -55,9 +56,7 @@ describe('createReservation tool', () => {
       itineraryEndDate: '2026-05-17',
     });
     await expect(createReservation({
-      tourId: 1,
-      participants: 3,
-      customerName: 'Jose Sanchez',
+      expectedStateVersion: 4,
     }, {
       selectedTransportation: {
         transportationOption: 'shared_shuttle',
@@ -79,9 +78,7 @@ describe('createReservation tool', () => {
     });
 
     await expect(createReservation({
-      tourId: 1,
-      participants: 3,
-      customerName: 'Jose Sanchez',
+      expectedStateVersion: 4,
     })).resolves.toEqual({
       success: true,
       reservationId: 43,
@@ -94,5 +91,24 @@ describe('createReservation tool', () => {
       itineraryStartDate: undefined,
       itineraryEndDate: undefined,
     });
+  });
+
+  it('passes only the expected state version to the reservation service', async () => {
+    mockCreateReservation.mockResolvedValue({
+      success: false,
+      code: 'RESERVATION_STATE_CONFLICT',
+      retryable: true,
+    });
+
+    await createReservation({
+      expectedStateVersion: 11,
+      participants: 999,
+      tourId: 999,
+    }, { conversationId: 'conversation-1' });
+
+    expect(mockCreateReservation).toHaveBeenCalledWith(
+      { expectedStateVersion: 11 },
+      { conversationId: 'conversation-1' }
+    );
   });
 });

@@ -3,7 +3,10 @@
 Back to [Project Context](../CONTEXT.md). See [Prompting](./prompting.md) for role-message construction.
 
 ## Current Memory Model
-Conversation memory is PostgreSQL-backed short-term chat history. It is separate from the pgvector RAG knowledge store and does not currently store user profiles, preferences, embeddings, or long-term semantic memory.
+Memory has two separate PostgreSQL-backed layers: owner-scoped conversation
+history for short-term continuity and a conservative structured memory store
+for authenticated users. Both are separate from pgvector RAG and operational
+reservation state.
 
 ## Storage
 Table: `conversations`
@@ -85,14 +88,48 @@ For client retrieval:
 - `getLatestByUserId(userId)` finds the latest owned regular conversation by `last_message_at DESC NULLS LAST, created_at DESC`, then the service loads messages and returns persisted chat-level metadata.
 - Reservation-entry conversations remain loadable by explicit conversation ID for the owner, but are skipped by latest-conversation hydration.
 
-## Future Memory Extensions
-If adding long-term memory or user-specific retrieval:
-- keep the existing short-term exchange table as the source of chat transcript truth
-- add separate tables for user preferences or user-specific memories instead of mixing them into RAG knowledge chunks
-- include source references for any retrieved birding/location content
-- keep reservation `conversation_id` as a linkage field for booking context, not as a replacement for chat transcript storage
-- update prompt construction in `conversation.service.js`, not controllers
-- add tests that prove cross-conversation leakage is impossible
+## Durable User Memory
+
+Reservation operational state is stored separately from transcripts and summaries as documented in [Durable Reservation Conversation State](./reservation-state.md). Conversation history may help the model converse naturally, but it is not an operational booking source of truth.
+
+Migration `028_create_user_memories.sql` adds `user_memories`. Each row belongs
+to one authenticated user and contains an allowlisted category, concise
+content, confidence, source message ID, creation/optional expiration timestamp,
+and user-editable flag. An active-content fingerprint makes repeated identical
+extraction idempotent. Explicit corrections create a new row and mark only
+identified same-category rows inactive with `superseded_by_id`, preserving the
+old record without injecting it into future prompts.
+
+Migration `029_add_user_memory_conflict_resolution.sql` adds a semantic
+`conflict_key`, resolution reason, and supersession timestamp. A correction is
+promoted only when incompatible memories share a category/axis and the current
+message contains explicit correction language such as "actually", "now",
+"instead", or "no longer" with confidence of at least `0.90`. The database
+then inserts the new active row and marks the referenced rows inactive in one
+transaction. Both rows remain available through the owner-scoped internal
+history query with resolution `explicit_recent_correction`.
+
+If a conflict is plausible but correction intent or confidence is insufficient,
+no mutation occurs. Extraction runs before authenticated response generation,
+and ContextBuilder adds a required instruction to ask one concise clarification
+question before relying on either value. Already-persisted active memories with
+the same conflict key receive the same unresolved treatment; recency alone
+never silently chooses a winner.
+
+The model and deterministic validator accept only direct, unambiguous
+statements that are stable, safe, useful in future sessions, and at least
+`0.85` confidence. Allowed categories are preferences, accessibility
+requirements, recurring travel constraints, bird interests, preferred
+language, and budget ranges. Greetings, weather, one-off requests,
+availability, reservation values, contact details, credentials, payment data,
+exact addresses, and weak behavioral inferences are rejected. One expensive
+booking, for example, does not establish a luxury preference.
+
+Extraction is prepared before generation but is committed only after the
+authenticated exchange is durably saved, providing its source message ID. The
+database function takes a per-user transaction lock, validates source ownership
+and supersession IDs, and inserts/deactivates atomically. Optional extraction
+or storage failure does not fail the chat response.
 
 ## ContextBuilder Memory Boundary
 
@@ -105,13 +142,22 @@ importance, and unresolved status. Explicit user corrections, confirmed
 reservation details, unresolved commitments, and safety-critical constraints
 are mandatory context; the current request is always mandatory. Selection
 metrics report mandatory message counts by preservation reason without
-including message contents. The builder can accept a long-term
-memory adapter, but the production default in
-`src/ai/memory/longTermMemory.js` is deliberately a no-op.
+including message contents. The production adapter in
+`src/ai/memory/longTermMemory.js` loads only active, non-expired memories for
+the authenticated `userId`; visitor requests do not query the store. It removes
+values below `0.85` confidence, older than 730 days, expired values, and
+malformed timestamps. It embeds the request and eligible memory content in one
+cached batch, requires cosine similarity of at least `0.45`, ranks by semantic
+similarity, confidence, and recency, and removes normalized duplicates. At most
+ten memories and 256 estimated content tokens leave the adapter; ContextBuilder
+then applies its model/task memory budget including item overhead.
 
-No durable long-term user memory, profile inference, or memory-extraction write
-path was added. Authenticated adapters must scope every retrieval by `userId`;
-visitor requests do not call the adapter. Optional memory failures produce an
+Returned items retain the memory row and source message IDs, category,
+confidence, creation/expiration timestamps, semantic and recency scores, and
+editability metadata. Context provenance exposes safe identifiers and selection
+decisions without exposing memory text through public APIs or telemetry.
+Memories are optional context and never reservation or booking arguments.
+Optional memory failures produce an
 aggregate degraded-source metric and do not fail chat. Conflicting memories
 are retained unless exactly one claim is verified, and unresolved conflict
 counts contain no memory text.

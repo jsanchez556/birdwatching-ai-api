@@ -7,6 +7,8 @@ const mockBuildContext = jest.fn();
 const mockStreamResponseWithTools = jest.fn();
 const mockRecordOpenAiUsage = jest.fn();
 const mockAnalyticsTrack = jest.fn();
+const mockPrepareUserMemory = jest.fn();
+const mockCommitPreparedMemory = jest.fn();
 
 await jest.unstable_mockModule('../src/analytics/analytics.service.js', () => ({
   default: {
@@ -40,6 +42,13 @@ await jest.unstable_mockModule('../src/services/usage.service.js', () => ({
   },
 }));
 
+await jest.unstable_mockModule('../src/services/userMemory.service.js', () => ({
+  default: {
+    prepare: mockPrepareUserMemory,
+    commitPrepared: mockCommitPreparedMemory,
+  },
+}));
+
 await jest.unstable_mockModule('../src/utils/logger.js', () => ({
   default: {
     info: jest.fn(),
@@ -48,7 +57,11 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
   },
 }));
 
-const { default: chatService } = await import('../src/services/chat.service.js');
+const {
+  buildConversationMeta,
+  buildToolMeta,
+  default: chatService,
+} = await import('../src/services/chat.service.js');
 const { default: logger } = await import('../src/utils/logger.js');
 
 describe('ChatService streaming orchestration', () => {
@@ -56,10 +69,35 @@ describe('ChatService streaming orchestration', () => {
     jest.clearAllMocks();
     mockAssertCanAccess.mockResolvedValue(undefined);
     mockRecordOpenAiUsage.mockResolvedValue(null);
+    mockPrepareUserMemory.mockResolvedValue({
+      success: true,
+      userId: 7,
+      memories: [],
+      clarificationRequired: [],
+    });
+    mockCommitPreparedMemory.mockResolvedValue({ success: true, stored: [], resolutions: [] });
+    mockSaveExchange.mockResolvedValue(undefined);
     mockBuildContext.mockImplementation((messages) => ({
       messages,
       sources: [],
     }));
+  });
+
+  it('returns and persists only opaque tool result reference metadata', () => {
+    const reference = {
+      referenceId: 'search_tours_ref',
+      toolName: 'searchTours',
+      total: 47,
+      expiresAt: '2026-08-08T00:00:00Z',
+    };
+
+    expect(buildToolMeta({ toolResultReferences: [reference] }))
+      .toEqual(expect.objectContaining({ toolResultReferences: [reference] }));
+    expect(buildConversationMeta({ toolResultReferences: [reference] }))
+      .toEqual(expect.objectContaining({ toolResultReferences: [reference] }));
+    expect(buildConversationMeta({
+      conversationContext: { recentAssistantMetadata: { toolResultReferences: [reference] } },
+    })).toEqual(expect.objectContaining({ toolResultReferences: [reference] }));
   });
 
   it('streams chunks and stores the completed assistant response', async () => {
@@ -810,6 +848,76 @@ describe('ChatService streaming orchestration', () => {
         role: 'customer',
         userId: '7',
       }),
+      expect.any(Object)
+    );
+  });
+
+  it('prepares durable memory before generation and commits only after the source exchange is saved', async () => {
+    const conversationMessages = [
+      { role: 'system', content: 'System prompt' },
+      { role: 'user', content: 'I prefer Spanish responses.' },
+    ];
+    mockBuildConversationContext.mockResolvedValue(conversationMessages);
+    mockStreamResponseWithTools.mockResolvedValue('Entendido.');
+    mockSaveExchange.mockResolvedValue({ id: 42 });
+
+    await chatService.processMessageStream(
+      'I prefer Spanish responses.',
+      'conversation-123',
+      '127.0.0.1',
+      {},
+      {
+        authUser: { id: '7', email: 'user@example.com', role: 'customer' },
+        aiTraceId: '11111111-1111-4111-8111-111111111111',
+      }
+    );
+
+    expect(mockPrepareUserMemory).toHaveBeenCalledWith(expect.objectContaining({
+      userId: '7',
+      message: 'I prefer Spanish responses.',
+      conversationId: 'conversation-123',
+    }));
+    expect(mockSaveExchange).toHaveBeenCalled();
+    expect(mockCommitPreparedMemory).toHaveBeenCalledWith(expect.objectContaining({
+      userId: '7',
+      sourceMessageId: 42,
+      prepared: expect.objectContaining({ success: true }),
+    }));
+  });
+
+  it('instructs the assistant to clarify an uncertain memory conflict', async () => {
+    mockPrepareUserMemory.mockResolvedValue({
+      success: true,
+      userId: 7,
+      memories: [],
+      clarificationRequired: [{
+        category: 'preferences',
+        conflictKey: 'tour_time_preference',
+        conflictsWithMemoryIds: [4],
+      }],
+    });
+    mockBuildConversationContext.mockResolvedValue([
+      { role: 'system', content: 'System prompt' },
+      { role: 'user', content: 'I prefer afternoon tours.' },
+    ]);
+    mockStreamResponseWithTools.mockResolvedValue('Do you want afternoon tours to replace your previous preference?');
+
+    await chatService.processMessageStream(
+      'I prefer afternoon tours.',
+      'conversation-123',
+      '127.0.0.1',
+      {},
+      { authUser: { id: '7', role: 'customer' } }
+    );
+
+    expect(mockStreamResponseWithTools).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'system',
+          content: expect.stringContaining('Ask the user one brief clarifying question'),
+        }),
+      ]),
+      expect.any(Object),
       expect.any(Object)
     );
   });

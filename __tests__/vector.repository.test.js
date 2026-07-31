@@ -37,7 +37,8 @@ describe('VectorRepository helpers', () => {
 
   it('normalizes retrieval limits', () => {
     expect(normalizeLimit(undefined)).toBe(3);
-    expect(normalizeLimit(50)).toBe(20);
+    expect(normalizeLimit(50)).toBe(50);
+    expect(normalizeLimit(75)).toBe(50);
     expect(normalizeLimit(5)).toBe(5);
   });
 

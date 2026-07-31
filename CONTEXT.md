@@ -4,7 +4,7 @@ AI-agent entry point for the Birdwatching AI API. Read this file first, then fol
 
 ## What This Is
 This repository is a Node.js backend for Costa Rica birdwatching assistance, split into separate HTTP API and BullMQ worker entrypoints. It supports:
-- conversational chat with short-term PostgreSQL memory
+- conversational chat with short-term PostgreSQL history and conservative authenticated long-term user memory
 - PostgreSQL-backed RAG over ingested `src/ingestion/data` documents using pgvector
 - reusable external bird data clients for eBird, iNaturalist, and Xeno-canto ingestion jobs
 - media file lookup for relative bird media keys through CloudFront or `GET /files/:folderName/:filename`
@@ -28,6 +28,7 @@ This repository is a Node.js backend for Costa Rica birdwatching assistance, spl
 - Endpoint contracts: [docs/api.md](./docs/api.md)
 - Prompt assets and versioning: [docs/prompting.md](./docs/prompting.md)
 - Conversation memory behavior: [docs/memory.md](./docs/memory.md)
+- Durable reservation conversation state: [docs/reservation-state.md](./docs/reservation-state.md)
 - Deployment and environment: [docs/deployment.md](./docs/deployment.md)
 - Privacy, retention, deletion, and export: [docs/privacy-retention.md](./docs/privacy-retention.md)
 - Product analytics and event ownership: [docs/analytics.md](./docs/analytics.md)
@@ -125,6 +126,11 @@ GET /chat/latest
   analysis. Each policy reserves output capacity and divides the remaining
   input budget among conversation, memory, knowledge, tools, and application
   state; aggregate metrics report discarded items/tokens by category and reason.
+- Oversized tool results are persisted for seven days in `tool_result_references`
+  under an opaque, conversation/user-scoped reference. The prompt receives only
+  task-relevant identifiers and fields, totals, pagination, a bounded selection,
+  and the reference ID. Dependent steps in the same plan retain the complete
+  in-memory result; raw stored payloads are never exposed through chat APIs.
 - Conversation compaction stores immutable structured summary versions in
   `conversation_summaries`, records cumulative compacted message IDs, preserves
   recent exchanges verbatim, and retains goals, sourced facts, preferences,
@@ -154,6 +160,7 @@ GET /chat/latest
 - Streaming chat passes an `AbortSignal` to OpenAI and skips saving a completed exchange when the client disconnects before completion.
 - RAG reads only from PostgreSQL pgvector during chat. Use `npm run enrich -- birds` to refresh bird source data, generate `birds.json`, and ingest normalized bird documents before relying on bird RAG context; chat does not chunk documents, generate source embeddings, or write vectors.
 - RAG retrieval can read/write Redis cache entries before hitting pgvector. PostgreSQL remains the source of truth, and failed cache operations do not fail chat.
+- Pgvector returns an expanded RAG candidate pool rather than prompt-ready top-N rows. `src/services/rag/contextSelection.js` applies defensive metadata/permission filtering, polarity-aware near-deduplication, query/currentness/verification reranking, contradiction detection, extractive compression, document diversification, and a final token/result budget before assigning stable `[R#]` citations. Supplemental retrieval is reselected after merge, so it cannot bypass the final budget.
 - Bird RAG metadata may include `meta.birdMatches[].media` with absolute URLs or relative object keys such as `/photos/123_medium.jpg`, `songs/123.mp3`, or `sonograms/123_grey-small.png`. Relative keys are intentionally not public static paths; the UI resolves them through CloudFront when configured or through `GET /files/:folderName/:filename`, which returns a normalized envelope containing `data.url`.
 - `GET /files/:folderName/:filename` normalizes and validates path segments, then returns a CloudFront URL from `CLOUDFRONT_BASE_URL`; it no longer creates S3 presigned URLs.
 - External bird data clients live under `src/ingestion/clients/` and export orchestration lives in `src/ingestion/services/birdsIngest.service.js`. They are intended for ingestion jobs, not request handlers, and share a configurable rate limiter capped at 40 requests per minute.
@@ -210,6 +217,9 @@ GET /chat/latest
 - `.github/workflows/ai-evals.yml` runs the synthetic scorer self-test separately, requires a configured real-pipeline artifact for the portfolio gate, uploads both artifacts, and fails closed when real outputs are absent or thresholds are violated.
 - AI response caching records `CACHE HIT` and `CACHE MISS` logs, tracks cache hit/miss metrics and estimated OpenAI savings, and skips response reuse when metadata contains user-specific, reservation, tool, or conversation-scoped state.
 - Chat persistence uses the `conversations` and `messages` tables plus SQL helper functions from `src/db/migrations/002_create_functions.sql`; later migrations make those helpers owner-aware and merge safe JSONB booking metadata into `conversations.metadata`.
+- Authenticated chat may extract allowlisted durable user memories only after its source message is saved. Migration `028_create_user_memories.sql` provides owner/source validation, active-value deduplication, expiration filtering, and atomic explicit supersession. Visitors are excluded, and memory is context only—not reservation state.
+- Durable-memory retrieval is request-relevant rather than automatic: active rows pass confidence, age, expiry, embedding-similarity, normalized-deduplication, result-count, and token-budget gates before ContextBuilder selection. Internal context retains memory and source-message provenance.
+- Memory conflicts use category plus a semantic conflict key. Migration `029_add_user_memory_conflict_resolution.sql` permits atomic deactivation only for validated explicit recent corrections, retains superseded rows and resolution metadata for internal audit, and routes insufficient-confidence conflicts into required user clarification instead of choosing by recency.
 - Voice chat uses the same chat orchestration and conversation memory as `POST /chat`. `src/ai/audio/speechToText.adapter.js` and `src/ai/audio/textToSpeech.adapter.js` are internal services; standalone transcribe/speak routes are not exposed publicly.
 - `POST /voice-chat` accepts raw MP3/WAV audio only, including `audio/mpeg`, `audio/mp3`, `audio/wav`, and `audio/x-wav`. Browser clients that record `audio/webm` should convert to WAV before upload or the backend validation will reject the request.
 - Generated voice-chat MP3 responses are uploaded to S3 under `voice-chat/<uuid>.mp3`; the API returns a relative `/files/voice-chat/...` URL that clients resolve through CloudFront-backed media delivery.
@@ -217,6 +227,7 @@ GET /chat/latest
 - Cache lookups and writes are traced as LangSmith-compatible cache/tool spans with hit, miss, skipped, avoided-LLM-call, hit-rate, and savings metadata when tracing is enabled.
 - User authentication uses `users`, DB-backed refresh sessions use `refresh_tokens`, authenticated token/cost accounting uses `usage_logs`, and subscriptions use provider-neutral `user_subscriptions` plus optional `plan_provider_mappings`.
 - Reservation persistence uses `tours` and `reservations` plus PostgreSQL functions from `003_create_tour_reservations.sql`; transaction, row locking, derived tour location metadata, and authenticated `user_id` persistence live in database functions after ownership migration. Chat-level booking metadata such as transportation selections is stored in `conversations.metadata`.
+- Reservation workflow inputs are separately persisted in versioned `reservation_conversation_states` with append-only audit events. Migration `027_create_reservation_conversation_state.sql` owns optimistic mutations and the atomic, idempotent booking wrapper. Booking tools use only latest confirmed state plus an expected version; messages and chat metadata are never reconstructed into booking arguments.
 
 ## Testing
 Tests live in `__tests__/` and cover routes, services, and query helpers with ESM module mocks.

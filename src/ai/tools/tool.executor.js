@@ -18,6 +18,8 @@ import {
   storeIntermediateResult,
   storeSkippedSteps,
 } from './toolExecutionState.js';
+import toolResultReferenceService from '../../services/toolResultReference.service.js';
+import { persistLargeToolResult } from '../compaction/toolResultReference.js';
 
 export const TOOL_EXECUTION_FAILED_MESSAGE = 'I could not complete that action right now. Please try again in a moment.';
 export const TOOL_RESULT_INDETERMINATE_MESSAGE =
@@ -36,6 +38,7 @@ export class ToolExecutor {
     this.handlers = new Map(Object.entries(handlers));
     this.logger = options.logger || logger;
     this.retryOptions = options.retry || {};
+    this.toolResultStore = options.toolResultStore || toolResultReferenceService;
   }
 
   hasTool(name) {
@@ -150,6 +153,13 @@ export class ToolExecutor {
           continue;
         }
 
+        await persistLargeToolResult({
+          toolName: name,
+          result,
+          metadata,
+          store: this.toolResultStore,
+          logger: this.logger,
+        });
         appendToolResponseMetadata(metadata, name, result, validatedArgs);
         this.logger.info('Agent tool call completed', {
           toolName: name,

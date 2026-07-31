@@ -97,7 +97,7 @@ describe('RetrievalService helpers', () => {
 
   it('expands the candidate pool before final result trimming', () => {
     expect(calculateCandidateLimit(3)).toBe(12);
-    expect(calculateCandidateLimit(10)).toBe(20);
+    expect(calculateCandidateLimit(10)).toBe(40);
   });
 
   it('passes category, location, title, and minScore to vector search', async () => {

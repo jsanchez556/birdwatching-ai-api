@@ -133,6 +133,30 @@ describe('RagService', () => {
       }));
   });
 
+  it('scopes retrieval cache keys by permission context and selection budget', () => {
+    const baseOptions = {
+      topK: 4,
+      role: 'customer',
+      userId: 7,
+      ragTokenBudget: 900,
+    };
+
+    const baseKey = buildRetrievalCacheKey('Where can I see quetzals?', baseOptions);
+
+    expect(buildRetrievalCacheKey('Where can I see quetzals?', {
+      ...baseOptions,
+      userId: 8,
+    })).not.toBe(baseKey);
+    expect(buildRetrievalCacheKey('Where can I see quetzals?', {
+      ...baseOptions,
+      role: 'admin',
+    })).not.toBe(baseKey);
+    expect(buildRetrievalCacheKey('Where can I see quetzals?', {
+      ...baseOptions,
+      ragTokenBudget: 450,
+    })).not.toBe(baseKey);
+  });
+
   it('returns cached retrieval chunks without calling pgvector-backed retrieval', async () => {
     const documents = [
       {
@@ -318,8 +342,30 @@ describe('RagService', () => {
         },
       },
     ])).toContain(
-      '1. Resplendent Quetzal\nSimilarity score: 0.9877\nCommon name: Resplendent Quetzal\nScientific name: Pharomachrus mocinno\nFamily: Trogons\nLocations: Monteverde\nDescription: Cloud forest bird.'
+      '[R1] Resplendent Quetzal\nSource: Unknown\nDocument/chunk: Unknown/Unknown\nSimilarity score: 0.9877\nCommon name: Resplendent Quetzal\nScientific name: Pharomachrus mocinno\nFamily: Trogons\nLocations: Monteverde\nDescription: Cloud forest bird.'
     );
+  });
+
+  it('preserves citation provenance and opposing citations for contradictory passages', () => {
+    const context = formatRetrievedContext([{
+      citationId: 'R2',
+      name: 'Reserve status note',
+      source: 'reserve-advisory.json',
+      documentId: 12,
+      chunkId: 34,
+      locations: 'Monteverde',
+      description: 'Quetzals are not present in this reserve.',
+      score: 0.8,
+      metadata: {
+        contradiction: true,
+        contradictsCitations: ['R1'],
+      },
+    }]);
+
+    expect(context).toContain('[R2] Reserve status note');
+    expect(context).toContain('Source: reserve-advisory.json');
+    expect(context).toContain('Document/chunk: 12/34');
+    expect(context).toContain('Contradiction warning: this claim conflicts with another retrieved passage ([R1]).');
   });
 
   it('injects relevant retrieved context after the base system message', async () => {
@@ -365,6 +411,7 @@ describe('RagService', () => {
         name: 'Resplendent Quetzal',
         location: 'Monteverde',
         similarityScore: 0.98,
+        citationId: 'R1',
       },
     ]);
     expect(context.birdMatches).toEqual([]);

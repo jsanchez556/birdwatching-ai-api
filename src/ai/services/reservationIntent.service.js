@@ -26,6 +26,16 @@ function validateMissingFieldConsistency(result) {
     };
   }
 
+  const inconsistentClearedField = result.clearedFields.find((field) => result[field] !== null);
+
+  if (inconsistentClearedField) {
+    return {
+      success: false,
+      code: 'RESERVATION_INTENT_INVALID_OUTPUT',
+      reason: 'inconsistent_cleared_fields',
+    };
+  }
+
   const requiredNullFields = [];
   const hasTourSelector = result.tourId !== null || result.location !== null;
 
@@ -59,7 +69,11 @@ function validateMissingFieldConsistency(result) {
 }
 
 function validateParsedIntent(parsed) {
-  const validation = ReservationIntentSchema.safeParse(parsed);
+  const validation = ReservationIntentSchema.safeParse({
+    ...parsed,
+    clearedFields: parsed?.clearedFields ?? [],
+    discountCode: parsed?.discountCode ?? null,
+  });
 
   if (!validation.success) {
     return {

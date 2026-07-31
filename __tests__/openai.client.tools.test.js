@@ -225,6 +225,72 @@ describe('OpenAIClient tool calling', () => {
     });
   });
 
+  it('stores oversized tool results and sends only a compact reference to the next model call', async () => {
+    const tours = Array.from({ length: 12 }, (_, index) => ({
+      tourId: index + 1,
+      name: `Tour ${index + 1}`,
+      pricePerPerson: 100 + index,
+      internalMargin: 0.3,
+      supplierContractId: `contract-${index + 1}`,
+    }));
+    const fullResult = {
+      success: true,
+      total: 30,
+      pagination: { page: 1, pageSize: 12, total: 30, hasMore: true },
+      tours,
+    };
+    const toolResultStore = {
+      store: jest.fn().mockResolvedValue({
+        referenceId: 'search_tours_openai-ref',
+        expiresAt: '2026-08-08T00:00:00Z',
+      }),
+    };
+    const client = new OpenAIClient({ toolResultStore });
+    const executeToolCall = jest.fn().mockResolvedValue(fullResult);
+    mockCreate
+      .mockResolvedValueOnce({
+        id: 'completion-large-1',
+        model: 'gpt-4o',
+        choices: [{ message: {
+          role: 'assistant',
+          content: null,
+          tool_calls: [{
+            id: 'call-large',
+            type: 'function',
+            function: { name: 'searchTours', arguments: '{}' },
+          }],
+        } }],
+        usage: {},
+      })
+      .mockResolvedValueOnce({
+        id: 'completion-large-2',
+        model: 'gpt-4o',
+        choices: [{ message: { role: 'assistant', content: 'I found several tours.' } }],
+        usage: {},
+      });
+    const metadata = { conversationId: 'conversation-123', userId: 7 };
+
+    await client.resolveChatToolCalls([{ role: 'user', content: 'Show tours' }], {
+      executeToolCall,
+      metadata,
+      tools: [{ type: 'function', function: { name: 'searchTours' } }],
+    });
+
+    expect(toolResultStore.store).toHaveBeenCalledWith(expect.objectContaining({
+      result: fullResult,
+      total: 30,
+    }));
+    const promptResult = JSON.parse(mockCreate.mock.calls[1][0].messages.at(-1).content);
+    expect(promptResult).toEqual(expect.objectContaining({
+      resultReferenceId: 'search_tours_openai-ref',
+      total: 30,
+      omittedResultCount: 25,
+    }));
+    expect(promptResult.selectedResults).toHaveLength(5);
+    expect(JSON.stringify(promptResult)).not.toContain('internalMargin');
+    expect(JSON.stringify(promptResult)).not.toContain('supplierContractId');
+  });
+
   it('streams final chat text after resolving tool calls', async () => {
     async function* streamChunks() {
       yield {

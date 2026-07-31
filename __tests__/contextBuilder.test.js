@@ -249,6 +249,50 @@ describe('ContextBuilder', () => {
     }));
   });
 
+  it('preserves retrieved memory source provenance through context selection', async () => {
+    const builder = new ContextBuilder({
+      memoryStore: {
+        retrieve: jest.fn().mockResolvedValue([{
+          id: 'user-memory:9',
+          content: 'Interested in quetzals.',
+          source: 'long_term_memory',
+          sourceId: 42,
+          createdAt: '2026-07-29T00:00:00.000Z',
+          relevanceScore: 0.95,
+          recencyScore: 0.99,
+          trustLevel: 'user_provided',
+          metadata: {
+            memoryId: 9,
+            sourceMessageId: 42,
+            category: 'bird_interests',
+          },
+        }]),
+      },
+      clock: () => NOW,
+    });
+
+    const context = await builder.build(baseInput());
+
+    expect(context.memories).toEqual([
+      expect.objectContaining({
+        id: 'user-memory:9',
+        metadata: expect.objectContaining({
+          memoryId: 9,
+          sourceMessageId: 42,
+          sourceId: 42,
+        }),
+      }),
+    ]);
+    expect(context.provenance).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        contextItemId: 'user-memory:9',
+        source: 'long_term_memory',
+        sourceId: 42,
+        selected: true,
+      }),
+    ]));
+  });
+
   it('degrades safely when optional memory retrieval fails', async () => {
     const builder = new ContextBuilder({
       memoryStore: {
@@ -586,6 +630,36 @@ describe('context selection', () => {
 
     expect(result.items).toEqual(items);
     expect(result.unresolvedConflictIds).toEqual(['time']);
+    expect(result.items.every((item) => item.metadata.requiresClarification)).toBe(true);
+  });
+
+  it('adds a mandatory clarification instruction for retrieved conflicting memories', async () => {
+    const builder = new ContextBuilder({ clock: () => NOW });
+    const context = await builder.build(baseInput({
+      memories: [
+        {
+          id: 'morning',
+          content: 'Prefers morning tours.',
+          createdAt: '2026-01-01T00:00:00Z',
+          metadata: { conflictGroup: 'tour_time_preference' },
+        },
+        {
+          id: 'afternoon',
+          content: 'Prefers afternoon tours.',
+          createdAt: '2026-07-01T00:00:00Z',
+          metadata: { conflictGroup: 'tour_time_preference' },
+        },
+      ],
+    }));
+
+    expect(context.instructions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source: 'memory_conflict',
+        required: true,
+        content: expect.stringContaining('Ask the user one brief clarifying question'),
+      }),
+    ]));
+    expect(context.metrics.unresolvedConflictCount).toBe(1);
   });
 
   it('selects historical user/assistant exchanges as coherent bundles', () => {

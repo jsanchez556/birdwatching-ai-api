@@ -3,7 +3,7 @@ class MemoryRetriever {
     this.store = store;
   }
 
-  async retrieve({ userId, query, signal } = {}) {
+  async retrieve({ userId, query, signal, parentTraceId, excludedMemoryIds } = {}) {
     if (userId === undefined || userId === null || !this.store?.retrieve) {
       return [];
     }
@@ -12,6 +12,8 @@ class MemoryRetriever {
       userId,
       query,
       signal,
+      parentTraceId,
+      excludedMemoryIds,
     });
   }
 }

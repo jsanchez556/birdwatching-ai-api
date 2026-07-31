@@ -24,6 +24,8 @@ function structuredIntent(overrides = {}) {
     participants: 3,
     transportationRequired: null,
     pickupLocation: null,
+    discountCode: null,
+    clearedFields: [],
     missingFields: ['transportationRequired'],
     confidence: 0.96,
     ...overrides,

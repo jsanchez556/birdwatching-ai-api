@@ -1,5 +1,6 @@
 import { randomBytes } from 'crypto';
 import reservationQueries from '../db/queries/reservation.queries.js';
+import reservationStateQueries from '../db/queries/reservationState.queries.js';
 import tourQueries from '../db/queries/tour.queries.js';
 import { DEFAULT_CURRENCY } from '../constants/business.js';
 import logger from '../utils/logger.js';
@@ -425,6 +426,135 @@ class ReservationService {
           continue;
         }
 
+        throw error;
+      }
+    }
+
+    throw new Error('Failed to generate a unique reservation confirmation code');
+  }
+
+  async createReservationFromState({ expectedStateVersion } = {}, metadata = {}) {
+    const normalizedConversationId = normalizeText(metadata.conversationId);
+    const version = Number(expectedStateVersion);
+
+    if (!normalizedConversationId || !Number.isInteger(version) || version < 1) {
+      return {
+        success: false,
+        code: 'RESERVATION_STATE_REQUIRED',
+        message: 'The latest confirmed booking details are required before creating a reservation.',
+        retryable: false,
+      };
+    }
+
+    const state = await reservationStateQueries.get(normalizedConversationId, metadata.userId);
+    if (!state || (state.status !== 'ready_for_confirmation' && state.status !== 'confirmed')) {
+      return {
+        success: false,
+        code: 'RESERVATION_STATE_NOT_READY',
+        message: 'The booking details are incomplete or have not been confirmed.',
+        retryable: false,
+      };
+    }
+
+    const discount = calculateDiscount(state.confirmed.participants, state.confirmed.discountCode);
+    const idempotencyKey = `${normalizedConversationId}:${version}`;
+
+    for (let attempt = 1; attempt <= MAX_CONFIRMATION_ATTEMPTS; attempt += 1) {
+      try {
+        const raw = await reservationStateQueries.book({
+          conversationId: normalizedConversationId,
+          userId: metadata.userId,
+          expectedVersion: version,
+          confirmationCode: generateConfirmationCode(),
+          discountRate: discount.discountRate,
+          idempotencyKey,
+          sourceType: 'booking_tool',
+          sourceId: metadata.aiTraceId || metadata.parentTraceId,
+        });
+
+        if (!raw?.success) {
+          return {
+            success: false,
+            code: raw?.code || 'RESERVATION_FAILED',
+            message: raw?.message || 'The reservation could not be completed.',
+            retryable: false,
+            ...(raw?.tour_available_slots !== undefined
+              ? { availableSlots: Number(raw.tour_available_slots) }
+              : {}),
+          };
+        }
+
+        const reservation = {
+          id: Number(raw.id),
+          userId: raw.user_id === null || raw.user_id === undefined ? null : Number(raw.user_id),
+          customerName: raw.customer_name,
+          customerEmail: raw.customer_email,
+          conversationId: raw.conversation_id,
+          tourId: Number(raw.tour_id),
+          participants: Number(raw.participants),
+          confirmationCode: raw.confirmation_code,
+          createdAt: raw.created_at,
+          totalPrice: Number(raw.total_price),
+        };
+        const tour = {
+          name: raw.tour_name,
+          availableSlots: Number(raw.tour_available_slots),
+        };
+        const result = {
+          ...buildReservationResult({
+            reservation,
+            tour,
+            discount,
+            itineraryStartDate: state.confirmed.itineraryStartDate,
+            itineraryEndDate: state.confirmed.itineraryEndDate,
+          }),
+          stateVersion: Number(raw.state_version),
+          idempotent: raw.idempotent === true,
+          transportationRequired: state.confirmed.transportationRequired,
+          ...(state.confirmed.pickupLocation
+            ? { pickupLocation: state.confirmed.pickupLocation }
+            : {}),
+        };
+
+        if (!result.idempotent) {
+          analytics.track({
+            userId: metadata.userId,
+            anonymousId: `conversation:${normalizedConversationId}`,
+            event: ANALYTICS_EVENTS.RESERVATION_COMPLETED,
+            idempotencyKey: result.reservationId,
+            properties: {
+              conversationId: normalizedConversationId,
+              plan: metadata.authUser?.plan,
+              source: metadata.source || 'chat',
+              tourId: result.tourId,
+              participants: result.participants,
+              amount: result.totalPrice,
+              currency: result.currency,
+              aiTraceId: metadata.aiTraceId,
+              ...getTourRecommendationEventProperties(metadata),
+            },
+          });
+        }
+
+        return result;
+      } catch (error) {
+        if (error.code === '23505' && attempt < MAX_CONFIRMATION_ATTEMPTS) continue;
+        if (error.code === '40001') {
+          return {
+            success: false,
+            code: 'RESERVATION_STATE_CONFLICT',
+            message: 'The booking details changed. Reload the latest details and try again.',
+            retryable: true,
+          };
+        }
+        if (error.code === '22023' || error.code === 'P0002') {
+          return {
+            success: false,
+            code: 'RESERVATION_STATE_NOT_READY',
+            message: 'The booking details are incomplete, stale, or have not been confirmed.',
+            retryable: false,
+          };
+        }
         throw error;
       }
     }

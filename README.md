@@ -19,7 +19,7 @@ Status is based on current code, migrations, tests, CI, and runtime configuratio
 | Express API, normalized envelopes, auth, validation, and role checks | **Implemented** | Route/controller/middleware layers and Supertest coverage exist. Chat is optionally authenticated; durable history, cart, billing, jobs, ingestion, identification, and admin access are protected as appropriate. |
 | OpenAI text generation and streamed chat | **Implemented** | Agent orchestration streams through SSE, records usage, applies input/output guardrails, and accepts abort signals. No latency or availability result is established. |
 | PostgreSQL/pgvector RAG | **Implemented, corpus-dependent** | Hybrid semantic/keyword retrieval, filters, context assembly, ingestion, embeddings, cache fallback, migrations, and tests exist. Useful grounding requires migrations plus ingested documents. |
-| Durable and short-term memory | **Implemented** | Owner-aware conversations/messages are durable in PostgreSQL; recent turns and conversation metadata are assembled per request. Anonymous continuity depends on a client-held conversation ID. |
+| Durable and short-term memory | **Implemented** | Owner-aware conversations/messages provide short-term history. Authenticated users also have conservative, source-linked structured memories in allowlisted categories; visitors do not. Anonymous continuity depends on a client-held conversation ID. |
 | Structured multi-tool orchestration | **Implemented** | Deterministic planning, schema/argument validation, registered tool handlers, intermediate state, retry policy, tracing, and transactional reservation tooling are tested. It is one agent with multi-step tools, not a distributed multi-agent system. |
 | Bird image identification | **Implemented** | Authenticated URL/upload intake, quota reservation, durable job records, BullMQ processing, uncertainty-aware structured output, polling, and tests exist. Queue/OpenAI/S3 configuration is required for the complete path. |
 | Voice chat | **Implemented, optional** | Raw MP3/WAV validation, STT, normal chat orchestration, TTS, S3 upload, media reference, tracing, and route tests exist. It is synchronous and non-streaming. |
@@ -192,7 +192,7 @@ Migration `004_create_vector_knowledge.sql` enables `vector` and creates `knowle
 
 ### Retrieval
 
-The vector repository combines cosine similarity with PostgreSQL text search, normalizes semantic/keyword weights, supports metadata filters, applies score thresholds, and orders media-aware results. Query embeddings and retrieval results can be cached in Redis. Any cache error falls through; a PostgreSQL/vector error is recorded as degraded RAG and chat continues without retrieved context.
+The vector repository combines cosine similarity with PostgreSQL text search, normalizes semantic/keyword weights, supports metadata filters, applies score thresholds, and returns an expanded media-aware candidate pool. Before prompt assembly, the RAG selector applies permission/currentness filters, polarity-aware near-deduplication, query/verification/recency reranking, contradiction detection, extractive compression, document diversification, and a hard token/result budget. Selected passages retain `[R#]`, source, document, and chunk citations. Query embeddings and retrieval results can be cached in Redis using permission-scoped keys. Any cache error falls through; a PostgreSQL/vector error is recorded as degraded RAG and chat continues without retrieved context.
 
 ### RAG request flow
 
@@ -209,7 +209,11 @@ flowchart TD
   Cache -->|"hit"| Assemble["Context assembly"]
   Cache -->|"miss"| Hybrid["Hybrid pgvector search"]
   Cache -.->|"cache failure"| Hybrid
-  Hybrid --> Assemble
+  Hybrid --> Filter["Metadata and permission filter"]
+  Filter --> Dedup["Near-deduplicate"]
+  Dedup --> Rerank["Rerank and detect contradictions"]
+  Rerank --> Compress["Compress and enforce RAG budget"]
+  Compress --> Assemble
   Hybrid -.->|"retrieval failure"| Empty
   Assemble --> Agent["Agent execution"]
   Empty --> Agent
@@ -222,12 +226,17 @@ flowchart TD
 Reading notes:
 
 - Hybrid search combines embedding similarity with PostgreSQL text search; PostgreSQL/pgvector is authoritative.
+- Candidate retrieval is deliberately wider than final model context; only selected, citation-bearing passages enter prompt assembly.
 - Redis failures bypass caching, while retrieval failures continue with an empty context and degraded metadata.
 - Conversation memory and usage are persisted separately from the retrieved prompt context.
 
 ### Memory
 
 - `conversations` and `messages` store durable owner-aware history.
+- `user_memories` stores active/non-expired authenticated user preferences and constraints separately from transcripts, RAG, and reservation state.
+- Structured extraction rejects weak inferences and unsafe/transient data; exact active duplicates are idempotent and explicit corrections preserve inactive superseded rows.
+- Retrieval embeds the current request with eligible candidates, applies confidence/age/expiry and semantic-similarity thresholds, deduplicates normalized content, and caps both results and memory tokens before ContextBuilder's task/model budget.
+- Same-category, same-axis conflicts resolve only through explicit recent correction. Superseded rows remain inactive audit history; uncertain conflicts are not written and require clarification.
 - SQL helpers atomically ensure conversations and save turn pairs.
 - Recent turns form short-term context with bounded selection in the conversation service.
 - JSONB conversation metadata carries selections and booking continuity across turns.
@@ -249,6 +258,8 @@ The current runtime is a single domain agent with deterministic multi-tool plann
 | `createReservation` | Commit the validated selection/customer/dates/pricing path | Transactional PostgreSQL function, row locking/constraints, confirmation only on success. |
 
 Schemas and handlers are registered together so a missing handler or duplicate tool fails registration. The planner constructs dependent steps; the executor stores intermediate results, validates arguments, records trace events, retries transient results/errors twice by default with exponential delay, and marks remaining steps skipped after a blocking failure.
+
+Oversized tool outputs are stored for seven days behind opaque, user/conversation-scoped references. Dependent plan steps keep the complete request-local value, while model context receives at most five allowlisted rows plus totals, pagination, omitted counts, and the result reference. Internal margins, supplier/database fields, raw provider details, credentials, queries, and diagnostics are never copied into the compact prompt projection.
 
 The OpenAI model is used to produce the final natural-language answer, not to choose arbitrary executable code. Unknown tools and invalid arguments return controlled structured failures.
 
@@ -520,7 +531,7 @@ These are illustrative placeholders, not repository credentials.
 
 ### Apply database migrations
 
-There is no migration runner script. Apply every file in [`src/db/migrations/`](./src/db/migrations) in numeric order with `psql` or the deployment platform’s database tooling. The current sequence is `001` through `025`; `011` contains seed data. For example, from a shell that has `DATABASE_URL`:
+There is no migration runner script. Apply every file in [`src/db/migrations/`](./src/db/migrations) in numeric order with `psql` or the deployment platform’s database tooling. The current sequence is `001` through `029`; `011` contains seed data. For example, from a shell that has `DATABASE_URL`:
 
 ```bash
 for migration in src/db/migrations/*.sql; do
@@ -730,7 +741,7 @@ railway.json       Shared artifact build and base Railway policy
 
 ### Durable schema evolution
 
-Migrations `001`–`025` create and evolve conversations/messages, Costa Rica geography/tours/birds/reservations, pgvector knowledge, users and roles, refresh tokens, usage logs, cart, identification/jobs, plans/subscriptions/provider mappings, profile media, billing events/dashboards, experiment assignments, AI feature economics/controls, and audited admin operations.
+Migrations `001`–`029` create and evolve conversations/messages, conversation summaries, durable authenticated user memories and conflict history, structured reservation state/audit, Costa Rica geography/tours/birds/reservations, pgvector knowledge, users and roles, refresh tokens, usage logs, cart, identification/jobs, plans/subscriptions/provider mappings, profile media, billing events/dashboards, experiment assignments, AI feature economics/controls, and audited admin operations.
 
 There is no automatic migration runner, rollback framework, or schema-version table in the application.
 
@@ -759,7 +770,7 @@ Health behavior:
 Deployment checklist:
 
 1. Install and build with Node 22.
-2. Apply migrations `001`–`025` in order before starting the new artifact.
+2. Apply migrations `001`–`029` in order before starting the new artifact.
 3. Configure verified PostgreSQL TLS and Redis connectivity.
 4. Start API and worker separately.
 5. Point liveness/readiness probes at the documented API endpoints.

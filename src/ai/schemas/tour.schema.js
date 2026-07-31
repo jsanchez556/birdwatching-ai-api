@@ -142,7 +142,7 @@ export const tourSchema = [
     type: 'function',
     function: {
       name: 'createReservation',
-      description: 'Create a durable reservation only after the user has explicitly selected a tour. Prefer known customerName and customerEmail from metadata.customerContext when available.',
+      description: 'Create a durable reservation only from the latest explicitly confirmed structured state. The expected state version is the only operational booking argument; other displayed fields are ignored by the booking adapter.',
       parameters: {
         type: 'object',
         properties: {
@@ -174,8 +174,12 @@ export const tourSchema = [
             type: 'string',
             description: 'Optional discount code provided by the user.',
           },
+          expectedStateVersion: {
+            type: 'integer',
+            description: 'Required optimistic-lock version of the latest confirmed structured reservation state.',
+          },
         },
-        required: ['participants', 'customerName'],
+        required: ['expectedStateVersion'],
       },
     },
   },

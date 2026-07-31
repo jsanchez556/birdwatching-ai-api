@@ -75,6 +75,13 @@ function buildBaseArgs(context = {}, extracted = {}) {
     || context.recentMetadata?.customerContext
     || {};
   const selectedTour = context.selectedTour || context.recentMetadata?.selectedTour || {};
+  const hasStructuredState = Boolean(context.reservationState);
+  const structuredValues = hasStructuredState
+    ? {
+      ...(context.reservationState.confirmed || {}),
+      ...(context.reservationState.proposed || {}),
+    }
+    : {};
   const contextParticipants = context.participants
     || context.recentMetadata?.participants
     || extractFromRecentUserMessages(context.messages, extractParticipants);
@@ -82,17 +89,26 @@ function buildBaseArgs(context = {}, extracted = {}) {
     || selectedTour.location
     || extractFromRecentUserMessages(context.messages, extractLocation);
 
+  const structuredParticipants = Object.hasOwn(structuredValues, 'participants')
+    ? structuredValues.participants
+    : undefined;
+  const structuredPickup = Object.hasOwn(structuredValues, 'pickupLocation')
+    ? structuredValues.pickupLocation
+    : undefined;
+
   return {
-    tourId: extracted.tourId || context.selectedTourId || selectedTour.tourId || context.recentMetadata?.selectedTourId || context.tourId,
-    tourName: selectedTour.name || context.tourName,
-    location: extracted.location || selectedTour.location || contextLocation,
-    origin: extracted.pickupLocation || context.origin,
-    participants: extracted.participants || contextParticipants,
-    discountCode: extracted.discountCode || context.discountCode,
-    customerName: customerContext.customerName,
-    customerEmail: customerContext.customerEmail,
-    itineraryStartDate: customerContext.itineraryStartDate,
-    itineraryEndDate: customerContext.itineraryEndDate,
+    tourId: extracted.tourId || structuredValues.tourId || (!hasStructuredState
+      ? context.selectedTourId || selectedTour.tourId || context.recentMetadata?.selectedTourId || context.tourId
+      : undefined),
+    tourName: !hasStructuredState ? selectedTour.name || context.tourName : undefined,
+    location: extracted.location || (!hasStructuredState ? selectedTour.location || contextLocation : undefined),
+    origin: extracted.pickupLocation ?? structuredPickup ?? (!hasStructuredState ? context.origin : undefined),
+    participants: extracted.participants ?? structuredParticipants ?? (!hasStructuredState ? contextParticipants : undefined),
+    discountCode: extracted.discountCode || structuredValues.discountCode || (!hasStructuredState ? context.discountCode : undefined),
+    customerName: structuredValues.customerName || (!hasStructuredState ? customerContext.customerName : undefined),
+    customerEmail: structuredValues.customerEmail || (!hasStructuredState ? customerContext.customerEmail : undefined),
+    itineraryStartDate: structuredValues.itineraryStartDate || (!hasStructuredState ? customerContext.itineraryStartDate : undefined),
+    itineraryEndDate: structuredValues.itineraryEndDate || (!hasStructuredState ? customerContext.itineraryEndDate : undefined),
   };
 }
 
@@ -105,6 +121,35 @@ function hasRequiredReservationDetails(args) {
       && args.itineraryStartDate
       && args.itineraryEndDate
   );
+}
+
+function buildConfirmedReservationArgs(context = {}) {
+  const state = context.reservationState;
+  const confirmed = state?.confirmed || {};
+
+  if (!state || state.status !== 'ready_for_confirmation') return null;
+
+  return compactArgs({
+    tourId: confirmed.tourId,
+    participants: confirmed.participants,
+    customerName: confirmed.customerName,
+    customerEmail: confirmed.customerEmail,
+    itineraryStartDate: confirmed.itineraryStartDate,
+    itineraryEndDate: confirmed.itineraryEndDate,
+    date: confirmed.date,
+    pickupLocation: confirmed.pickupLocation,
+    transportationRequired: confirmed.transportationRequired,
+    discountCode: confirmed.discountCode,
+    expectedStateVersion: state.version,
+  });
+}
+
+function buildReservationPreviewArgs(args = {}) {
+  return compactArgs({
+    tourId: args.tourId,
+    participants: args.participants,
+    discountCode: args.discountCode,
+  });
 }
 
 function parseGuidedIntent(message, context = {}) {
@@ -267,12 +312,15 @@ export class ToolPlanner {
     const needsPickupLocation = structuredIntent?.transportationRequired === true
       && structuredIntent.pickupLocation === null;
     const selectedParticipantCount = extractParticipantActionSelection(originalMessage, context);
-    const transportationPreferenceKnown = hasTransportationPreference({
+    const transportationPreferenceKnown = context.reservationState?.confirmed?.transportationRequired !== undefined
+      || hasTransportationPreference({
       ...context,
       selectedTransportation,
       transportationDeclined,
-    });
+      });
     const transportationRequested = hasTransportationRequest(context) || asksForTransportation;
+    const confirmedReservationArgs = buildConfirmedReservationArgs(context);
+    const usesStructuredReservationState = Boolean(context.reservationState);
 
     if (selectedParticipantCount && hasSelectedTour(context)) {
       if (!hasRequiredReservationDetails(selectedArgs)) {
@@ -457,7 +505,10 @@ export class ToolPlanner {
     }
 
     if (guidedIntent?.intent === 'confirm_reservation') {
-      if (!hasRequiredReservationDetails(selectedArgs)) {
+      const finalReservationArgs = usesStructuredReservationState
+        ? confirmedReservationArgs
+        : selectedArgs;
+      if (!finalReservationArgs || !hasRequiredReservationDetails(finalReservationArgs)) {
         return {
           status: 'needs_clarification',
           message: 'Ask only for the missing booking details. Do not ask again for customer name, email, or itinerary dates if they exist in customerContext.',
@@ -482,15 +533,20 @@ export class ToolPlanner {
         status: 'ready',
         transportationDeclined,
         steps: [
-          { tool: 'checkAvailability', args: selectedArgs },
-          { tool: 'calculatePricing', args: selectedArgs },
-          { tool: 'createReservation', args: selectedArgs },
+          { tool: 'checkAvailability', args: buildReservationPreviewArgs(finalReservationArgs) },
+          { tool: 'calculatePricing', args: buildReservationPreviewArgs(finalReservationArgs) },
+          { tool: 'createReservation', args: usesStructuredReservationState
+            ? { expectedStateVersion: finalReservationArgs.expectedStateVersion }
+            : finalReservationArgs },
         ],
       };
     }
 
     if (asksForBooking && confirmsBooking) {
-      if (!hasRequiredReservationDetails(args)) {
+      const finalReservationArgs = usesStructuredReservationState
+        ? confirmedReservationArgs
+        : args;
+      if (!finalReservationArgs || !hasRequiredReservationDetails(finalReservationArgs)) {
         return {
           status: 'needs_clarification',
           message: 'Ask only for missing booking details before creating the reservation. Use customerContext for customer name, customer email, and itinerary dates when available, and use the conversation history for participant count when the user already provided it.',
@@ -513,9 +569,11 @@ export class ToolPlanner {
         status: 'ready',
         transportationDeclined,
         steps: [
-          { tool: 'checkAvailability', args },
-          { tool: 'calculatePricing', args },
-          { tool: 'createReservation', args },
+          { tool: 'checkAvailability', args: buildReservationPreviewArgs(finalReservationArgs) },
+          { tool: 'calculatePricing', args: buildReservationPreviewArgs(finalReservationArgs) },
+          { tool: 'createReservation', args: usesStructuredReservationState
+            ? { expectedStateVersion: finalReservationArgs.expectedStateVersion }
+            : finalReservationArgs },
         ],
       };
     }

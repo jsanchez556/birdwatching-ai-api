@@ -13,6 +13,9 @@ import createResponseCache from '../../cache/responseCache.js';
 import { getRedisConfig } from '../../cache/redisClient.js';
 import { getModel, MODEL_KEYS, MODEL_REGISTRY } from '../routing/modelRegistry.js';
 import { executeOpenAIWithRetry } from '../utils/openaiRetry.utils.js';
+import toolResultReferenceService from '../../services/toolResultReference.service.js';
+import { persistLargeToolResult } from '../compaction/toolResultReference.js';
+import { compactToolResultForPrompt } from '../compaction/toolResultCompactor.js';
 
 function appendToolMetadata(metadata, toolName, result) {
   if (!metadata || typeof metadata !== 'object') {
@@ -58,6 +61,7 @@ class OpenAIClient {
     embeddingCache = createResponseCache({ namespace: 'embeddings' }),
     redisConfig = getRedisConfig(),
     log = logger,
+    toolResultStore = toolResultReferenceService,
   } = {}) {
     this.client = new OpenAI({
       apiKey: env.openAiApiKey,
@@ -69,6 +73,7 @@ class OpenAIClient {
     this.embeddingCache = embeddingCache;
     this.redisConfig = redisConfig;
     this.logger = log;
+    this.toolResultStore = toolResultStore;
   }
 
   async resolveChatToolCalls(messages, options = {}) {
@@ -137,13 +142,23 @@ class OpenAIClient {
         const toolName = toolCall.function?.name;
         const args = this.parseToolArguments(toolCall);
         const result = await toolExecutor(toolName, args, metadata);
+        await persistLargeToolResult({
+          toolName,
+          result,
+          metadata,
+          store: this.toolResultStore,
+          logger: this.logger,
+        });
         appendToolMetadata(metadata, toolName, result);
+        const promptResult = compactToolResultForPrompt(toolName, result, {
+          resultReferenceId: result?.resultReferenceId,
+        });
 
         return {
           role: 'tool',
           tool_call_id: toolCall.id,
           name: toolName,
-          content: JSON.stringify(result),
+          content: JSON.stringify(promptResult),
         };
       }));
 

@@ -83,15 +83,15 @@ class ConversationMemoryService {
       const hasMetadata = metadata && typeof metadata === 'object' && Object.keys(metadata).length > 0;
       if (normalizedUserId === null) {
         if (hasMetadata) {
-          await conversationQueries.saveMessage(conversationId, userInput, aiOutput, undefined, metadata);
+          return await conversationQueries.saveMessage(conversationId, userInput, aiOutput, undefined, metadata);
         } else {
-          await conversationQueries.saveMessage(conversationId, userInput, aiOutput);
+          return await conversationQueries.saveMessage(conversationId, userInput, aiOutput);
         }
       } else {
         if (hasMetadata) {
-          await conversationQueries.saveMessage(conversationId, userInput, aiOutput, normalizedUserId, metadata);
+          return await conversationQueries.saveMessage(conversationId, userInput, aiOutput, normalizedUserId, metadata);
         } else {
-          await conversationQueries.saveMessage(conversationId, userInput, aiOutput, normalizedUserId);
+          return await conversationQueries.saveMessage(conversationId, userInput, aiOutput, normalizedUserId);
         }
       }
     } catch (dbError) {
@@ -99,6 +99,7 @@ class ConversationMemoryService {
         conversationId,
         error: dbError.message,
       });
+      return null;
     }
   }
 

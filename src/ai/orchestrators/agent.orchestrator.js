@@ -16,6 +16,7 @@ import { getTourRecommendationPrompt } from '../prompts/tourRecommendation.promp
 import { routeModel } from '../routing/modelRouter.js';
 import { classifyTask } from '../routing/taskClassifier.js';
 import reservationIntentExtractor from '../services/reservationIntent.service.js';
+import reservationStateService from '../../services/reservationState.service.js';
 import { executeModelRoute } from '../utils/modelRouteExecution.utils.js';
 import modelRoutingTelemetry from '../telemetry/modelRoutingTelemetry.js';
 import contextBuilder from '../context/contextBuilder.js';
@@ -36,7 +37,7 @@ const BUSINESS_TOOLS = new Set([
   'checkAvailability',
   'createReservation',
 ]);
-const RESERVATION_LANGUAGE = /\b(book|booking|reserve|reservation|tour|availability|available|price|pricing|cost|transport|transportation|transfer|shuttle|pickup)\b/i;
+const RESERVATION_LANGUAGE = /\b(book|booking|reserve|reservation|tour|availability|available|price|pricing|cost|transport|transportation|transfer|shuttle|pickup|participants?|people|persons?|adults?|children|actually|instead|clear|remove|forget)\b|\b\d{4}-\d{2}-\d{2}\b/i;
 
 function safeJson(value) {
   return JSON.stringify(value, null, 2);
@@ -285,6 +286,7 @@ function buildConversationContext(messages = [], metadata = {}) {
     recentToolsCalled: recentMetadata.toolsCalled || [],
     reservation: metadata.reservation,
     customerContext: metadata.customerContext,
+    reservationState: metadata.reservationState,
     messages,
   };
 }
@@ -298,6 +300,7 @@ export class AgentOrchestrator {
     modelRouter = routeModel,
     taskClassifier = classifyTask,
     intentExtractor = reservationIntentExtractor,
+    stateService = reservationStateService,
     modelRouteExecutor = executeModelRoute,
     modelRouteTelemetry = modelRoutingTelemetry,
     log = logger,
@@ -309,6 +312,7 @@ export class AgentOrchestrator {
     this.modelRouter = modelRouter;
     this.taskClassifier = taskClassifier;
     this.intentExtractor = intentExtractor;
+    this.stateService = stateService;
     this.modelRouteExecutor = modelRouteExecutor;
     this.modelRouteTelemetry = modelRouteTelemetry;
     this.logger = log;
@@ -397,20 +401,65 @@ export class AgentOrchestrator {
           code: extraction.code,
           reason: extraction.reason,
         });
-      } else if (extraction.data.intent === 'unknown') {
-        plan = {
-          status: 'intent_unknown',
-          steps: [],
-          message: 'The request is too ambiguous to identify a supported tour or reservation action. Ask a brief clarifying question without executing any business tool.',
-        };
       } else {
-        plan = await this.agent.planner.plan({
-          message: userMessage,
-          context: {
-            ...conversationContext,
-            reservationIntent: extraction.data,
-          },
-        });
+        const selectedStateTour = conversationContext.selectedTour || {};
+        const stateExtraction = {
+          ...extraction.data,
+          tourId: extraction.data.tourId ?? selectedStateTour.tourId ?? conversationContext.selectedTourId ?? null,
+          date: extraction.data.date ?? selectedStateTour.scheduledDate ?? null,
+          participants: extraction.data.participants ?? conversationContext.participants ?? null,
+          transportationRequired: extraction.data.transportationRequired
+            ?? (conversationContext.selectedTransportation
+              ? true
+              : conversationContext.transportationDeclined
+                ? false
+                : null),
+          pickupLocation: extraction.data.pickupLocation
+            ?? conversationContext.selectedTransportation?.origin
+            ?? null,
+        };
+        let stateUpdate;
+        try {
+          stateUpdate = await this.stateService.processMessage({
+            conversationId: metadata.conversationId,
+            userId: metadata.userId,
+            message: userMessage,
+            extraction: stateExtraction,
+            customerContext: metadata.customerContext,
+            sourceId: metadata.aiTraceId || metadata.parentTraceId,
+            confirm: /^(?:yes|yeah|yep|ok|okay|sure)$/i.test(userMessage.trim())
+              && (plan.steps || []).some((step) => step.tool === 'createReservation'),
+          });
+          metadata.reservationState = stateUpdate.state;
+          conversationContext.reservationState = stateUpdate.state;
+        } catch (error) {
+          stateUpdate = { success: false, code: 'RESERVATION_STATE_UNAVAILABLE' };
+          this.logger.warn('Structured reservation state is unavailable', {
+            code: error.code,
+          });
+        }
+
+        if (!stateUpdate.success && stateUpdate.code === 'RESERVATION_STATE_CONFLICT') {
+          plan = {
+            status: 'reservation_state_conflict',
+            steps: [],
+            message: 'The booking details changed concurrently. Ask the user to retry so the latest reservation state can be loaded.',
+          };
+        } else if (extraction.data.intent === 'unknown') {
+          plan = {
+            status: 'intent_unknown',
+            steps: [],
+            message: 'The request is too ambiguous to identify a supported tour or reservation action. Ask a brief clarifying question without executing any business tool.',
+          };
+        } else {
+          plan = await this.agent.planner.plan({
+            message: userMessage,
+            context: {
+              ...conversationContext,
+              reservationIntent: extraction.data,
+            },
+          });
+        }
       }
     }
 
@@ -596,6 +645,8 @@ export class AgentOrchestrator {
       providerMessages: finalMessages,
       toolResults: contextToolResults,
       signal: options.signal,
+      parentTraceId: metadata.parentTraceId,
+      excludedMemoryIds: metadata.excludedMemoryIds,
     });
     const budgetedFinalMessages = formatContextPackage(generationContext);
     metadata.estimatedInputTokens = generationContext.estimatedTokens;

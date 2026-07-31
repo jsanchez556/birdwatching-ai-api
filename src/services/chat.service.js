@@ -8,6 +8,8 @@ import { CHAT_SYSTEM_PROMPT_VERSION } from '../ai/prompts/system.prompt.js';
 import conversationService from './conversation.service.js';
 import ragService from './rag.service.js';
 import usageService from './usage.service.js';
+import userMemoryService from './userMemory.service.js';
+import { buildMemoryClarificationInstruction } from '../ai/memory/memoryConflictResolver.js';
 import logger from '../utils/logger.js';
 import HttpError from '../utils/httpError.js';
 import aiTelemetry from '../monitoring/aiTelemetry.js';
@@ -182,6 +184,8 @@ function buildToolMeta(metadata = {}) {
     ...(recentMetadata.entrySource ? { entrySource: recentMetadata.entrySource } : {}),
     ...(recentMetadata.reservationEntry ? { reservationEntry: recentMetadata.reservationEntry } : {}),
     ...(metadata.toolsCalled?.length ? { toolsCalled: metadata.toolsCalled } : {}),
+    ...(metadata.toolResultReferences?.length
+      ? { toolResultReferences: metadata.toolResultReferences } : {}),
     ...(metadata.tours ? { tours: metadata.tours } : {}),
     ...(metadata.tourRecommendation ? { tourRecommendation: metadata.tourRecommendation } : {}),
     ...(metadata.requestedTransportation ? { requestedTransportation: metadata.requestedTransportation } : {}),
@@ -234,6 +238,8 @@ function applyDegradationNotice(response, degradation, metadata = {}) {
 
 function buildConversationMeta(metadata = {}) {
   const recentMetadata = metadata.conversationContext?.recentAssistantMetadata || {};
+  const toolResultReferences = metadata.toolResultReferences
+    || recentMetadata.toolResultReferences;
 
   return {
     ...(recentMetadata.conversationType ? { conversationType: recentMetadata.conversationType } : {}),
@@ -248,6 +254,7 @@ function buildConversationMeta(metadata = {}) {
     ...(metadata.selectedTransportation ? { selectedTransportation: metadata.selectedTransportation } : {}),
     ...(metadata.participants ? { participants: metadata.participants } : {}),
     ...(metadata.experimentAssignments ? { experimentAssignments: metadata.experimentAssignments } : {}),
+    ...(toolResultReferences?.length ? { toolResultReferences } : {}),
   };
 }
 
@@ -365,6 +372,22 @@ class ChatService {
     throwIfAborted(signal);
     await conversationService.assertCanAccess(activeConversationId, userId);
     const usage = {};
+    const preparedMemory = userId === undefined || userId === null
+      ? null
+      : await userMemoryService.prepare({
+        userId,
+        message,
+        conversationId: activeConversationId,
+        signal,
+        usage,
+        parentTraceId,
+      });
+    const memoryClarificationInstruction = buildMemoryClarificationInstruction(
+      (preparedMemory?.clarificationRequired || [])
+        .map((conflict) => `${conflict.category}:${conflict.conflictKey}`)
+    );
+    const excludedMemoryIds = (preparedMemory?.memories || [])
+      .flatMap((memory) => memory.supersedesMemoryIds || []);
 
     const conversationMessages = await traceConversationContext('chat_conversation_context', {
       parentTraceId,
@@ -415,7 +438,15 @@ class ChatService {
       userMessage: message,
       model: 'unrouted',
       providerMessages: unbudgetedPromptMessages,
+      ...(memoryClarificationInstruction ? {
+        instructions: [{
+          id: 'current-memory-conflict-clarification',
+          content: memoryClarificationInstruction,
+        }],
+      } : {}),
       signal,
+      parentTraceId,
+      excludedMemoryIds,
     });
     const promptMessages = formatContextPackage(planningContext);
     const openAiMetadata = {
@@ -436,6 +467,7 @@ class ChatService {
       estimatedInputTokens: planningContext.estimatedTokens,
       contextMetrics: planningContext.metrics,
       ...(usage.openAiUsage ? { openAiUsage: usage.openAiUsage } : {}),
+      ...(excludedMemoryIds.length ? { excludedMemoryIds } : {}),
       ...getDegradationMetadata(ragContext),
       ...(parentTraceId ? { parentTraceId } : {}),
       aiTraceId: options.aiTraceId || parentTraceId,
@@ -554,6 +586,28 @@ class ChatService {
           : null,
       });
     }
+    const messageMeta = buildToolMeta(openAiMetadata);
+    const conversationMeta = buildConversationMeta(openAiMetadata);
+    const saveOptions = {
+      ...(userId === undefined || userId === null ? {} : { userId }),
+      ...(Object.keys(conversationMeta).length ? { metadata: conversationMeta } : {}),
+    };
+
+    let savedExchange;
+    if (Object.keys(saveOptions).length) {
+      savedExchange = await conversationService.saveExchange(activeConversationId, message, finalResponse, saveOptions);
+    } else {
+      savedExchange = await conversationService.saveExchange(activeConversationId, message, finalResponse);
+    }
+
+    if (userId !== undefined && userId !== null && savedExchange?.id && preparedMemory) {
+      await userMemoryService.commitPrepared({
+        userId,
+        sourceMessageId: savedExchange.id,
+        prepared: preparedMemory,
+      });
+    }
+
     const usageRecord = await usageService.recordOpenAiUsage(userId, openAiMetadata.openAiUsage, {
       usageEventId: options.usageEventId,
       traceId: options.aiExecutionTraceId,
@@ -563,19 +617,6 @@ class ChatService {
       options.aiExecutionTrace?.annotate?.({
         billing: usageRecord.traceMetadata,
       });
-    }
-
-    const messageMeta = buildToolMeta(openAiMetadata);
-    const conversationMeta = buildConversationMeta(openAiMetadata);
-    const saveOptions = {
-      ...(userId === undefined || userId === null ? {} : { userId }),
-      ...(Object.keys(conversationMeta).length ? { metadata: conversationMeta } : {}),
-    };
-
-    if (Object.keys(saveOptions).length) {
-      await conversationService.saveExchange(activeConversationId, message, finalResponse, saveOptions);
-    } else {
-      await conversationService.saveExchange(activeConversationId, message, finalResponse);
     }
     analytics.track({
       userId,

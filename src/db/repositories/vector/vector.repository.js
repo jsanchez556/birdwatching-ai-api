@@ -48,7 +48,9 @@ function normalizeLimit(limit) {
     return 3;
   }
 
-  return Math.min(parsedLimit, 20);
+  // Context selection intentionally over-retrieves before filtering and reranking.
+  // Keep a defensive bound, but do not truncate the selector's candidate pool.
+  return Math.min(parsedLimit, 50);
 }
 
 function toVectorLiteral(vector) {
@@ -441,7 +443,10 @@ class VectorRepository {
           d.category,
           d.locale,
           d.tags,
+          d.active,
+          d.updated_at AS document_updated_at,
           d.metadata AS document_metadata,
+          c.updated_at AS chunk_updated_at,
           ${semanticScoreSql} AS semantic_score,
           ${keywordScoreSql} AS keyword_score,
           ${mediaPrioritySql} AS media_priority,

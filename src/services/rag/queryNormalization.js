@@ -25,5 +25,11 @@ export function buildRetrievalCacheKey(question, options = {}) {
     semanticWeight: options.semanticWeight,
     keywordWeight: options.keywordWeight,
     retrievalVariant: options.retrievalVariant,
+    userId: options.userId,
+    role: options.role,
+    ragTokenBudget: options.ragTokenBudget,
+    maxChunkTokens: options.maxChunkTokens,
+    nearDuplicateThreshold: options.nearDuplicateThreshold,
+    selectionPipelineVersion: '1.0.0',
   });
 }

@@ -20,8 +20,20 @@ Back to [Project Context](../CONTEXT.md). See [Memory](./memory.md) for how chat
 - Conversation-compaction prompt and strict Structured Outputs schema:
   `src/ai/prompts/conversationSummary.prompt.js` and
   `src/ai/schemas/conversationSummary.schema.js`
+- Durable-user-memory extraction prompt and strict Structured Outputs schema:
+  `src/ai/prompts/userMemory.prompt.js` and
+  `src/ai/schemas/userMemory.schema.js`
 
 Prompt modules export both content and a semantic prompt version. Keep version changes intentional and loggable.
+
+User memory prompt version `1.1.0` permits only explicit, stable, safe,
+cross-session information in six allowlisted categories. Model output remains
+untrusted: service validation enforces confidence, safety, editability, lexical
+support, expiration, duplicates, and same-category/semantic-axis conflict rules
+before writes. Explicit corrections and uncertain conflicts are separate schema
+states; uncertain conflicts require clarification and cannot supersede data.
+
+Reservation intent prompt version `2.0.0` adds `clearedFields` so an explicit user request to remove a prior value is distinct from an unstated value. Corrections contain the latest value only. The model never confirms operational state: normalized extraction becomes proposed structured state, and the deterministic application transition owns promotion.
 
 Tour recommendation response framing has two versioned prompt assets in
 `src/ai/prompts/tourRecommendation.prompt.js`. The
@@ -124,6 +136,24 @@ JSON arrays. Retrieved sources can
 include similarity scores, locations, snippets, and document metadata. If
 retrieval or embedding fails, chat continues with the base messages and an empty
 `sources` array.
+
+Pgvector candidates are not prompt-ready. The RAG selection pipeline filters
+metadata and document permissions, removes near-duplicates without collapsing
+opposite-polarity claims, reranks for the current query with verified/current
+source preference, detects contradictions, performs extractive compression,
+and applies a 900-token default RAG payload cap before ContextBuilder's broader
+model-aware budget. The prompt labels each selected passage `[R1]`, `[R2]`, and
+so on and instructs the model to cite those identifiers. Contradiction warnings
+require qualified uncertainty unless verified/current evidence resolves them.
+
+Large tool outputs are also not prompt-ready. Tool results above eight list
+items or roughly 600 estimated tokens are stored outside the prompt and replaced
+with a compact projection containing identifiers needed for later actions,
+relevant display fields, total and pagination metadata, at most five selected
+rows, an omitted-row count, and an opaque result reference. Internal margins,
+supplier/database fields, credentials, raw provider data, query diagnostics,
+and stack information are excluded. A storage failure never causes the raw
+result to be inserted into model context.
 
 When a request sets `responseMode: "field_assistant"` (or voice chat sends
 `X-Response-Mode: field_assistant`), `prompt.builder.js` injects an additional

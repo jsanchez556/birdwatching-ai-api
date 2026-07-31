@@ -177,13 +177,46 @@ memory, tool, summary, and application content as data. Optional source or
 metrics failures degrade safely. Mandatory-content overflow stops before an
 LLM call.
 
+Reservation turns additionally use the versioned structured-state boundary in [reservation-state.md](./reservation-state.md). User extraction creates proposals and explicit confirmation promotes them. The booking tool supplies only an expected state version; PostgreSQL re-reads confirmed values under lock before invoking the existing reservation transaction. State/audit mutation, inventory decrement, reservation creation, and the final `confirmed` transition cannot be split across competing application writes.
+
 RAG uses:
 1. `npm run enrich -- birds` to refresh bird provider data, generate `birds.json`, normalize documents, persist source text, and enqueue embedding jobs
 2. `queryNormalization.js` to normalize the query and build a deterministic cache key
 3. `rag.service.js` to perform best-effort Redis cache lookup
-4. `src/ai/services/retrieval.service.js` to retrieve ranked chunks through pgvector on cache miss
-5. `retrievalFiltering.js` to merge supplemental results and build ranked, deduplicated bird matches
-6. `contextAssembly.js` to build compact grounding trace contracts while `rag.service.js` injects the prompt context and returns frontend-safe sources
+4. `src/ai/services/retrieval.service.js` to retrieve an expanded candidate pool through pgvector on cache miss
+5. `contextSelection.js` to enforce active/effective metadata and permission rules, preserve positive/negative variants during near-deduplication, rerank by query relevance plus verification and recency, flag contradictory claims, compress passages, diversify documents, and enforce the RAG token/result budget
+6. `retrievalFiltering.js` to merge supplemental bird-family candidates and build bird matches; the merged candidates pass through `contextSelection.js` again so the final budget and citation numbering cannot be bypassed
+7. `contextAssembly.js` to build content-free pipeline/grounding trace contracts while `rag.service.js` injects only selected `[R#]` passages and returns frontend-safe citation metadata
+
+Permission metadata is deny-by-default for unknown visibility values. Supported
+visibility values are `public`, `authenticated`, `admin`, and `private`, with
+optional document-level `ownerUserId`, `allowedUserIds`, `deniedUserIds`, and
+`allowedRoles`. Redis retrieval keys include the user/role scope so a filtered
+result cannot be reused across permission boundaries. Currentness filtering
+honors `active`, `effectiveAt`, `expiresAt`, and withdrawn/draft status.
+
+Verified/current preference uses `verified` or `verificationStatus` together
+with `lastVerifiedAt`, source/document update metadata, and query relevance.
+Contradictions are detected from structured `claimKey`/`claimValue` metadata or
+direct positive/negative versions of the same sentence. Contradictory passages
+retain warnings and citations rather than being silently collapsed.
+
+### Tool result compaction
+
+Tool execution preserves complete results for dependent steps, but complete
+payloads do not automatically enter final generation context. Results above the
+inline item or token threshold are stored in `tool_result_references` with an
+opaque ID and seven-day expiration. Retrieval requires the same conversation
+and user scope, and expired references are excluded and opportunistically
+deleted.
+
+`toolResultCompactor.js` creates the prompt projection: action identifiers,
+task-relevant fields, totals, pagination, up to five selected rows, omitted-row
+count, and `resultReferenceId`. It removes internal, provider, database,
+credential, query, and diagnostic fields. Both deterministic agent plans and
+OpenAI's iterative tool-call path use this boundary. If reference persistence
+fails, compaction still occurs and the prompt reports that the reference is
+unavailable instead of falling back to the raw payload.
 
 Bird identification uses:
 1. authenticated `POST /birds/identify` requests with either a JSON `imageUrl` or raw JPEG, PNG, WebP, or GIF bytes
@@ -319,20 +352,18 @@ unknown, metadata includes a choice `uiAction` asking whether the customer wants
 transportation before final reservation confirmation. `calculateTransportation`
 can return a `transportation_selection` action; the selected option is stored as
 `selectedTransportation`, and an explicit no is stored as
-`transportationDeclined`. `createReservation` runs only after the booking
-details are complete, transportation is either selected or declined, and the
-user confirms through the final confirmation action or an affirmative reply to
-that action.
+`transportationDeclined`. These inputs are normalized into versioned proposed
+state. `createReservation` runs only after the booking details are complete,
+transportation is either selected or declined, and an explicit confirmation
+transition has promoted the latest values.
 
-Tour data, availability, and reservations are stored in PostgreSQL.
-`createReservation` normalizes reservation arguments, reuses frontend-provided
-customer context when available, calculates the best discount from supported
-discount codes or group size, generates a confirmation code, and calls
-`create_tour_reservation(...)`. The database function locks the tour row,
-verifies available slots, updates availability, calculates the tour total, and
-inserts the reservation in one database transaction. Transportation totals and
-itinerary dates are returned in frontend-safe chat/tool metadata for the active
-flow, but are not stored in a reservation metadata column.
+Tour data, availability, reservations, and structured workflow state are stored
+in PostgreSQL. `createReservation` accepts only the expected structured-state
+version. `book_reservation_from_state(...)` locks and revalidates the latest
+confirmed values, then invokes `create_tour_reservation(...)`, which locks the
+tour, verifies slots, updates availability, calculates the total, and inserts
+the reservation. Only a successful insert advances state to `confirmed`.
+Transportation totals and itinerary dates remain frontend-safe result metadata.
 
 Future tools should be added as a group with schemas and handlers keyed by the
 OpenAI `function.name`. The registry rejects duplicate names and schemas without
@@ -488,6 +519,25 @@ The `messages` table stores one row per exchange:
 - `user_input`
 - `ai_output`
 - `created_at`
+
+The `user_memories` table is a separate authenticated-user context store. It
+contains an allowlisted category, concise content and fingerprint, extraction
+confidence, source message ID, creation/optional expiration timestamps,
+editability and active state, plus an optional superseding row reference.
+`save_user_memory_v2(...)` serializes writes per user and atomically validates
+source ownership, inserts the new memory, and deactivates explicitly corrected
+same-category memories. `get_active_user_memories(...)` excludes inactive and
+expired rows. The long-term-memory adapter then performs cached embedding-based
+relevance scoring, confidence/age/expiry filtering, normalized deduplication,
+and result/token limiting while retaining source-message provenance. This data
+is never used as reservation booking state.
+
+Migration `029_add_user_memory_conflict_resolution.sql` records conflict keys,
+resolution reasons, and supersession timestamps. Explicit recent correction is
+the only write path allowed to deactivate an active memory. Prior and new rows
+remain available through the internal owner-scoped history query. Ambiguous
+same-axis conflicts are not persisted; mandatory context asks the user to
+clarify before affected preferences are used.
 
 Query modules use SQL helper functions from `002_create_functions.sql`:
 - `ensure_conversation`
