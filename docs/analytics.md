@@ -24,6 +24,7 @@ operation.
 | `reservation_completed` | Reservation service after PostgreSQL persists the reservation; deduplicated by persisted reservation ID | `conversationId`, `plan`, `source`, `tourId`, `participants`, `amount`, `currency`, `aiTraceId`, optional `experiment`, `variant` |
 | `checkout_started` | Checkout service after the hosted checkout session is created | `plan`, `source`, `billingProvider` |
 | `subscription_activated` | Webhook service after a verified event produces an authoritative paid, entitled subscription | `plan`, `source`, `billingProvider`, `status`, `amount`, `currency` |
+| `model_routing_outcome` | Routed executor once per logical execution, after the user-visible outcome is known | `executionId`, `taskCategory`, `routingTier`, `degradedMode`, `userVisibleSuccess`, `conversionOutcome`, `retryBucket`, `fallbackBucket` |
 
 The frontend owns only `chat_started`; confirmed product outcomes are
 server-owned to prevent duplicate semantic events.
@@ -80,6 +81,13 @@ Do not export LangSmith trace payloads or application-log payloads to PostHog.
 The only shared observability field is the opaque server-generated `aiTraceId`
 UUID. It links a product event to its LangSmith root run without copying
 prompts, responses, model telemetry, errors, or trace contents into PostHog.
+
+Model-routing outcomes use their opaque `executionId` as the cross-system
+correlation field and PostHog idempotency key. `conversionOutcome` is bounded
+to `none`, `not_applicable`, `tour_recommended`, `tour_selected`,
+`reservation_started`, or `reservation_completed`. `userVisibleSuccess`
+means the user received a valid usable result, including a truthful degraded
+result; it does not mirror HTTP status.
 
 For prompt experiments, PostHog receives only the safe experiment key and
 variant needed to compare recommendation acceptance and reservation conversion.

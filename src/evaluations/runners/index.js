@@ -15,3 +15,10 @@ export {
   runPortfolioRegression,
   validateAndIndexOutputs,
 } from './portfolioRegression.runner.js';
+
+export {
+  ARCHITECTURES,
+  buildModelRoutingEvaluationReport,
+  measurementFromModelRoutingTelemetry,
+  runModelRoutingEvaluation,
+} from './modelRoutingEvaluation.runner.js';

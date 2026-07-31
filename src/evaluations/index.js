@@ -7,9 +7,13 @@ export {
 } from './scorers/index.js';
 
 export {
+  ARCHITECTURES,
   runEvaluationDataset,
   runLangSmithEvaluation,
   runPromptRegression,
+  runModelRoutingEvaluation,
+  buildModelRoutingEvaluationReport,
+  measurementFromModelRoutingTelemetry,
 } from './runners/index.js';
 
 export {

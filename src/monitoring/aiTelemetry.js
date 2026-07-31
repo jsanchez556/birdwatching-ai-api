@@ -7,11 +7,12 @@ import {
 } from './operationalErrors.js';
 
 const SENSITIVE_KEY_PATTERN = /(password|secret|token|apiKey|authorization|databaseUrl|customerEmail|customerName|email|phone|content|prompt|message|input|output|^answer$|answerText|assistantAnswer|finalAnswer|text|args|arguments|customer)/i;
-const SAFE_TELEMETRY_KEY_PATTERN = /^(promptVersion|promptVersions|promptTokens|completionTokens|totalTokens|inputTokens|outputTokens|requestTokens|prompt_tokens|completion_tokens|total_tokens|input_tokens|output_tokens|tokenUsage|clientOutputStarted)$/;
-const MAX_ARRAY_ITEMS = 8;
+const SAFE_TELEMETRY_KEY_PATTERN = /^(promptVersion|promptVersions|promptTokens|completionTokens|totalTokens|inputTokens|outputTokens|requestTokens|prompt_tokens|completion_tokens|total_tokens|input_tokens|output_tokens|tokenUsage|tokens|clientOutputStarted|input|output|total)$/;
+const MAX_ARRAY_ITEMS = 24;
 const MAX_OBJECT_KEYS = 24;
 const MAX_STRING_LENGTH = 240;
 const MAX_OPERATIONAL_ERRORS = 250;
+const MAX_MODEL_ROUTING_EXECUTIONS = 2_000;
 const SAFE_IDENTIFIER_PATTERN = /^[A-Za-z0-9._:-]+$/;
 
 function safeIdentifier(value) {
@@ -52,12 +53,17 @@ function sanitizeTelemetryValue(value, depth = 0) {
 
   return Object.fromEntries(Object.entries(value)
     .slice(0, MAX_OBJECT_KEYS)
-    .map(([key, entryValue]) => [
-      key,
-      SENSITIVE_KEY_PATTERN.test(key) && !SAFE_TELEMETRY_KEY_PATTERN.test(key)
-        ? '[redacted]'
-        : sanitizeTelemetryValue(entryValue, depth + 1),
-    ]));
+    .map(([key, entryValue]) => {
+      const numericTokenField = /^(input|output|total)$/.test(key);
+      const safeTelemetryField = SAFE_TELEMETRY_KEY_PATTERN.test(key)
+        && (!numericTokenField || typeof entryValue === 'number');
+      return [
+        key,
+        SENSITIVE_KEY_PATTERN.test(key) && !safeTelemetryField
+          ? '[redacted]'
+          : sanitizeTelemetryValue(entryValue, depth + 1),
+      ];
+    }));
 }
 
 function normalizeTokenUsage(usage = {}) {
@@ -96,12 +102,14 @@ class AiTelemetry {
       aiEvaluations: 0,
       aiRetries: 0,
       modelRouteAttempts: 0,
+      modelRoutingExecutions: 0,
       promptTokens: 0,
       completionTokens: 0,
       totalTokens: 0,
     };
     this.latencies = [];
     this.operationalErrors = [];
+    this.modelRoutingExecutions = [];
   }
 
   recordOperationalError({
@@ -250,6 +258,28 @@ class AiTelemetry {
     });
   }
 
+  recordModelRoutingExecution(record = {}) {
+    this.counters.modelRoutingExecutions += 1;
+    const safeRecord = sanitizeTelemetryValue(record);
+    this.modelRoutingExecutions.unshift(safeRecord);
+    this.modelRoutingExecutions.length = Math.min(
+      this.modelRoutingExecutions.length,
+      MAX_MODEL_ROUTING_EXECUTIONS
+    );
+    return safeRecord;
+  }
+
+  getModelRoutingExecutions({ startAt, endAt } = {}) {
+    const startMs = startAt ? new Date(startAt).getTime() : Number.NEGATIVE_INFINITY;
+    const endMs = endAt ? new Date(endAt).getTime() : Number.POSITIVE_INFINITY;
+    return this.modelRoutingExecutions
+      .filter((entry) => {
+        const timestamp = new Date(entry.recordedAt).getTime();
+        return Number.isFinite(timestamp) && timestamp >= startMs && timestamp < endMs;
+      })
+      .map((entry) => structuredClone(entry));
+  }
+
   getSnapshot() {
     return {
       counters: { ...this.counters },
@@ -265,6 +295,7 @@ class AiTelemetry {
 export {
   AiTelemetry,
   MAX_OPERATIONAL_ERRORS,
+  MAX_MODEL_ROUTING_EXECUTIONS,
   normalizeTokenUsage,
   safeIdentifier,
   sanitizeTelemetryValue,

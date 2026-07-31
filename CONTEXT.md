@@ -117,6 +117,11 @@ GET /chat/latest
   cross-model fallback under one route deadline. A fallback can begin only
   before client output starts; every provider attempt keeps the same agent
   parent/correlation metadata and records sanitized attempt history.
+- Every routed generation, including bird candidate generation and verification,
+  produces one normalized model-routing execution record and correlation ID.
+  LangSmith receives detached attempt-level diagnostics, PostHog receives one
+  privacy-safe user-impact event, and the bounded process-local operational
+  store supplies aggregate routing health through `/admin/overview`.
 - Redis cache configuration is optional and environment-driven through `REDIS_URL`, `REDIS_KEY_PREFIX`, `REDIS_CACHE_TTL_SECONDS`, `AI_RESPONSE_CACHE_TTL_SECONDS`, `RETRIEVAL_CACHE_TTL_SECONDS`, `SEMANTIC_CACHE_TTL_SECONDS`, `SEMANTIC_CACHE_SIMILARITY_THRESHOLD`, `SEMANTIC_CACHE_MAX_ENTRIES`, and `EMBEDDING_CACHE_TTL_SECONDS`. Redis failures are logged and fall back to the normal OpenAI or pgvector path.
 - Cache key hashing, positive numeric parsing/formatting, and whitespace normalization live in `src/utils/hash.utils.js`, `src/utils/number.utils.js`, and `src/utils/text.utils.js`; reuse those helpers for new cache-safe deterministic keys or metric formatting.
 - Shared filesystem and media path helpers live in `src/utils/fs.utils.js` and `src/utils/file.utils.js`; use them instead of duplicating JSON file IO, freshness checks, or media URL/path normalization.
@@ -173,6 +178,7 @@ GET /chat/latest
 - Database writes for chat memory are best-effort; save failures are logged but do not fail the chat response.
 - Authenticated chat requests persist OpenAI prompt tokens, completion tokens, estimated cost, compact model usage, and LangSmith-compatible trace correlation to provider-neutral `usage_events`, plus the legacy `usage_logs` row on a best-effort basis after the streamed response completes.
 - AI evaluation data lives under `src/evaluations/datasets/`. `golden-dataset.json` contains 100 representative bird identification, tour recommendation, reservation, RAG, and edge-case queries with expected behaviors and criteria. The portfolio gate requires captured real-pipeline outputs; synthetic label-derived scoring is isolated as a scorer self-test and is not quality evidence.
+- The paired model-routing evaluation compares fixed single-model and routed-model executions over identical cases, counterbalances arm order, and reports task success, schema validity, latency, tokens, cost, fallback frequency, and reservation conversion. Its report command requires an attested real-pipeline artifact and never substitutes synthetic benchmark values.
 - Evaluation scorers measure response relevance, grounding, correctness, completeness, retrieval chunk relevance, retrieval precision/recall, grounding quality, and tool correctness. Prompt regression runners compare prompt quality, latency, token usage, estimated cost, retrieval quality, and quality-per-dollar without storing raw prompt text.
 - LangSmith-compatible evaluation helpers model the flow as `Run -> Evaluation -> Score -> Comparison`; dashboard helpers summarize quality trends, regression detection, and retrieval performance using safe numeric metadata.
 - `.github/workflows/ai-evals.yml` runs the synthetic scorer self-test separately, requires a configured real-pipeline artifact for the portfolio gate, uploads both artifacts, and fails closed when real outputs are absent or thresholds are violated.

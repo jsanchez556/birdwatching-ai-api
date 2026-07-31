@@ -4,6 +4,7 @@ import {
   normalizeOverviewRange,
   normalizePagination,
   normalizeRange,
+  summarizeModelRoutingHealth,
   summarizeTelemetry,
 } from '../src/services/admin/admin.service.js';
 
@@ -98,6 +99,24 @@ describe('AdminService', () => {
       aiCostToday: 18.72,
       averageLatencyMs: 1840,
       errorRate: 0.021,
+      routingHealth: {
+        executions: 0,
+        executionSuccessRate: 0,
+        userVisibleSuccessRate: 0,
+        latencyMs: { p50: null, p95: null, p99: null },
+        tokens: { input: 0, output: 0, total: 0, unavailableExecutions: 0 },
+        estimatedCost: { total: 0, pricedExecutions: 0, unavailableExecutions: 0 },
+        retryRate: 0,
+        fallbackRate: 0,
+        schemaValidationFailureRate: 0,
+        degradedModeRate: 0,
+        breakdowns: {
+          taskCategory: [],
+          routingTier: [],
+          selectedModel: [],
+          finalModel: [],
+        },
+      },
     });
 
     expect(repository.getOverview).toHaveBeenCalledWith({
@@ -114,6 +133,73 @@ describe('AdminService', () => {
       averageLatencyMs: 0,
       errorRate: 0,
     });
+  });
+
+  it('aggregates privacy-safe model-routing health by bounded dimensions', () => {
+    const records = [
+      {
+        canonical: {
+          success: true,
+          latency: 100,
+          tokens: { input: 10, output: 5, total: 15 },
+          cost: 0.001,
+          retryCount: 1,
+          fallbackModel: null,
+          schemaValidation: { success: true, errorCode: null },
+          degradedMode: false,
+        },
+        dimensions: {
+          userVisibleSuccess: true,
+          taskCategory: 'general_chat',
+          routingTier: 'balanced',
+          selectedModel: 'gpt-4o',
+          finalModel: 'gpt-4o',
+        },
+      },
+      {
+        canonical: {
+          success: false,
+          latency: 300,
+          tokens: null,
+          cost: null,
+          retryCount: 0,
+          fallbackModel: 'gpt-4o-mini',
+          schemaValidation: { success: false, errorCode: 'invalid_json' },
+          degradedMode: true,
+        },
+        dimensions: {
+          userVisibleSuccess: true,
+          taskCategory: 'general_chat',
+          routingTier: 'balanced',
+          selectedModel: 'gpt-4o',
+          finalModel: 'gpt-4o-mini',
+        },
+      },
+    ];
+
+    expect(summarizeModelRoutingHealth(records)).toMatchObject({
+      executions: 2,
+      executionSuccessRate: 0.5,
+      userVisibleSuccessRate: 1,
+      latencyMs: { p50: 100, p95: 300, p99: 300 },
+      tokens: { input: 10, output: 5, total: 15, unavailableExecutions: 1 },
+      estimatedCost: { total: 0.001, pricedExecutions: 1, unavailableExecutions: 1 },
+      retryRate: 0.5,
+      fallbackRate: 0.5,
+      schemaValidationFailureRate: 0.5,
+      degradedModeRate: 0.5,
+      breakdowns: {
+        taskCategory: [{
+          key: 'general_chat',
+          executions: 2,
+          successRate: 0.5,
+          userVisibleSuccessRate: 1,
+          averageLatencyMs: 200,
+        }],
+      },
+    });
+    expect(JSON.stringify(summarizeModelRoutingHealth(records)))
+      .not.toMatch(/prompt|response|customer|error message/i);
   });
 
   it('shapes paginated users without exposing password hashes', async () => {

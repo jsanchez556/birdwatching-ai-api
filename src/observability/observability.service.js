@@ -249,6 +249,75 @@ class ObservabilityService {
     }));
   }
 
+  async recordModelRoutingExecution(record = {}) {
+    if (!this.langSmithClient || !isTracingEnabled(this.config)) return;
+
+    const canonical = sanitizeTelemetryValue(record.canonical || {});
+    const dimensions = sanitizeTelemetryValue(record.dimensions || {});
+    const attempts = sanitizeTelemetryValue((record.attempts || []).map((attempt) => {
+      const tokens = attempt.tokenUsage ? normalizeTokenUsage(attempt.tokenUsage) : null;
+      const estimatedCost = tokens
+        ? estimateCost(attempt.providerModel || attempt.modelId, tokens)
+        : null;
+      return {
+        ...attempt,
+        tokens: tokens ? {
+          input: tokens.promptTokens,
+          output: tokens.completionTokens,
+          total: tokens.totalTokens,
+        } : null,
+        estimatedCost,
+        schemaValidation: attempt.schemaValidation || { success: null, errorCode: null },
+      };
+    }));
+    const startedAt = new Date(
+      new Date(record.recordedAt).getTime() - (Number(record.canonical?.latency) || 0)
+    ).toISOString();
+
+    await this.sendLangSmithUpdate('model_routing_execution', {
+      id: record.executionId,
+      type: 'model_routing_execution',
+      name: 'model_routing_execution',
+    }, async () => {
+      await this.langSmithClient.createRun({
+        id: record.executionId,
+        name: 'model_routing_execution',
+        run_type: 'chain',
+        project_name: this.config.langChainProject,
+        start_time: startedAt,
+        end_time: record.recordedAt,
+        ...(record.parentTraceId ? { parent_run_id: record.parentTraceId } : {}),
+        inputs: {
+          requestedTask: canonical.requestedTask,
+          taskCategory: dimensions.taskCategory,
+          selectedModel: canonical.selectedModel,
+          routingTier: dimensions.routingTier,
+        },
+        outputs: {
+          ...canonical,
+          finalModel: dimensions.finalModel,
+          finalRoutingTier: dimensions.finalRoutingTier,
+          userVisibleSuccess: dimensions.userVisibleSuccess,
+          attempts,
+        },
+        extra: {
+          metadata: {
+            executionId: record.executionId,
+            ...dimensions,
+            retryCount: canonical.retryCount,
+            degradedMode: canonical.degradedMode,
+            success: canonical.success,
+          },
+        },
+        ...(canonical.tokens ? {
+          prompt_tokens: canonical.tokens.input,
+          completion_tokens: canonical.tokens.output,
+          total_tokens: canonical.tokens.total,
+        } : {}),
+      });
+    });
+  }
+
   async sendLangSmithUpdate(action, trace, operation) {
     try {
       await operation();

@@ -1,5 +1,6 @@
 import env from '../../config/env.js';
 import aiTelemetry from '../../monitoring/aiTelemetry.js';
+import modelRoutingTelemetry from '../telemetry/modelRoutingTelemetry.js';
 import HttpError from '../../utils/httpError.js';
 import {
   classifyOpenAIError,
@@ -102,6 +103,14 @@ function safeRecordAttempt(record, metadata, telemetry) {
   }
 }
 
+function safeFinalizeExecution(executionTelemetry, execution, details) {
+  try {
+    return executionTelemetry.finalize(execution, details);
+  } catch {
+    return null;
+  }
+}
+
 function buildModelChain(modelRoute) {
   const seen = new Set();
   return [modelRoute.primaryModel, ...(modelRoute.fallbackModels || [])]
@@ -131,6 +140,11 @@ export async function executeModelRoute({
   signal,
   metadata = {},
   telemetry = aiTelemetry,
+  executionTelemetry = modelRoutingTelemetry,
+  autoFinalizeTelemetry = true,
+  onTelemetryExecution = () => {},
+  degradedMode = false,
+  userVisibleSuccess,
   now = () => Date.now(),
   baseDelayMs,
   maxDelayMs,
@@ -142,6 +156,19 @@ export async function executeModelRoute({
   if (!modelRoute?.primaryModel || models.length === 0) {
     throw createRoutesExhaustedError();
   }
+
+  let routingExecution;
+  try {
+    routingExecution = executionTelemetry.start({ metadata });
+  } catch {
+    // Telemetry initialization cannot affect the provider request.
+  }
+  try {
+    onTelemetryExecution(routingExecution);
+  } catch {
+    // A telemetry observer cannot affect model execution.
+  }
+  let executionSucceeded = false;
 
   const timeoutMs = Math.max(0, Number(modelRoute.timeoutMs) || 0);
   const deadlineAt = now() + timeoutMs;
@@ -185,6 +212,8 @@ export async function executeModelRoute({
         let clientOutputStarted = false;
         const attemptContext = {};
         const attemptRole = routePosition === 0 ? 'primary' : 'fallback';
+        const previousAttempt = metadata.modelRouting?.attempts?.at(-1);
+        const transitionReason = safeOperationalCode(previousAttempt?.errorCategory);
 
         try {
           const value = await runWithSignal(() => executeAttempt({
@@ -216,12 +245,26 @@ export async function executeModelRoute({
             providerRequestId: attemptContext.providerRequestId,
             remainingDeadlineMs,
             tokenUsage: attemptContext.tokenUsage,
+            schemaValidation: attemptContext.schemaValidation,
+            providerModel: attemptContext.providerModel,
+            fallbackReason: routePosition > 0 ? transitionReason : undefined,
+            retryReason: sameModelAttempt > 0 ? transitionReason : undefined,
           };
           safeRecordAttempt(record, metadata, telemetry);
           metadata.model = attemptContext.providerModel || model.modelId;
           metadata.modelRouting.selectedModelKey = model.key;
           metadata.modelRouting.selectedRoutePosition = routePosition;
           metadata.modelRouting.usedFallback = routePosition > 0;
+          executionSucceeded = true;
+          if (autoFinalizeTelemetry) {
+            safeFinalizeExecution(executionTelemetry, routingExecution, {
+              modelRoute,
+              metadata,
+              success: true,
+              userVisibleSuccess: userVisibleSuccess ?? true,
+              degradedMode: degradedMode || routePosition > 0,
+            });
+          }
           return value;
         } catch (error) {
           const endedAtMs = now();
@@ -249,6 +292,10 @@ export async function executeModelRoute({
             providerRequestId: attemptContext.providerRequestId || error?.providerRequestId,
             remainingDeadlineMs,
             tokenUsage: attemptContext.tokenUsage,
+            schemaValidation: attemptContext.schemaValidation,
+            providerModel: attemptContext.providerModel,
+            fallbackReason: routePosition > 0 ? transitionReason : undefined,
+            retryReason: sameModelAttempt > 0 ? transitionReason : undefined,
           }, metadata, telemetry);
 
           if (wasDeadline) {
@@ -304,11 +351,29 @@ export async function executeModelRoute({
 
     throw createRoutesExhaustedError();
   } catch (error) {
+    if (autoFinalizeTelemetry) {
+      safeFinalizeExecution(executionTelemetry, routingExecution, {
+        modelRoute,
+        metadata,
+        success: false,
+        userVisibleSuccess: userVisibleSuccess ?? false,
+        degradedMode,
+      });
+    }
     if (deadlineExpired || now() >= deadlineAt) {
       throw createRoutesExhaustedError({ deadlineExpired: true });
     }
     throw error;
   } finally {
+    if (autoFinalizeTelemetry && !executionSucceeded) {
+      safeFinalizeExecution(executionTelemetry, routingExecution, {
+        modelRoute,
+        metadata,
+        success: false,
+        userVisibleSuccess: userVisibleSuccess ?? false,
+        degradedMode,
+      });
+    }
     clearTimeout(deadlineTimer);
     if (externalAbortListener) signal.removeEventListener('abort', externalAbortListener);
     if (!operationController.signal.aborted) operationController.abort();

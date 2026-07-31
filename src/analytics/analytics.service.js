@@ -91,6 +91,7 @@ class AnalyticsService {
 }
 
 function createConfiguredProvider() {
+  if (env.nodeEnv === 'test') return null;
   try {
     return createPostHogProvider(env.posthog);
   } catch {

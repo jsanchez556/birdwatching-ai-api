@@ -10,4 +10,5 @@ export const ANALYTICS_EVENTS = Object.freeze({
   RESERVATION_COMPLETED: 'reservation_completed',
   CHECKOUT_STARTED: 'checkout_started',
   SUBSCRIPTION_ACTIVATED: 'subscription_activated',
+  MODEL_ROUTING_OUTCOME: 'model_routing_outcome',
 });

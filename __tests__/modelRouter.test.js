@@ -72,6 +72,52 @@ describe('model routing', () => {
       .toBe(MODEL_KEYS.VISION_MULTIMODAL);
   });
 
+  it.each([
+    {
+      label: 'intent classification',
+      input: { task: 'intent_classification', complexity: 'low' },
+      expected: {
+        task: 'intent_classification',
+        route: 'economy',
+        primaryModel: {
+          key: MODEL_KEYS.ECONOMY_FAST,
+          modelId: DISTINCT_MODEL_IDS.economy,
+        },
+        reasoningEffort: 'low',
+        timeoutMs: 8000,
+        maxRetries: 1,
+        reasonCode: 'FAST_INTENT_CLASSIFICATION',
+      },
+    },
+    {
+      label: 'complex reservation',
+      input: { task: 'reservation_planning', complexity: 'high' },
+      expected: {
+        task: 'reservation_planning',
+        route: 'advanced',
+        primaryModel: {
+          key: MODEL_KEYS.ADVANCED_REASONING,
+          modelId: DISTINCT_MODEL_IDS.advanced,
+        },
+        reasoningEffort: 'medium',
+        timeoutMs: 30000,
+        maxRetries: 2,
+        reasonCode: 'MULTI_STEP_RESERVATION',
+      },
+    },
+  ])('returns stable route metadata for $label', ({ input, expected }) => {
+    const result = createModelRouter({ registry: mutableRegistry() })(input);
+
+    expect(result).toMatchObject(expected);
+    expect(result.fallbackModels).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        key: expect.any(String),
+        modelId: expect.any(String),
+      }),
+    ]));
+    expect(result.reason).toEqual(expect.any(String));
+  });
+
   it('is deterministic and applies stable optional-input defaults', () => {
     const first = routeModel({ task: 'general_chat' });
     const second = routeModel({

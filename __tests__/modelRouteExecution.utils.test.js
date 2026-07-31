@@ -80,6 +80,32 @@ describe('routed model execution', () => {
     ]);
   });
 
+  it('limits invalid-schema correction to one primary retry before fallback', async () => {
+    const invalidSchema = Object.assign(new Error('invalid structured output'), {
+      code: 'provider_malformed_response',
+    });
+    const executeAttempt = jest.fn()
+      .mockRejectedValueOnce(invalidSchema)
+      .mockRejectedValueOnce(invalidSchema)
+      .mockResolvedValueOnce('correct fallback response');
+
+    await expect(executeModelRoute({
+      modelRoute: route({ maxRetries: 4 }),
+      executeAttempt,
+      baseDelayMs: 0,
+      jitterRatio: 0,
+    })).resolves.toBe('correct fallback response');
+
+    expect(executeAttempt.mock.calls.map(([attempt]) => [
+      attempt.model.key,
+      attempt.sameModelAttempt,
+    ])).toEqual([
+      ['primary', 1],
+      ['primary', 2],
+      ['fallback-one', 1],
+    ]);
+  });
+
   it.each([
     [{ status: 401 }, 'authentication'],
     [{ status: 400 }, 'invalid_request'],
@@ -276,6 +302,21 @@ describe('routed model execution', () => {
       telemetry: {
         recordModelRouteAttempt: jest.fn(() => {
           throw new Error('telemetry unavailable');
+        }),
+      },
+    })).resolves.toBe('ok');
+  });
+
+  it('does not fail successful generation when execution telemetry is unavailable', async () => {
+    await expect(executeModelRoute({
+      modelRoute: route(),
+      executeAttempt: jest.fn().mockResolvedValue('ok'),
+      executionTelemetry: {
+        start: jest.fn(() => {
+          throw new Error('telemetry initialization unavailable');
+        }),
+        finalize: jest.fn(() => {
+          throw new Error('telemetry finalization unavailable');
         }),
       },
     })).resolves.toBe('ok');

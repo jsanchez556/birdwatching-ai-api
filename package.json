@@ -19,6 +19,8 @@
     "ai:evals": "node scripts/runAiEvals.js",
     "ai:evals:portfolio": "node scripts/runAiEvals.js",
     "ai:evals:self-test": "node scripts/runAiScorerSelfTest.js",
+    "ai:evals:model-routing": "node scripts/runModelRoutingEvals.js",
+    "test:model-routing": "npm test -- --runInBand __tests__/modelRouter.test.js __tests__/reservationIntent.service.test.js __tests__/openaiRetry.utils.test.js __tests__/modelRouteExecution.utils.test.js __tests__/agentPlanningOrchestration.test.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
   },
   "keywords": [],

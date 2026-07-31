@@ -8,6 +8,18 @@ Run the full suite with:
 npm test
 ```
 
+Run the focused model-routing reliability suite with:
+
+```bash
+npm run test:model-routing
+```
+
+It covers deterministic task/model selection and route metadata, mocked
+structured OpenAI output with Zod validation, refusals, retry classification,
+exponential backoff, ordered fallback, the overall route deadline, truthful
+degradation, and the non-retryable reservation side-effect boundary. All
+provider clients are injected Jest mocks; the suite performs no network calls.
+
 Run the cross-repository streamed `/chat` contract smoke test with both
 repositories checked out as siblings:
 
@@ -45,6 +57,43 @@ the actual application pipeline:
 ```bash
 npm run ai:evals -- --results path/to/real-pipeline-output-v1.json
 ```
+
+Run the paired model-routing comparison with measurements captured from both
+architectures over the same dataset:
+
+```bash
+npm run ai:evals:model-routing -- \
+  --results path/to/model-routing-execution-results.json \
+  --output tmp/model-routing-evaluation-report.json
+```
+
+The input contract is
+`src/evaluations/datasets/model-routing-results.schema.json`. It requires one
+`single_model` and one `routed_models` result for every dataset case, actual
+pipeline provenance, and no unknown fields. Collect both arms against the same
+environment and configuration window. The runner counterbalances arm order by
+case to reduce warm-cache and temporal bias.
+
+Each result records an explicit task-success assessment, applicable schema
+validation, measured end-to-end latency, provider-reported token usage,
+configured-pricing cost, routed fallback use, and reservation outcome.
+Unavailable tokens and cost remain `null`; the report exposes coverage and
+does not invent an average cost from incomplete data. Reservation conversion
+uses only cases marked as reservation opportunities. Use
+`measurementFromModelRoutingTelemetry` to project the canonical routing record
+into the content-free input shape, then add the independently assessed task
+success and reservation-opportunity label.
+
+The command fails closed without a staging or production-like paired artifact.
+To exercise only the report calculations and privacy boundary, run:
+
+```bash
+MODEL_ROUTING_EVAL_TEST_OUTPUT_FILE=tmp/model-routing-evaluation-self-test.json \
+  npm test -- --runInBand __tests__/ai/modelRoutingEvaluation.test.js
+```
+
+That output is labeled `evidenceClass: "test_execution"` and validates the
+suite itself. It is not evidence that either architecture performs better.
 
 `npm run ai:evals:portfolio` is an explicit alias. For backward compatibility,
 `npm run ai:evals` remains the portfolio command, but its old synthetic fallback

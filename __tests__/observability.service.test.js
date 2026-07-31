@@ -319,6 +319,106 @@ describe('AI observability service', () => {
     }));
   });
 
+  it('exports chronological routed attempts with per-attempt usage, cost, and validation', async () => {
+    const langSmithClient = {
+      createRun: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new ObservabilityService({
+      config: {
+        langChainTracingV2: true,
+        langChainApiKey: 'test-key',
+        langChainProject: 'birdwatching-ai',
+      },
+      langSmithClient,
+    });
+
+    await service.recordModelRoutingExecution({
+      executionId: 'routing-execution-1',
+      recordedAt: '2026-07-30T12:00:01.000Z',
+      parentTraceId: 'agent-trace-1',
+      canonical: {
+        requestedTask: 'general_chat',
+        selectedModel: 'gpt-4o',
+        fallbackModel: 'gpt-4o-mini',
+        reason: 'FALLBACK_SERVICE_UNAVAILABLE',
+        latency: 1000,
+        tokens: { input: 110, output: 20, total: 130 },
+        cost: 0.000477,
+        retryCount: 0,
+        schemaValidation: { success: true, errorCode: null },
+        degradedMode: true,
+        success: true,
+      },
+      dimensions: {
+        taskCategory: 'general_chat',
+        routingTier: 'balanced',
+        finalRoutingTier: 'economy',
+        selectedModel: 'gpt-4o',
+        finalModel: 'gpt-4o-mini',
+        userVisibleSuccess: true,
+        conversionOutcome: 'none',
+      },
+      attempts: [
+        {
+          modelId: 'gpt-4o',
+          attemptRole: 'primary',
+          routePosition: 0,
+          sameModelAttempt: 1,
+          durationMs: 600,
+          outcome: 'failed',
+          errorCategory: 'service_unavailable',
+          tokenUsage: { prompt_tokens: 10, completion_tokens: 0, total_tokens: 10 },
+          schemaValidation: { success: null, errorCode: null },
+        },
+        {
+          modelId: 'gpt-4o-mini',
+          attemptRole: 'fallback',
+          routePosition: 1,
+          sameModelAttempt: 1,
+          durationMs: 400,
+          outcome: 'succeeded',
+          tokenUsage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 },
+          schemaValidation: { success: true, errorCode: null },
+        },
+      ],
+    });
+
+    const exported = langSmithClient.createRun.mock.calls[0][0];
+    expect(exported).toMatchObject({
+      id: 'routing-execution-1',
+      parent_run_id: 'agent-trace-1',
+      start_time: '2026-07-30T12:00:00.000Z',
+      end_time: '2026-07-30T12:00:01.000Z',
+      inputs: {
+        requestedTask: 'general_chat',
+        taskCategory: 'general_chat',
+        selectedModel: 'gpt-4o',
+        routingTier: 'balanced',
+      },
+      outputs: {
+        finalModel: 'gpt-4o-mini',
+        finalRoutingTier: 'economy',
+        userVisibleSuccess: true,
+      },
+      prompt_tokens: 110,
+      completion_tokens: 20,
+      total_tokens: 130,
+    });
+    expect(exported.outputs.attempts).toEqual([
+      expect.objectContaining({
+        attemptRole: 'primary',
+        tokens: { input: 10, output: 0, total: 10 },
+        estimatedCost: 0.000025,
+      }),
+      expect.objectContaining({
+        attemptRole: 'fallback',
+        tokens: { input: 100, output: 20, total: 120 },
+        estimatedCost: 0.000027,
+        schemaValidation: { success: true, errorCode: null },
+      }),
+    ]);
+  });
+
   it('includes late trace annotations in LangSmith completion metadata', async () => {
     const telemetry = new AiTelemetry({ log: mockLogger });
     const langSmithClient = {

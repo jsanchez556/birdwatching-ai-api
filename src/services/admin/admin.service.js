@@ -166,6 +166,106 @@ function summarizeTelemetry(snapshot = {}) {
   };
 }
 
+function percentile(values, target) {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = Math.max(0, Math.ceil(target * sorted.length) - 1);
+  return Number(sorted[index].toFixed(2));
+}
+
+function rate(numerator, denominator) {
+  return denominator === 0 ? 0 : Number((numerator / denominator).toFixed(4));
+}
+
+function summarizeRoutingBreakdown(records, dimension) {
+  const groups = new Map();
+  for (const record of records) {
+    const key = record.dimensions?.[dimension] || 'unknown';
+    const group = groups.get(key) || {
+      key,
+      executions: 0,
+      successful: 0,
+      userVisibleSuccessful: 0,
+      latencyTotalMs: 0,
+    };
+    group.executions += 1;
+    group.successful += record.canonical?.success === true ? 1 : 0;
+    group.userVisibleSuccessful += record.dimensions?.userVisibleSuccess === true ? 1 : 0;
+    group.latencyTotalMs += number(record.canonical?.latency);
+    groups.set(key, group);
+  }
+
+  return [...groups.values()]
+    .map((group) => ({
+      key: group.key,
+      executions: group.executions,
+      successRate: rate(group.successful, group.executions),
+      userVisibleSuccessRate: rate(group.userVisibleSuccessful, group.executions),
+      averageLatencyMs: Number((group.latencyTotalMs / group.executions).toFixed(2)),
+    }))
+    .sort((left, right) => right.executions - left.executions || left.key.localeCompare(right.key));
+}
+
+function summarizeModelRoutingHealth(records = []) {
+  const safeRecords = Array.isArray(records) ? records : [];
+  const executions = safeRecords.length;
+  const successful = safeRecords.filter((record) => record.canonical?.success === true).length;
+  const userVisibleSuccessful = safeRecords
+    .filter((record) => record.dimensions?.userVisibleSuccess === true).length;
+  const retries = safeRecords.filter((record) => number(record.canonical?.retryCount) > 0).length;
+  const fallbacks = safeRecords.filter((record) => record.canonical?.fallbackModel !== null).length;
+  const degraded = safeRecords.filter((record) => record.canonical?.degradedMode === true).length;
+  const validations = safeRecords
+    .map((record) => record.canonical?.schemaValidation)
+    .filter((validation) => typeof validation?.success === 'boolean');
+  const validationFailures = validations.filter((validation) => validation.success === false).length;
+  const latencies = safeRecords
+    .map((record) => finiteNonNegative(record.canonical?.latency))
+    .filter((value) => value !== null);
+  const tokenRecords = safeRecords
+    .map((record) => record.canonical?.tokens)
+    .filter((tokens) => tokens && typeof tokens === 'object');
+  const pricedRecords = safeRecords.filter((record) => finiteNonNegative(record.canonical?.cost) !== null);
+
+  return {
+    executions,
+    executionSuccessRate: rate(successful, executions),
+    userVisibleSuccessRate: rate(userVisibleSuccessful, executions),
+    latencyMs: {
+      p50: percentile(latencies, 0.5),
+      p95: percentile(latencies, 0.95),
+      p99: percentile(latencies, 0.99),
+    },
+    tokens: {
+      input: tokenRecords.reduce((total, tokens) => total + number(tokens.input), 0),
+      output: tokenRecords.reduce((total, tokens) => total + number(tokens.output), 0),
+      total: tokenRecords.reduce((total, tokens) => total + number(tokens.total), 0),
+      unavailableExecutions: executions - tokenRecords.length,
+    },
+    estimatedCost: {
+      total: money(pricedRecords.reduce((total, record) => total + number(record.canonical.cost), 0)),
+      pricedExecutions: pricedRecords.length,
+      unavailableExecutions: executions - pricedRecords.length,
+    },
+    retryRate: rate(retries, executions),
+    fallbackRate: rate(fallbacks, executions),
+    schemaValidationFailureRate: rate(validationFailures, validations.length),
+    degradedModeRate: rate(degraded, executions),
+    breakdowns: {
+      taskCategory: summarizeRoutingBreakdown(safeRecords, 'taskCategory'),
+      routingTier: summarizeRoutingBreakdown(safeRecords, 'routingTier'),
+      selectedModel: summarizeRoutingBreakdown(safeRecords, 'selectedModel'),
+      finalModel: summarizeRoutingBreakdown(safeRecords, 'finalModel'),
+    },
+  };
+}
+
+function finiteNonNegative(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const normalized = Number(value);
+  return Number.isFinite(normalized) && normalized >= 0 ? normalized : null;
+}
+
 function paginationMeta({ page, limit }, total) {
   const normalizedTotal = number(total);
   return {
@@ -277,6 +377,9 @@ class AdminService {
       }),
     ]);
     const telemetry = summarizeTelemetry(this.telemetry.getSnapshot());
+    const routingHealth = summarizeModelRoutingHealth(
+      this.telemetry.getModelRoutingExecutions?.(range) || []
+    );
 
     return {
       activeUsers: number(row?.active_users),
@@ -287,6 +390,7 @@ class AdminService {
       aiCostToday: platformMoney(row?.ai_estimated_cost),
       averageLatencyMs: telemetry.averageLatencyMs,
       errorRate: telemetry.errorRate,
+      routingHealth,
     };
   }
 
@@ -381,5 +485,6 @@ export {
   normalizePagination,
   normalizeRange,
   summarizeTelemetry,
+  summarizeModelRoutingHealth,
 };
 export default new AdminService();

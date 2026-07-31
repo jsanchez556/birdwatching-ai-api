@@ -7,6 +7,7 @@ import {
 
 describe('selective OpenAI retry policy', () => {
   afterEach(() => {
+    jest.useRealTimers();
     jest.restoreAllMocks();
   });
 
@@ -71,6 +72,39 @@ describe('selective OpenAI retry policy', () => {
       attempt: 1,
       delayMs: 1,
     }));
+  });
+
+  it('retries HTTP 429 with deterministic exponential backoff', async () => {
+    jest.useFakeTimers();
+    const rateLimitError = Object.assign(new Error('rate limited'), { status: 429 });
+    const operation = jest.fn()
+      .mockRejectedValueOnce(rateLimitError)
+      .mockRejectedValueOnce(rateLimitError)
+      .mockResolvedValue({ ok: true });
+    const onRetry = jest.fn();
+
+    const resultPromise = executeOpenAIWithRetry(operation, {
+      maxRetries: 2,
+      baseDelayMs: 10,
+      maxDelayMs: 100,
+      jitterRatio: 0,
+      timeoutMs: 1000,
+      onRetry,
+    });
+
+    await jest.advanceTimersByTimeAsync(10);
+    await jest.advanceTimersByTimeAsync(20);
+
+    await expect(resultPromise).resolves.toEqual({ ok: true });
+    expect(operation).toHaveBeenCalledTimes(3);
+    expect(onRetry.mock.calls.map(([event]) => ({
+      attempt: event.attempt,
+      delayMs: event.delayMs,
+      category: event.classification.category,
+    }))).toEqual([
+      { attempt: 1, delayMs: 10, category: 'rate_limit' },
+      { attempt: 2, delayMs: 20, category: 'rate_limit' },
+    ]);
   });
 
   it('enforces the maximum retry count', async () => {

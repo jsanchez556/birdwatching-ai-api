@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "birdwatching-ai-model-routing-results-v1",
+  "title": "Paired single-model and routed-model execution measurements",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "evaluationType",
+    "artifactId",
+    "sourceType",
+    "provenance",
+    "runs"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "evaluationType": { "const": "model_routing_execution_results" },
+    "artifactId": { "type": "string", "minLength": 1 },
+    "sourceType": {
+      "enum": [
+        "recorded_production_like",
+        "staging_evaluation",
+        "external_pipeline_fixture"
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["generatedByActualPipeline", "labelsPresentedToPipeline"],
+      "properties": {
+        "generatedByActualPipeline": { "const": true },
+        "labelsPresentedToPipeline": { "const": false },
+        "collectionMethod": { "type": "string" },
+        "collectedAt": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "runs": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "caseId",
+          "architecture",
+          "taskSuccess",
+          "schemaValidation",
+          "latencyMs",
+          "tokens",
+          "cost",
+          "fallbackUsed",
+          "reservationOpportunity",
+          "conversionOutcome"
+        ],
+        "properties": {
+          "caseId": { "type": "string", "minLength": 1 },
+          "architecture": { "enum": ["single_model", "routed_models"] },
+          "taskSuccess": { "type": "boolean" },
+          "schemaValidation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["success", "errorCode"],
+            "properties": {
+              "success": { "type": ["boolean", "null"] },
+              "errorCode": {
+                "type": ["string", "null"],
+                "pattern": "^[a-z0-9_:-]{1,80}$"
+              }
+            }
+          },
+          "latencyMs": { "type": "number", "minimum": 0 },
+          "tokens": {
+            "oneOf": [
+              { "type": "null" },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["input", "output", "total"],
+                "properties": {
+                  "input": { "type": "number", "minimum": 0 },
+                  "output": { "type": "number", "minimum": 0 },
+                  "total": { "type": "number", "minimum": 0 }
+                }
+              }
+            ]
+          },
+          "cost": { "type": ["number", "null"], "minimum": 0 },
+          "fallbackUsed": { "type": "boolean" },
+          "reservationOpportunity": { "type": "boolean" },
+          "conversionOutcome": {
+            "enum": [
+              "none",
+              "not_applicable",
+              "tour_recommended",
+              "tour_selected",
+              "reservation_started",
+              "reservation_completed"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

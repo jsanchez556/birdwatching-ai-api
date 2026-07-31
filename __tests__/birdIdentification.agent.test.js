@@ -80,6 +80,8 @@ describe('birdIdentificationAgent', () => {
           strict: true,
         }),
       }),
+    }), expect.objectContaining({
+      signal: expect.any(AbortSignal),
     }));
     expect(mockCreate.mock.calls[0][0].messages[1]).toEqual(expect.objectContaining({
       role: 'user',

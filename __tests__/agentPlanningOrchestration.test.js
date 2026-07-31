@@ -2354,16 +2354,28 @@ describe('multi-tool agent planning and orchestration', () => {
         };
       }),
     };
-    const routeError = Object.assign(new Error('routes exhausted'), {
-      status: 503,
-      code: 'MODEL_ROUTES_EXHAUSTED',
+    const aiClient = {
+      streamChatCompletion: jest.fn().mockRejectedValue(
+        Object.assign(new Error('provider unavailable'), { status: 503 })
+      ),
+    };
+    const modelRouter = jest.fn().mockReturnValue({
+      task: 'tour_recommendation',
+      route: 'balanced',
+      primaryModel: { key: 'primary', modelId: 'provider-primary' },
+      fallbackModels: [{ key: 'fallback', modelId: 'provider-fallback' }],
+      reasoningEffort: 'medium',
+      timeoutMs: 10_000,
+      maxRetries: 0,
+      reasonCode: 'TEST_ROUTE',
     });
-    const modelRouteExecutor = jest.fn().mockRejectedValue(routeError);
     const onChunk = jest.fn();
     const metadata = { conversationId: 'conversation-123' };
     const orchestrator = new AgentOrchestrator({
       agent: { planner, executor },
-      modelRouteExecutor,
+      aiClient,
+      modelRouter,
+      taskClassifier: jest.fn().mockReturnValue('tour_recommendation'),
       intentExtractor: createValidIntentExtractor('search'),
     });
 
@@ -2379,6 +2391,9 @@ describe('multi-tool agent planning and orchestration', () => {
       unavailableCapabilities: ['advanced_model'],
     });
     expect(executor.executePlan).toHaveBeenCalledTimes(1);
+    expect(aiClient.streamChatCompletion).toHaveBeenCalledTimes(2);
+    expect(aiClient.streamChatCompletion.mock.calls.map(([, options]) => options.model))
+      .toEqual(['provider-primary', 'provider-fallback']);
     expect(onChunk).toHaveBeenCalledWith(response);
   });
 

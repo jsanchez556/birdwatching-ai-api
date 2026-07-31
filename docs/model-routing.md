@@ -160,6 +160,86 @@ An empty compatible fallback chain fails with
 `EVALUATION_MODEL_CONFLICT`. Server configuration failures are masked by the
 HTTP error middleware.
 
+### Canonical execution telemetry
+
+Every call through the routed executor creates one correlation UUID and one
+final normalized record, regardless of its retry or fallback count:
+
+```js
+{
+  requestedTask,
+  selectedModel,
+  fallbackModel,
+  reason,
+  latency,
+  tokens,
+  cost,
+  retryCount,
+  schemaValidation,
+  degradedMode,
+  success,
+}
+```
+
+- `requestedTask` is one of the task categories in this document. It is never
+  copied from a user message.
+- `selectedModel` is the provider model ID chosen first. `fallbackModel` is the
+  final fallback attempted or used, and is `null` when the primary remained
+  final. The operational record separately retains the final model and both
+  initial/final tiers for aggregation.
+- `reason` is the configured routing reason code or a derived bounded
+  `FALLBACK_<CATEGORY>` / `FAILED_<CATEGORY>` code. It never contains an
+  exception message.
+- `latency` is total wall-clock routed-execution time in milliseconds.
+- `tokens` is `{ input, output, total }` summed across attempts with reported
+  usage. It is `null` when no attempt reports usage.
+- `cost` is the sum of configured per-model token estimates. It is `null` when
+  usage or pricing needed for the estimate is unavailable.
+- `retryCount` counts repeated attempts on the same model after its initial
+  attempt. Changing model or tier is a fallback, not a retry.
+- `schemaValidation` is `{ success, errorCode }`. `success` is `null` when
+  validation is not applicable or unavailable; error codes come from the
+  bounded validation-code set. Raw model output and validation values are
+  excluded.
+- `degradedMode` means the final usable result had reduced capability.
+- `success` means the logical execution produced a valid, usable result. It is
+  false when retries and fallbacks are exhausted unless the owning
+  orchestration produces a truthful deterministic degraded result.
+
+LangSmith receives a detached child run keyed by the same execution UUID. Its
+safe output includes every chronological attempt, the initial and final model,
+retry/fallback distinction, per-attempt validation, latency, reported tokens,
+estimated cost, and the final normalized record. PostHog receives exactly one
+idempotent `model_routing_outcome` event with only the execution UUID, task
+category, initial routing tier, degraded/user-visible outcome, conversion
+outcome, and bounded retry/fallback buckets. The process-local operational
+store retains a bounded sanitized record set used by `/admin/overview` to
+calculate rates, percentiles, usage/cost, and bounded breakdowns. Prompts,
+responses, customer context, tool arguments, raw errors, and PII are excluded
+from the PostHog and admin paths.
+
+All three sinks are best effort. LangSmith export is detached; PostHog capture
+and operational aggregation are exception-isolated. A sink failure cannot
+change or delay the routed result. The finalizer is idempotent, preventing
+retry attempts or repeated completion paths from double-counting a logical
+execution.
+
+### Architecture evaluation
+
+The paired evaluation runner in
+`src/evaluations/runners/modelRoutingEvaluation.runner.js` compares a fixed
+single-model arm with the routed arm over identical dataset cases. Execution
+order alternates by case, and every case must have exactly one result per arm.
+The report measures task success, applicable schema validity, end-to-end
+latency, token usage, estimated cost, routed fallback frequency, and
+reservation conversion.
+
+The production report command accepts only an attested staging or
+production-like result artifact matching
+`src/evaluations/datasets/model-routing-results.schema.json`; it does not
+silently substitute mocks or fixture-derived values. See `docs/testing.md` for
+collection and command details.
+
 ## Add, Change, Or Retire A Model
 
 1. Add or update one stable-key entry in `modelRegistry.js`.

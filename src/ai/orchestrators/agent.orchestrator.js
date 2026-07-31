@@ -17,6 +17,7 @@ import { routeModel } from '../routing/modelRouter.js';
 import { classifyTask } from '../routing/taskClassifier.js';
 import reservationIntentExtractor from '../services/reservationIntent.service.js';
 import { executeModelRoute } from '../utils/modelRouteExecution.utils.js';
+import modelRoutingTelemetry from '../telemetry/modelRoutingTelemetry.js';
 import {
   UNAVAILABLE_CAPABILITIES,
   classifyCapabilityFailure,
@@ -317,6 +318,7 @@ export class AgentOrchestrator {
     taskClassifier = classifyTask,
     intentExtractor = reservationIntentExtractor,
     modelRouteExecutor = executeModelRoute,
+    modelRouteTelemetry = modelRoutingTelemetry,
     log = logger,
   } = {}) {
     this.agent = agent;
@@ -327,7 +329,16 @@ export class AgentOrchestrator {
     this.taskClassifier = taskClassifier;
     this.intentExtractor = intentExtractor;
     this.modelRouteExecutor = modelRouteExecutor;
+    this.modelRouteTelemetry = modelRouteTelemetry;
     this.logger = log;
+  }
+
+  finalizeModelRoutingTelemetry(execution, details) {
+    try {
+      return this.modelRouteTelemetry.finalize(execution, details);
+    } catch {
+      return null;
+    }
   }
 
   async generateResponse(messages, metadata = {}, options = {}) {
@@ -609,10 +620,15 @@ export class AgentOrchestrator {
       } : undefined,
     };
 
+    let routingTelemetryExecution;
     try {
       const response = await this.modelRouteExecutor({
         modelRoute,
         metadata,
+        autoFinalizeTelemetry: false,
+        onTelemetryExecution: (execution) => {
+          routingTelemetryExecution = execution;
+        },
         onChunk,
         signal: options.signal,
         executeAttempt: ({
@@ -657,11 +673,36 @@ export class AgentOrchestrator {
           }
         );
       }
+      this.finalizeModelRoutingTelemetry(routingTelemetryExecution, {
+        modelRoute,
+        metadata,
+        success: true,
+        userVisibleSuccess: true,
+        degradedMode: metadata.modelRouting?.usedFallback === true,
+      });
       return response;
     } catch (error) {
-      if (!classifyCapabilityFailure(error).recoverable) throw error;
+      if (!classifyCapabilityFailure(error).recoverable) {
+        this.finalizeModelRoutingTelemetry(routingTelemetryExecution, {
+          modelRoute,
+          metadata,
+          success: false,
+          userVisibleSuccess: false,
+          degradedMode: false,
+        });
+        throw error;
+      }
       const limitedFallback = buildLimitedModelFallback(metadata, toolResults);
-      if (!limitedFallback) throw error;
+      if (!limitedFallback) {
+        this.finalizeModelRoutingTelemetry(routingTelemetryExecution, {
+          modelRoute,
+          metadata,
+          success: false,
+          userVisibleSuccess: false,
+          degradedMode: false,
+        });
+        throw error;
+      }
 
       markCapabilityUnavailable(
         metadata,
@@ -675,6 +716,13 @@ export class AgentOrchestrator {
         }
       );
       await onChunk(limitedFallback);
+      this.finalizeModelRoutingTelemetry(routingTelemetryExecution, {
+        modelRoute,
+        metadata,
+        success: true,
+        userVisibleSuccess: true,
+        degradedMode: true,
+      });
       return limitedFallback;
     }
   }
