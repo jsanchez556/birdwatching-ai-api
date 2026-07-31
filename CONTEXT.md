@@ -52,7 +52,9 @@ The app uses a controller-service-query split:
 - `src/queues/` owns BullMQ queue registration, producers, and shared queue configuration used by the API and workers.
 - `src/ingestion/` owns provider HTTP clients, export orchestration, normalized bird data, and ingestion source preparation.
 - `src/api/routes/media.routes.js` owns CloudFront media URL creation for relative media keys; `src/storage/` remains for S3 uploads and object checks used by ingestion jobs.
-- `src/ai/*` owns OpenAI client calls, prompt assets, structured schemas, chat tool adapters, and runtime AI telemetry.
+- `src/ai/*` owns OpenAI client calls, prompt assets, structured schemas, chat
+  tool adapters, runtime AI telemetry, and the provider-neutral context
+  assembly/budgeting boundary under `src/ai/context/`.
 - `src/evaluations/` owns offline AI evaluation datasets, scoring utilities, runners, prompt comparisons, LangSmith-compatible reporting, and dashboard summaries. Runtime token/cost and evaluator instrumentation lives under `src/ai/telemetry/`.
 - `src/api/middleware/*` owns validation, sanitization, security headers, CORS protection, rate limiting, errors, and auth hooks.
 - `src/utils/` owns shared helpers. Search existing utilities before adding a helper; prefer adding reusable helpers to an existing cohesive utility module, and use the `<name>.utils.js` naming convention for new utility files.
@@ -74,6 +76,8 @@ POST /chat
   -> PostgreSQL pgvector retrieval
   -> frontend-safe sources and media-rich birdMatches metadata when matching bird profiles are retrieved
   -> agent orchestrator plans and executes required chat tools
+  -> ContextBuilder rebuilds the final generation context under a model-aware
+     token budget and returns privacy-safe assembly metrics
   -> Redis exact/semantic response cache lookup
   -> OpenAI streams final assistant text through SSE chunk events with client-disconnect abort support
   -> Redis response cache write when safe
@@ -109,6 +113,16 @@ GET /chat/latest
   exponential backoff with jitter and per-attempt deadlines, schema correction
   is limited to one retry, terminal provider/business/safety errors do not
   retry, and every scheduled retry emits safe telemetry.
+- Chat context is budgeted twice: once for planning after conversation/RAG
+  assembly and once for final generation after tool work. Required platform
+  instructions, the current request, and reservation outcomes cannot be
+  displaced by optional context. The final estimate is supplied to model
+  routing as `estimatedInputTokens`.
+- Context allocation policies are task-specific for general chat, RAG answers,
+  tour recommendations, reservation planning, tool selection, and bird-image
+  analysis. Each policy reserves output capacity and divides the remaining
+  input budget among conversation, memory, knowledge, tools, and application
+  state; aggregate metrics report discarded items/tokens by category and reason.
 - AI generation tasks use the centralized registry and deterministic policies
   under `src/ai/routing/`. The router returns a compatible primary/fallback
   chain without making provider calls; `POST /admin/model-routing/preview`

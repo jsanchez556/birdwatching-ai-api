@@ -18,6 +18,8 @@ import { classifyTask } from '../routing/taskClassifier.js';
 import reservationIntentExtractor from '../services/reservationIntent.service.js';
 import { executeModelRoute } from '../utils/modelRouteExecution.utils.js';
 import modelRoutingTelemetry from '../telemetry/modelRoutingTelemetry.js';
+import contextBuilder from '../context/contextBuilder.js';
+import { formatContextPackage } from '../context/contextFormatter.js';
 import {
   UNAVAILABLE_CAPABILITIES,
   classifyCapabilityFailure,
@@ -38,27 +40,6 @@ const RESERVATION_LANGUAGE = /\b(book|booking|reserve|reservation|tour|availabil
 
 function safeJson(value) {
   return JSON.stringify(value, null, 2);
-}
-
-function buildToolContextMessage(plan, toolResults) {
-  const steps = Array.isArray(toolResults) ? toolResults : toolResults?.steps || [];
-
-  if (!steps.length) {
-    return null;
-  }
-
-  return {
-    role: 'system',
-    content: [
-      'Internal birdwatching platform tool results follow.',
-      'Use them to answer naturally. Do not expose raw JSON, implementation details, stack traces, SQL, or provider internals.',
-      `Planner status: ${plan.status}`,
-      safeJson(steps.map((step) => ({
-        tool: step.tool,
-        result: step.result,
-      }))),
-    ].join('\n'),
-  };
 }
 
 function buildReasoningSummary(plan = {}, toolResults = {}) {
@@ -543,7 +524,20 @@ export class AgentOrchestrator {
       errorCount: toolResults.errors?.length || 0,
     });
     const debugTrace = attachDebugTraceSummary(metadata, plan, toolResults);
-    const toolContextMessage = buildToolContextMessage(plan, toolResults);
+    const contextToolResults = [
+      ...(Array.isArray(toolResults) ? toolResults : (toolResults.steps || [])),
+      ...(Array.isArray(toolResults) ? [] : (toolResults.errors || [])).map((error) => ({
+        tool: error.tool,
+        status: 'failed',
+        result: {
+          status: error.code === 'TOOL_RESULT_INDETERMINATE' ? 'indeterminate' : 'failed',
+          error: {
+            code: error.code,
+            message: error.message,
+          },
+        },
+      })),
+    ];
     const visitorScopeMessage = buildVisitorScopeMessage(metadata);
     const knownBookingContextMessage = buildKnownBookingContextMessage(metadata);
     const reservationFailureMessage = buildReservationFailureMessage(toolResults);
@@ -552,7 +546,6 @@ export class AgentOrchestrator {
     const finalMessages = [
       ...messages,
       visitorScopeMessage,
-      toolContextMessage,
       knownBookingContextMessage,
       reservationFailureMessage,
       tourRecommendationPromptMessage,
@@ -561,7 +554,7 @@ export class AgentOrchestrator {
 
     recordTraceEvent(metadata, 'orchestration_prompt_assembled', {
       finalMessageCount: finalMessages.length,
-      hasToolContext: Boolean(toolContextMessage),
+      hasToolContext: contextToolResults.length > 0,
       hasKnownBookingContext: Boolean(knownBookingContextMessage),
       hasReservationFailure: Boolean(reservationFailureMessage),
       hasTourRecommendationPrompt: Boolean(tourRecommendationPromptMessage),
@@ -570,7 +563,7 @@ export class AgentOrchestrator {
     this.logger.info('Birdwatching agent final prompt assembled', {
       conversationId: metadata.conversationId,
       finalMessageCount: finalMessages.length,
-      hasToolContext: Boolean(toolContextMessage),
+      hasToolContext: contextToolResults.length > 0,
       hasKnownBookingContext: Boolean(knownBookingContextMessage),
       hasReservationFailure: Boolean(reservationFailureMessage),
       hasTourRecommendationPrompt: Boolean(tourRecommendationPromptMessage),
@@ -593,6 +586,20 @@ export class AgentOrchestrator {
       hasRagContext: Number(metadata.ragTrace?.retrievedChunkCount || 0) > 0,
       plan,
     });
+    const generationContext = await contextBuilder.build({
+      userId: metadata.userId ?? null,
+      conversationId: metadata.conversationId,
+      task: routingTask,
+      stage: 'generation',
+      userMessage,
+      model: metadata.model || 'unrouted',
+      providerMessages: finalMessages,
+      toolResults: contextToolResults,
+      signal: options.signal,
+    });
+    const budgetedFinalMessages = formatContextPackage(generationContext);
+    metadata.estimatedInputTokens = generationContext.estimatedTokens;
+    metadata.contextMetrics = generationContext.metrics;
     const modelRoute = this.modelRouter({
       task: routingTask,
       estimatedInputTokens: metadata.estimatedInputTokens,
@@ -611,7 +618,7 @@ export class AgentOrchestrator {
 
     const finalGenerationMetadata = {
       ...metadata,
-      finalPromptMessageCount: finalMessages.length,
+      finalPromptMessageCount: budgetedFinalMessages.length,
       groundingContext: metadata.ragTrace ? {
         retrievedChunkCount: metadata.ragTrace.retrievedChunkCount,
         sourceCount: metadata.ragTrace.sourceCount,
@@ -640,7 +647,7 @@ export class AgentOrchestrator {
           sameModelAttempt,
           attemptContext,
           onChunk: attemptOnChunk,
-        }) => this.aiClient.streamChatCompletion(finalMessages, {
+        }) => this.aiClient.streamChatCompletion(budgetedFinalMessages, {
           usage,
           onChunk: attemptOnChunk,
           model: model.modelId,

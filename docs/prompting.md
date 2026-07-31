@@ -54,6 +54,51 @@ buildPrompt({
 });
 ```
 
+`src/ai/context/contextBuilder.js` is the canonical runtime selection boundary
+around these messages. It converts candidate messages into typed context
+items, applies deterministic deduplication and category/total token budgets,
+retains provenance without raw content, and returns privacy-safe metrics.
+`contextFormatter.js` converts the selected provider-neutral package back into
+role messages at the AI boundary.
+
+Assembly occurs twice:
+
+1. a planning package is built after conversation and RAG assembly;
+2. a generation package is built after ordered tool execution.
+
+The second package is reused for every same-model retry and cross-model
+fallback. Tool execution is never replayed. Retrieved knowledge, memories,
+application state, and tool output are explicitly delimited as data rather
+than executable instructions. Security/platform instructions and the current
+request are required items; an impossible mandatory budget fails before the
+provider call.
+
+## Context Budget Policies
+
+`src/ai/context/contextBudget.js` exports the configurable task policy map.
+Each allocation is a fraction of the effective input capacity after the
+task-specific output reservation and fixed safety margin are removed:
+
+| Task | Recent conversation | Long-term memory | Retrieved knowledge | Tool results | Application state | Output reserve |
+|---|---:|---:|---:|---:|---:|---:|
+| `general_chat` | 45% | 15% | 15% | 5% | 5% | 1,500 |
+| `rag_answer` | 20% | 10% | 50% | 10% | 5% | 2,000 |
+| `tour_recommendation` | 20% | 10% | 25% | 30% | 10% | 2,000 |
+| `reservation_planning` | 20% | 5% | 15% | 40% | 15% | 2,500 |
+| `tool_selection` | 25% | 5% | 10% | 40% | 15% | 2,000 |
+| `bird_image_analysis` | 10% | 5% | 60% | 5% | 5% | 2,500 |
+
+Allocations are soft targets. A category may borrow a bounded 25% above its
+target when capacity remains, but it can never exceed the total effective
+input budget. Required platform/security instructions and the current user
+message bypass optional-category eviction and are checked against the total
+budget first. Optional selection remains deterministic and favors relevance,
+recency, trust, then stable IDs.
+
+Assembly metrics report discarded item and estimated-token totals by category
+and reason. They remain aggregate-only and contain no prompt, memory, RAG, or
+tool content.
+
 `conversation.service.js` asks `prompt.builder.js` to build base OpenAI messages
 in this order:
 1. `system`: `CHAT_SYSTEM_PROMPT`

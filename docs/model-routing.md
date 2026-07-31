@@ -55,6 +55,16 @@ policy. Simple FREE-plan chat may use the economy route. Safety-critical task
 requirements, such as vision and structural reliability, are never downgraded
 for plan or cost.
 
+Chat does not use the zero default. The final generation ContextBuilder
+supplies its conservative estimated token count before `routeModel` runs.
+Before routing, the special internal `unrouted` key uses the smallest
+configured generation-model input limit. A genuinely unknown model identifier
+uses the documented 16,000-token fallback. Context budgeting reserves output
+headroom and a safety margin before selecting optional items. Output headroom
+is task-specific: short general chat reserves less than reservation planning or
+bird-image analysis, while the model registry remains the authoritative total
+input limit.
+
 The result contains `task`, `route`, `primaryModel`, ordered `fallbackModels`,
 `reasoningEffort`, `timeoutMs`, `maxRetries`, `reasonCode`, and `reason`.
 Provider model IDs are included for the internal SDK boundary. Admin and other

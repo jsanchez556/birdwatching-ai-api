@@ -17,6 +17,8 @@ import {
 } from '../tracing/aiTracing.middleware.js';
 import { injectResponseModeMessage } from '../ai/prompts/prompt.builder.js';
 import { FIELD_ASSISTANT_RESPONSE_MODE } from '../ai/prompts/system.prompt.js';
+import contextBuilder from '../ai/context/contextBuilder.js';
+import { formatContextPackage } from '../ai/context/contextFormatter.js';
 import analytics from '../analytics/analytics.service.js';
 import { ANALYTICS_EVENTS } from '../analytics/events.js';
 import { buildTourRecommendation } from '../ai/services/tourRecommendation.service.js';
@@ -390,9 +392,22 @@ class ChatService {
 
     const customerContext = mergeAuthenticatedCustomerContext(options.customerContext, authUser);
     const responseMode = normalizeResponseMode(options.responseMode);
-    const promptMessages = responseMode
+    const unbudgetedPromptMessages = responseMode
       ? injectResponseModeMessage(ragContext.messages, responseMode)
       : ragContext.messages;
+    const planningContext = await contextBuilder.build({
+      userId: userId ?? null,
+      conversationId: activeConversationId,
+      task: Number(ragContext.ragTrace?.retrievedChunkCount || 0) > 0
+        ? 'rag_answer'
+        : 'general_chat',
+      stage: 'planning',
+      userMessage: message,
+      model: 'unrouted',
+      providerMessages: unbudgetedPromptMessages,
+      signal,
+    });
+    const promptMessages = formatContextPackage(planningContext);
     const openAiMetadata = {
       clientIP,
       conversationId: activeConversationId,
@@ -408,6 +423,8 @@ class ChatService {
       ...(customerContext ? { customerContext } : {}),
       ...(options.conversationContext ? { conversationContext: options.conversationContext } : {}),
       ...(ragContext.ragTrace ? { ragTrace: ragContext.ragTrace } : {}),
+      estimatedInputTokens: planningContext.estimatedTokens,
+      contextMetrics: planningContext.metrics,
       ...getDegradationMetadata(ragContext),
       ...(parentTraceId ? { parentTraceId } : {}),
       aiTraceId: options.aiTraceId || parentTraceId,

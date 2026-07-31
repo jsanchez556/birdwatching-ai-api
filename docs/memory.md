@@ -78,3 +78,18 @@ If adding long-term memory or user-specific retrieval:
 - keep reservation `conversation_id` as a linkage field for booking context, not as a replacement for chat transcript storage
 - update prompt construction in `conversation.service.js`, not controllers
 - add tests that prove cross-conversation leakage is impossible
+
+## ContextBuilder Memory Boundary
+
+`src/ai/context/contextBuilder.js` is now the selection and budgeting boundary
+for conversation messages and optional memory. Recent PostgreSQL exchanges
+remain the transcript source of truth. The builder can accept a long-term
+memory adapter, but the production default in
+`src/ai/memory/longTermMemory.js` is deliberately a no-op.
+
+No durable long-term user memory, profile inference, or memory-extraction write
+path was added. Authenticated adapters must scope every retrieval by `userId`;
+visitor requests do not call the adapter. Optional memory failures produce an
+aggregate degraded-source metric and do not fail chat. Conflicting memories
+are retained unless exactly one claim is verified, and unresolved conflict
+counts contain no memory text.

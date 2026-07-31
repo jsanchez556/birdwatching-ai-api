@@ -16,7 +16,7 @@ src/
     routes/              route modules
     streaming/           HTTP response streaming helpers
     validators/          request payload validators
-  ai/                    OpenAI clients/services, agents, orchestrators, prompts, guardrails, schemas, tools, runtime telemetry
+  ai/                    OpenAI clients/services, agents, orchestrators, prompts, context budgeting, memory adapters, compaction, guardrails, schemas, tools, runtime telemetry
   cache/                 Redis client and reusable response/retrieval cache abstractions
   config/                environment parsing and validation
   db/                    pg pool, migrations, query modules, focused persistence repositories
@@ -151,11 +151,23 @@ HTTP request
 ```
 
 ## Main Flows
-Chat context is assembled from:
-1. `CHAT_SYSTEM_PROMPT`
-2. up to 10 recent exchanges from the same `conversation_id`
-3. the current user message
-4. optional retrieved context injected after the base system message
+Chat context is assembled through:
+
+1. `CHAT_SYSTEM_PROMPT`, up to 10 recent exchanges from the owned
+   `conversation_id`, and the current user message
+2. optional pgvector RAG context
+3. a planning ContextBuilder pass with deterministic deduplication, coherent
+   exchange selection, token budgets, provenance, and aggregate metrics
+4. ordered planning and tool execution
+5. a generation ContextBuilder pass that retains verified tool/application
+   outcomes and reserves model output headroom
+6. provider formatting and one immutable final message set reused by routed
+   retries/fallbacks
+
+The context formatter keeps instruction precedence explicit and delimits RAG,
+memory, tool, summary, and application content as data. Optional source or
+metrics failures degrade safely. Mandatory-content overflow stops before an
+LLM call.
 
 RAG uses:
 1. `npm run enrich -- birds` to refresh bird provider data, generate `birds.json`, normalize documents, persist source text, and enqueue embedding jobs
