@@ -71,6 +71,8 @@ POST /chat
   -> visitor role/topic authorization when no JWT is present
   -> conversation.service.assertCanAccess
   -> conversation.service.buildConversationContext
+  -> versioned Structured Outputs compaction when the active conversation
+     exceeds its configured token threshold
   -> rag.service.buildContext
   -> Redis retrieval cache lookup
   -> PostgreSQL pgvector retrieval
@@ -123,6 +125,16 @@ GET /chat/latest
   analysis. Each policy reserves output capacity and divides the remaining
   input budget among conversation, memory, knowledge, tools, and application
   state; aggregate metrics report discarded items/tokens by category and reason.
+- Conversation compaction stores immutable structured summary versions in
+  `conversation_summaries`, records cumulative compacted message IDs, preserves
+  recent exchanges verbatim, and retains goals, sourced facts, preferences,
+  decisions, open questions, pending actions, corrections, and reservation/tool
+  state. Invalid summaries are never persisted or substituted for messages.
+- Verbatim conversation selection is relevance-aware rather than last-N-only:
+  it scores semantic relevance, recency, business importance, and unresolved
+  status, while always preserving the current request, explicit corrections,
+  confirmed reservation details, unresolved commitments, and safety-critical
+  constraints. Validated structured summaries are mandatory context.
 - AI generation tasks use the centralized registry and deterministic policies
   under `src/ai/routing/`. The router returns a compatible primary/fallback
   chain without making provider calls; `POST /admin/model-routing/preview`

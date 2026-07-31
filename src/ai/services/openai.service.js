@@ -131,7 +131,9 @@ class OpenAIService {
   }
 
   async streamResponseWithTools(messages, metadata = {}, options = {}) {
-    const usage = {};
+    const usage = metadata.openAiUsage
+      ? { openAiUsage: metadata.openAiUsage }
+      : {};
     const cacheKey = buildResponseCacheKey(messages, metadata);
     const cacheEligible = !hasCacheUnsafeMetadata(metadata);
     const exactCacheResult = await traceCacheOperation('ai_response_cache_lookup', {

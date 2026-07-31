@@ -17,6 +17,9 @@ Back to [Project Context](../CONTEXT.md). See [Memory](./memory.md) for how chat
 - Reservation-intent prompt and strict Structured Outputs schema:
   `src/ai/prompts/reservationIntent.prompt.js` and
   `src/ai/schemas/reservationIntent.schema.js`
+- Conversation-compaction prompt and strict Structured Outputs schema:
+  `src/ai/prompts/conversationSummary.prompt.js` and
+  `src/ai/schemas/conversationSummary.schema.js`
 
 Prompt modules export both content and a semantic prompt version. Keep version changes intentional and loggable.
 
@@ -72,6 +75,14 @@ application state, and tool output are explicitly delimited as data rather
 than executable instructions. Security/platform instructions and the current
 request are required items; an impossible mandatory budget fails before the
 provider call.
+
+Long conversations are compacted before ContextBuilder selection. The
+versioned structured summary replaces only older exchanges; configured recent
+exchanges remain byte-for-byte unchanged and are protected during selection.
+The summary is cumulative and contains typed goals, sourced facts,
+preferences, decisions, unresolved questions, pending actions, and its
+previous version. Structured output refusal, invalid sources, version mismatch,
+or schema failure never produces an unstructured fallback summary.
 
 ## Context Budget Policies
 

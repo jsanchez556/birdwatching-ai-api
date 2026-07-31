@@ -131,6 +131,13 @@ verified webhook updates `user_subscriptions`.
 - `RATE_LIMIT_MAX_REQUESTS`, defaults to `60`
 - `AI_RATE_LIMIT_WINDOW_MS`, defaults to `60000`
 - `AI_RATE_LIMIT_MAX_REQUESTS`, defaults to `12`
+- `CONVERSATION_COMPACTION_TOKEN_THRESHOLD`, defaults to `6000`; structured
+  compaction starts only when the active summary plus uncompacted messages
+  exceed this estimated-token count
+- `CONVERSATION_COMPACTION_RECENT_EXCHANGES`, defaults to `10`; these newest
+  exchanges remain unchanged when older exchanges are summarized
+- `CONVERSATION_COMPACTION_CANDIDATE_LIMIT`, defaults to `2000`; bounds the
+  message rows inspected by one compaction pass
 - `LOG_FILES_ENABLED`, `true` or `false`; defaults to console-only logging
 - `JWT_EXPIRES_IN`, defaults to `7d`
 - `REFRESH_TOKEN_EXPIRES_IN_DAYS`, defaults to `30`

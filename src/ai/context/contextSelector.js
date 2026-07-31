@@ -59,6 +59,9 @@ function computeRecencyScore(createdAt, now = new Date()) {
 }
 
 function computeSelectionScore(item, now = new Date()) {
+  if (item.type === 'message' && Number.isFinite(item.metadata?.contextScore)) {
+    return clampScore(item.metadata.contextScore);
+  }
   const relevance = clampScore(item.relevanceScore, 0.5);
   const recency = clampScore(item.recencyScore, computeRecencyScore(item.createdAt, now));
   const trust = TRUST_SCORES[item.trustLevel] ?? 0;

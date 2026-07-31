@@ -364,6 +364,7 @@ class ChatService {
 
     throwIfAborted(signal);
     await conversationService.assertCanAccess(activeConversationId, userId);
+    const usage = {};
 
     const conversationMessages = await traceConversationContext('chat_conversation_context', {
       parentTraceId,
@@ -372,8 +373,17 @@ class ChatService {
       hasUserId: userId !== undefined && userId !== null,
       messageLength: message.length,
     }, () => (userId === undefined || userId === null
-      ? conversationService.buildConversationContext(message, activeConversationId)
-      : conversationService.buildConversationContext(message, activeConversationId, { userId })));
+      ? conversationService.buildConversationContext(message, activeConversationId, {
+        signal,
+        usage,
+        parentTraceId,
+      })
+      : conversationService.buildConversationContext(message, activeConversationId, {
+        userId,
+        signal,
+        usage,
+        parentTraceId,
+      })));
 
     throwIfAborted(signal);
 
@@ -425,6 +435,7 @@ class ChatService {
       ...(ragContext.ragTrace ? { ragTrace: ragContext.ragTrace } : {}),
       estimatedInputTokens: planningContext.estimatedTokens,
       contextMetrics: planningContext.metrics,
+      ...(usage.openAiUsage ? { openAiUsage: usage.openAiUsage } : {}),
       ...getDegradationMetadata(ragContext),
       ...(parentTraceId ? { parentTraceId } : {}),
       aiTraceId: options.aiTraceId || parentTraceId,

@@ -52,6 +52,13 @@ function buildContextMetrics({
 } = {}) {
   const dropped = provenance.filter((entry) => !entry.selected);
   const discardedContext = buildDiscardedContextStatistics(provenance);
+  const selectedMessages = selected.filter((item) => item.type === 'message');
+  const preservedMessageCountsByReason = selectedMessages.reduce((counts, item) => {
+    for (const reason of item.metadata?.preservationReasons || []) {
+      counts[reason] = (counts[reason] || 0) + 1;
+    }
+    return counts;
+  }, {});
 
   return {
     stage,
@@ -80,6 +87,7 @@ function buildContextMetrics({
     selectedCountsByType: countBy(selected, (item) => item.type),
     droppedCountsByReason: countBy(dropped, (entry) => entry.selectionReason),
     discardedContext,
+    preservedMessageCountsByReason,
     durationMs,
     degradedSources: [...new Set(degradedSources)].sort(),
   };

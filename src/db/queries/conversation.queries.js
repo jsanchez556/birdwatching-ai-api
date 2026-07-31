@@ -63,6 +63,76 @@ export class ConversationQueries {
     }
   }
 
+  async getLatestSummary(conversationId, userId) {
+    try {
+      const result = await pool.query(
+        'SELECT * FROM get_latest_conversation_summary($1, $2)',
+        [conversationId, userId ?? null]
+      );
+      return result.rows[0] || null;
+    } catch (error) {
+      logger.error('Failed to retrieve conversation summary', {
+        error: error.message,
+        conversationId,
+      });
+      throw error;
+    }
+  }
+
+  async getMessagesForCompaction(conversationId, limit = 200, userId) {
+    try {
+      const result = await pool.query(
+        'SELECT * FROM get_conversation_messages_for_compaction($1, $2, $3)',
+        [conversationId, limit, userId ?? null]
+      );
+      return result.rows;
+    } catch (error) {
+      logger.error('Failed to retrieve conversation compaction candidates', {
+        error: error.message,
+        conversationId,
+        limit,
+      });
+      throw error;
+    }
+  }
+
+  async saveSummary({
+    conversationId,
+    userId,
+    expectedPreviousVersion,
+    schemaVersion,
+    summary,
+    compactedMessageIds,
+    sourceTokenCount,
+  }) {
+    try {
+      const result = await pool.query(
+        'SELECT * FROM save_conversation_summary($1, $2, $3, $4, $5, $6, $7)',
+        [
+          conversationId,
+          userId ?? null,
+          expectedPreviousVersion ?? null,
+          schemaVersion,
+          JSON.stringify(summary),
+          compactedMessageIds,
+          sourceTokenCount,
+        ]
+      );
+      logger.info('Conversation summary saved', {
+        conversationId,
+        version: result.rows[0]?.version,
+        compactedMessageCount: compactedMessageIds.length,
+      });
+      return result.rows[0];
+    } catch (error) {
+      logger.error('Failed to save conversation summary', {
+        error: error.message,
+        conversationId,
+      });
+      throw error;
+    }
+  }
+
   /**
    * Get persisted chat exchanges for one conversation
    * @param {string} conversationId - Conversation identifier

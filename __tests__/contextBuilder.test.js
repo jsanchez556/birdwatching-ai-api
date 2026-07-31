@@ -48,6 +48,50 @@ function candidate(overrides = {}) {
 }
 
 describe('ContextBuilder', () => {
+  it('preserves an older safety constraint when recent acknowledgements exceed the budget', async () => {
+    const builder = new ContextBuilder({
+      clock: () => NOW,
+      tokenEstimator: () => 10,
+      budgetFactory: () => ({
+        modelInputLimit: 500,
+        reservedOutputTokens: 100,
+        safetyMarginTokens: 10,
+        effectiveInputBudget: 126,
+        policyAllocations: {},
+        categories: {
+          conversation: { soft: 126, hard: 126 },
+        },
+      }),
+    });
+    const context = await builder.build(baseInput({
+      userMessage: 'Book lunch with the tour.',
+      providerMessages: [
+        { role: 'system', content: 'Follow safety requirements.' },
+        { role: 'user', content: 'I am allergic to peanuts.' },
+        { role: 'assistant', content: 'Noted.' },
+        { role: 'user', content: 'Thanks.' },
+        { role: 'assistant', content: 'Great.' },
+        { role: 'user', content: 'Book lunch with the tour.' },
+      ],
+    }));
+
+    expect(context.conversation).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        content: 'I am allergic to peanuts.',
+        required: true,
+        metadata: expect.objectContaining({
+          preservationReasons: expect.arrayContaining(['safety_critical']),
+        }),
+      }),
+      expect.objectContaining({ content: 'Book lunch with the tour.', required: true }),
+    ]));
+    expect(context.conversation.some((item) => item.content === 'Thanks.')).toBe(false);
+    expect(context.metrics.preservedMessageCountsByReason).toEqual(expect.objectContaining({
+      current_request: 1,
+      safety_critical: 1,
+    }));
+  });
+
   it('retains mandatory instructions and keeps the current request last', async () => {
     const builder = new ContextBuilder({ clock: () => NOW });
     const context = await builder.build(baseInput());
@@ -63,6 +107,79 @@ describe('ContextBuilder', () => {
       role: 'user',
       content: 'Where can I see quetzals?',
     });
+  });
+
+  it('appends the current request when provider history does not contain it', async () => {
+    const builder = new ContextBuilder({ clock: () => NOW });
+    const context = await builder.build(baseInput({
+      userMessage: 'Book lunch with the tour.',
+      providerMessages: [
+        { role: 'system', content: 'Follow platform safety rules.' },
+        { role: 'user', content: 'I prefer the morning tour.' },
+        { role: 'assistant', content: 'The morning tour starts at 6 AM.' },
+      ],
+    }));
+
+    expect(context.conversation.filter((item) => item.metadata.currentRequest)).toEqual([
+      expect.objectContaining({ content: 'Book lunch with the tour.', required: true }),
+    ]);
+    expect(context.conversation.some((item) => item.content === 'I prefer the morning tour.'))
+      .toBe(true);
+  });
+
+  it('keeps protected recent messages unchanged beside a structured older summary', async () => {
+    const builder = new ContextBuilder({ clock: () => NOW });
+    const summary = {
+      userGoal: 'Finish the booking',
+      confirmedFacts: [],
+      preferences: [],
+      decisions: [],
+      unresolvedQuestions: [],
+      pendingActions: [],
+      previousSummaryVersion: null,
+    };
+    const context = await builder.build(baseInput({
+      providerMessages: [
+        { role: 'system', content: 'Follow platform safety rules.' },
+        {
+          id: 'conversation-summary:1',
+          role: 'system',
+          summaryVersion: 1,
+          content: `Validated structured conversation summary (version 1).\n${JSON.stringify(summary)}`,
+        },
+        {
+          role: 'user',
+          content: 'Correction: there are three participants.',
+          preserveDuringCompaction: true,
+        },
+        {
+          role: 'assistant',
+          content: 'Understood—three participants.',
+          preserveDuringCompaction: true,
+        },
+        { role: 'user', content: 'Where can I see quetzals?' },
+      ],
+    }));
+
+    expect(context.conversation).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'summary',
+        metadata: expect.objectContaining({ summaryVersion: 1 }),
+      }),
+      expect.objectContaining({
+        content: 'Correction: there are three participants.',
+        required: true,
+      }),
+      expect.objectContaining({
+        content: 'Understood—three participants.',
+        required: true,
+      }),
+    ]));
+    const formatted = formatContextPackage(context);
+    expect(formatted).toEqual(expect.arrayContaining([
+      { role: 'user', content: 'Correction: there are three participants.' },
+      { role: 'assistant', content: 'Understood—three participants.' },
+    ]));
   });
 
   it('uses a conservative documented limit for an unknown model', () => {

@@ -123,6 +123,74 @@ describe('ConversationQueries', () => {
     });
   });
 
+  describe('conversation summaries', () => {
+    it('loads the latest versioned summary for the scoped conversation', async () => {
+      const summary = {
+        version: 2,
+        summary: { userGoal: 'Book a tour' },
+        compacted_message_ids: ['1', '2'],
+      };
+      mockQuery.mockResolvedValue({ rows: [summary] });
+
+      await expect(
+        conversationQueries.getLatestSummary('conversation-123', 7)
+      ).resolves.toEqual(summary);
+      expect(mockQuery).toHaveBeenCalledWith(
+        'SELECT * FROM get_latest_conversation_summary($1, $2)',
+        ['conversation-123', 7]
+      );
+    });
+
+    it('loads bounded compaction candidates for the scoped conversation', async () => {
+      const rows = [{ id: 3, user_input: 'Continue', ai_output: 'Okay' }];
+      mockQuery.mockResolvedValue({ rows });
+
+      await expect(
+        conversationQueries.getMessagesForCompaction('conversation-123', 200, 7)
+      ).resolves.toEqual(rows);
+      expect(mockQuery).toHaveBeenCalledWith(
+        'SELECT * FROM get_conversation_messages_for_compaction($1, $2, $3)',
+        ['conversation-123', 200, 7]
+      );
+    });
+
+    it('persists a summary with optimistic previous-version checking', async () => {
+      const saved = { id: 4, version: 3 };
+      const summary = {
+        userGoal: 'Complete the reservation',
+        confirmedFacts: [],
+        preferences: [],
+        decisions: [],
+        unresolvedQuestions: [],
+        pendingActions: [],
+        previousSummaryVersion: 2,
+      };
+      mockQuery.mockResolvedValue({ rows: [saved] });
+
+      await expect(conversationQueries.saveSummary({
+        conversationId: 'conversation-123',
+        userId: 7,
+        expectedPreviousVersion: 2,
+        schemaVersion: '1.0.0',
+        summary,
+        compactedMessageIds: ['1', '2', '3'],
+        sourceTokenCount: 4500,
+      })).resolves.toEqual(saved);
+      expect(mockQuery).toHaveBeenCalledWith(
+        'SELECT * FROM save_conversation_summary($1, $2, $3, $4, $5, $6, $7)',
+        [
+          'conversation-123',
+          7,
+          2,
+          '1.0.0',
+          JSON.stringify(summary),
+          ['1', '2', '3'],
+          4500,
+        ]
+      );
+    });
+  });
+
   describe('getByConversationId', () => {
     it('should retrieve only messages from the requested conversation', async () => {
       const mockMessages = [

@@ -1,7 +1,10 @@
 import HttpError from '../../utils/httpError.js';
 import { createStableHash } from '../../utils/hash.utils.js';
 import { TASK_CATEGORY_SET } from '../routing/modelPolicies.js';
-import { compactConversationItems } from '../compaction/conversationCompactor.js';
+import {
+  compactConversationItems,
+  CONVERSATION_SUMMARY_MARKER,
+} from '../compaction/conversationCompactor.js';
 import { validateConversationSummary } from '../compaction/summaryValidator.js';
 import {
   compactToolResults,
@@ -14,14 +17,16 @@ import { createContextBudget, estimateTokens } from './contextBudget.js';
 import { buildContextMetrics } from './contextMetrics.js';
 import { createProvenance } from './contextProvenance.js';
 import { selectContextItems } from './contextSelector.js';
+import { inferConversationSignals } from './conversationMessageSelector.js';
 import { getSystemPrompt } from '../prompts/system.prompt.js';
 
 const CONTEXT_STAGES = new Set(['planning', 'generation']);
 const CONTEXT_ITEM_OVERHEAD_TOKENS = 32;
 const SYSTEM_DATA_MARKERS = Object.freeze([
-  ['retrieved Costa Rica bird knowledge', 'rag_document', 'unverified'],
-  ['Known booking context from application metadata', 'application_state', 'verified'],
-  ['Internal birdwatching platform tool results', 'tool_result', 'verified'],
+  ['retrieved Costa Rica bird knowledge', 'rag_document', 'unverified', false],
+  ['Known booking context from application metadata', 'application_state', 'verified', true],
+  ['Internal birdwatching platform tool results', 'tool_result', 'verified', true],
+  [CONVERSATION_SUMMARY_MARKER, 'summary', 'user_provided', true],
 ]);
 
 /**
@@ -119,7 +124,7 @@ function classifySystemMessage(content) {
     return {
       type: marker[1],
       trustLevel: marker[2],
-      required: marker[1] !== 'rag_document',
+      required: marker[3],
     };
   }
 
@@ -138,9 +143,14 @@ function itemsFromProviderMessages(messages, input, now, tokenEstimator) {
       { role: 'user', content: input.userMessage },
     ];
   let historicalMessageIndex = 0;
+  const conversationalMessages = normalizedMessages.filter((message) => (
+    message && ['user', 'assistant'].includes(message.role)
+  ));
+  let conversationPosition = 0;
   let currentUserIndex = -1;
   for (let index = normalizedMessages.length - 1; index >= 0; index -= 1) {
-    if (normalizedMessages[index]?.role === 'user') {
+    if (normalizedMessages[index]?.role === 'user'
+      && normalizedMessages[index]?.content === input.userMessage) {
       currentUserIndex = index;
       break;
     }
@@ -162,15 +172,33 @@ function itemsFromProviderMessages(messages, input, now, tokenEstimator) {
           sourceId,
           order: index,
           role: 'system',
+          ...(message.summaryVersion ? { summaryVersion: message.summaryVersion } : {}),
         },
       }, tokenEstimator)];
     }
     if (!['user', 'assistant'].includes(message.role)) return [];
 
     const currentRequest = index === currentUserIndex;
+    const signals = currentRequest ? {
+      semanticRelevance: 1,
+      recency: 1,
+      explicitCorrection: 0,
+      unresolvedStatus: 0,
+      safetyRelevance: 0,
+      businessImportance: 0,
+      confirmedReservation: false,
+      unresolvedCommitment: false,
+      contextScore: 1,
+      preservationReasons: ['current_request'],
+    } : inferConversationSignals(message, {
+      currentRequest: input.userMessage,
+      position: conversationPosition,
+      totalMessages: conversationalMessages.length,
+    });
+    conversationPosition += 1;
     const bundleId = currentRequest
       ? null
-      : `conversation-exchange:${Math.floor(historicalMessageIndex / 2)}`;
+      : `conversation-exchange:${message.exchangeId || Math.floor(historicalMessageIndex / 2)}`;
     if (!currentRequest) historicalMessageIndex += 1;
     return [createItem({
       id: currentRequest
@@ -179,15 +207,26 @@ function itemsFromProviderMessages(messages, input, now, tokenEstimator) {
       type: 'message',
       content: currentRequest ? input.userMessage : message.content,
       source: currentRequest ? 'current_request' : 'conversation_history',
-      relevanceScore: currentRequest ? 1 : 0.7,
+      relevanceScore: signals.semanticRelevance,
       trustLevel: 'user_provided',
       createdAt: message.createdAt || now,
-      required: currentRequest,
+      required: currentRequest
+        || message.preserveDuringCompaction === true
+        || signals.preservationReasons.length > 0,
       metadata: {
         sourceId,
         order: index,
         role: message.role,
         currentRequest,
+        contextScore: signals.contextScore,
+        semanticRelevance: signals.semanticRelevance,
+        recency: signals.recency,
+        businessImportance: signals.businessImportance,
+        unresolvedStatus: signals.unresolvedStatus,
+        explicitCorrection: signals.explicitCorrection,
+        safetyRelevance: signals.safetyRelevance,
+        preservationReasons: signals.preservationReasons,
+        recentVerbatim: message.preserveDuringCompaction === true,
         ...(bundleId ? { bundleId } : {}),
       },
     }, tokenEstimator)];
@@ -316,6 +355,7 @@ class ContextBuilder {
     const suppliedSummary = suppliedSummaryInput
       ? normalizeExternalItems([{
         ...suppliedSummaryInput,
+        required: suppliedSummaryInput.validated === true,
         trustLevel: suppliedSummaryInput.validated === true
           ? (suppliedSummaryInput.trustLevel || 'user_provided')
           : 'invalid',

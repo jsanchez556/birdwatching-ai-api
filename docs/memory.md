@@ -33,6 +33,14 @@ Columns:
 - `ai_output`
 - `created_at`
 
+Table: `conversation_summaries`
+
+Added by `026_create_conversation_summaries.sql`. Summary rows are immutable
+and versioned per conversation. They store the validated structured JSON,
+schema/prompt version, cumulative compacted message-row IDs, source token
+count, previous summary version, and creation time. Original `messages` rows
+are not deleted or rewritten by compaction.
+
 Indexes:
 - `idx_conversations_created_at`
 - `idx_messages_created_at`
@@ -61,8 +69,15 @@ Write failures are logged as warnings and do not fail the chat request. This kee
 
 ## Read Behavior
 For prompt context:
-- `getLastMessages(conversationId, 10, userId)` loads up to 10 recent exchanges, optionally scoped to the authenticated owner.
-- SQL limits the newest exchanges and returns them in chronological order before prompt construction.
+- `getMessagesForCompaction(...)` loads a bounded chronological candidate set
+  scoped to the authenticated owner (or to an unowned visitor conversation).
+- Once the active summary plus uncompacted exchanges exceed
+  `CONVERSATION_COMPACTION_TOKEN_THRESHOLD`, older exchanges are summarized
+  and the configured recent exchanges remain verbatim.
+- `getLatestSummary(...)` loads only the newest validated version. Malformed
+  persisted summaries are rejected and not injected.
+- If candidate loading, Structured Outputs, validation, or persistence fails,
+  chat continues with the previous validated summary and uncompacted messages.
 
 For client retrieval:
 - `getByConversationId(conversationId, 100, userId)` returns up to 100 exchanges oldest first, optionally scoped to the authenticated owner.
@@ -83,7 +98,14 @@ If adding long-term memory or user-specific retrieval:
 
 `src/ai/context/contextBuilder.js` is now the selection and budgeting boundary
 for conversation messages and optional memory. Recent PostgreSQL exchanges
-remain the transcript source of truth. The builder can accept a long-term
+remain the transcript source of truth, but recency alone does not determine
+which verbatim messages enter the prompt. Historical messages are ranked by
+semantic relevance to the current request, position-based recency, business
+importance, and unresolved status. Explicit user corrections, confirmed
+reservation details, unresolved commitments, and safety-critical constraints
+are mandatory context; the current request is always mandatory. Selection
+metrics report mandatory message counts by preservation reason without
+including message contents. The builder can accept a long-term
 memory adapter, but the production default in
 `src/ai/memory/longTermMemory.js` is deliberately a no-op.
 
@@ -93,3 +115,23 @@ visitor requests do not call the adapter. Optional memory failures produce an
 aggregate degraded-source metric and do not fail chat. Conflicting memories
 are retained unless exactly one claim is verified, and unresolved conflict
 counts contain no memory text.
+
+## Structured Conversation Compaction
+
+`conversationCompaction.service.js` coordinates threshold detection,
+Structured Outputs summarization, optimistic versioned persistence, and prompt
+history assembly. The summary schema preserves:
+
+- the unresolved user goal;
+- confirmed facts with stable role-specific source message IDs;
+- explicit preferences and decisions;
+- unresolved questions;
+- pending actions and whether confirmation is required;
+- the previous summary version.
+
+The summarization prompt explicitly preserves user corrections, reservation
+state, selected tours, participants, itinerary and transportation choices,
+durable confirmations, indeterminate reservation outcomes, and pending tool
+operations. Structured conversation/application state is supplied separately
+from message text. A new summary must cite only current source message IDs or
+IDs already carried by the previous summary.

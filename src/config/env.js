@@ -45,6 +45,9 @@ const numericEnvKeys = [
   'AI_MAX_RETRIES',
   'AI_RETRY_BASE_DELAY_MS',
   'AI_RETRY_MAX_DELAY_MS',
+  'CONVERSATION_COMPACTION_TOKEN_THRESHOLD',
+  'CONVERSATION_COMPACTION_RECENT_EXCHANGES',
+  'CONVERSATION_COMPACTION_CANDIDATE_LIMIT',
 ];
 
 for (const key of numericEnvKeys) {
@@ -208,6 +211,20 @@ const env = {
       : 5,
     baseDelayMs: parsePositiveInteger(process.env.AI_RETRY_BASE_DELAY_MS, 250),
     maxDelayMs: parsePositiveInteger(process.env.AI_RETRY_MAX_DELAY_MS, 8000),
+  },
+  conversationCompaction: {
+    tokenThreshold: parsePositiveInteger(
+      process.env.CONVERSATION_COMPACTION_TOKEN_THRESHOLD,
+      6000
+    ),
+    recentExchanges: parsePositiveInteger(
+      process.env.CONVERSATION_COMPACTION_RECENT_EXCHANGES,
+      10
+    ),
+    candidateLimit: parsePositiveInteger(
+      process.env.CONVERSATION_COMPACTION_CANDIDATE_LIMIT,
+      2000
+    ),
   },
   rateLimitRedisFailureMode: process.env.RATE_LIMIT_REDIS_FAILURE_MODE || 'local',
   dependencyHealthTimeoutMs: parsePositiveInteger(

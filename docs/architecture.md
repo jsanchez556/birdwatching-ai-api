@@ -153,8 +153,10 @@ HTTP request
 ## Main Flows
 Chat context is assembled through:
 
-1. `CHAT_SYSTEM_PROMPT`, up to 10 recent exchanges from the owned
-   `conversation_id`, and the current user message
+1. `CHAT_SYSTEM_PROMPT`, a validated versioned summary of older exchanges when
+   the compaction token threshold is exceeded, protected recent exchanges from
+   the owned `conversation_id`, structured application/reservation state, and
+   the current user message
 2. optional pgvector RAG context
 3. a planning ContextBuilder pass with deterministic deduplication, coherent
    exchange selection, token budgets, provenance, and aggregate metrics
@@ -163,6 +165,12 @@ Chat context is assembled through:
    outcomes and reserves model output headroom
 6. provider formatting and one immutable final message set reused by routed
    retries/fallbacks
+
+Compaction never deletes the transcript. `conversation_summaries` stores
+immutable cumulative versions and the exact message-row IDs covered by each
+version. A PostgreSQL function locks the conversation and checks the expected
+previous version before inserting, preventing concurrent summarizers from
+silently overwriting one another.
 
 The context formatter keeps instruction precedence explicit and delimits RAG,
 memory, tool, summary, and application content as data. Optional source or

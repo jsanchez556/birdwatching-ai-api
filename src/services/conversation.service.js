@@ -3,6 +3,7 @@ import reservationService from './reservation.service.js';
 import logger from '../utils/logger.js';
 import HttpError from '../utils/httpError.js';
 import { buildChatMessages } from '../ai/prompts/prompt.builder.js';
+import conversationCompactionService from './conversationCompaction.service.js';
 
 const RECENT_EXCHANGE_LIMIT = 10;
 const CONVERSATION_LOAD_LIMIT = 100;
@@ -24,12 +25,31 @@ class ConversationMemoryService {
     }
   }
 
-  async buildConversationContext(currentMessage, conversationId, { userId } = {}) {
+  async buildConversationContext(currentMessage, conversationId, {
+    userId,
+    signal,
+    usage,
+    parentTraceId,
+  } = {}) {
     const history = [];
     const normalizedUserId = normalizeUserId(userId);
     await this.assertCanAccess(conversationId, normalizedUserId);
 
     try {
+      const compactedContext = await conversationCompactionService.buildHistory({
+        conversationId,
+        userId: normalizedUserId,
+        signal,
+        usage,
+        parentTraceId,
+      });
+      if (compactedContext) {
+        return buildChatMessages({
+          userMessage: currentMessage,
+          history: compactedContext.history,
+        });
+      }
+
       const lastMessages = normalizedUserId === null
         ? await conversationQueries.getLastMessages(conversationId, RECENT_EXCHANGE_LIMIT)
         : await conversationQueries.getLastMessages(conversationId, RECENT_EXCHANGE_LIMIT, normalizedUserId);
@@ -44,6 +64,7 @@ class ConversationMemoryService {
         }
       }
     } catch (error) {
+      if (error?.name === 'AbortError' || error?.code === 'ABORT_ERR') throw error;
       logger.warn('Failed to retrieve conversation history', {
         conversationId,
         error: error.message,

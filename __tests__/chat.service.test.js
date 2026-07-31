@@ -102,7 +102,10 @@ describe('ChatService streaming orchestration', () => {
     expect(events.onReplace).not.toHaveBeenCalled();
     expect(mockBuildConversationContext).toHaveBeenCalledWith(
       'Where can I see toucans?',
-      'conversation-123'
+      'conversation-123',
+      expect.objectContaining({
+        usage: {},
+      })
     );
     expect(mockStreamResponseWithTools).toHaveBeenCalledWith(
       conversationMessages,
@@ -608,7 +611,7 @@ describe('ChatService streaming orchestration', () => {
     expect(mockBuildConversationContext).toHaveBeenCalledWith(
       'Book a tour.',
       'conversation-123',
-      { userId: '7' }
+      expect.objectContaining({ userId: '7', usage: {} })
     );
     expect(mockSaveExchange).toHaveBeenCalledWith(
       'conversation-123',
@@ -799,7 +802,7 @@ describe('ChatService streaming orchestration', () => {
     expect(mockBuildConversationContext).toHaveBeenCalledWith(
       'Can I reserve a quetzal tour?',
       'conversation-123',
-      { userId: '7' }
+      expect.objectContaining({ userId: '7', usage: {} })
     );
     expect(mockStreamResponseWithTools).toHaveBeenCalledWith(
       conversationMessages,
