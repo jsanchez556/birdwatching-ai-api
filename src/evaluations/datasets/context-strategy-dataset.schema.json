@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Context Selection Strategy Evaluation Dataset",
+  "type": "object",
+  "required": ["schemaVersion", "datasetVersion", "description", "cases"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "datasetVersion": { "type": "string", "minLength": 1 },
+    "description": { "type": "string", "minLength": 1 },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id", "category", "conversationId", "evaluationAt", "task", "model",
+          "scope", "conversation", "currentRequest", "summary", "memories",
+          "ragCandidates", "defaultRagChunkIds", "toolResults", "reservationState",
+          "expectedRelevantContextIds", "mustExcludeContextIds", "deterministicAssertions",
+          "referenceAnswer", "assertions", "eligibleStrategies"
+        ],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+          "category": { "type": "string", "minLength": 1 },
+          "conversation": { "type": "array" },
+          "currentRequest": { "type": "string", "minLength": 1 },
+          "memories": { "type": "array" },
+          "ragCandidates": { "type": "array" },
+          "toolResults": { "type": "array" },
+          "eligibleStrategies": {
+            "type": "array",
+            "items": { "enum": ["full_history", "last_n", "dynamic"] }
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false
+}

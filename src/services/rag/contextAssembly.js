@@ -1,3 +1,5 @@
+import { createStableHash } from '../../utils/hash.utils.js';
+
 function hasValue(value) {
   return value !== undefined && value !== null && value !== '';
 }
@@ -13,7 +15,27 @@ function normalizeScore(value) {
   return Number.isFinite(score) ? Number(score.toFixed(6)) : undefined;
 }
 
+function ragValidity(document = {}) {
+  const expirationValue = document.expiresAt || document.metadata?.expiresAt;
+  if (!expirationValue) return { validityStatus: 'valid', isValid: true };
+  const expiration = new Date(expirationValue);
+  if (Number.isNaN(expiration.getTime())) {
+    return { validityStatus: 'invalid_expiration', isValid: false };
+  }
+  const referenceTime = document.retrievedAt
+    ? new Date(document.retrievedAt).getTime()
+    : Date.now();
+  const isValid = expiration.getTime() > (
+    Number.isFinite(referenceTime) ? referenceTime : Date.now()
+  );
+  return {
+    validityStatus: isValid ? 'valid' : 'expired',
+    isValid,
+  };
+}
+
 export function summarizeRetrievedChunk(document = {}, index = 0) {
+  const expiresAt = document.expiresAt || document.metadata?.expiresAt || null;
   return compactObject({
     index,
     id: document.id,
@@ -38,6 +60,26 @@ export function summarizeRetrievedChunk(document = {}, index = 0) {
     contradiction: document.metadata?.contradiction === true ? true : undefined,
     estimatedTokens: document.estimatedTokens,
     textLength: document.text?.length || document.description?.length || 0,
+    provenance: {
+      sourceType: 'knowledge_document',
+      sourceId: `${document.documentId ?? document.id}:${document.chunkId ?? document.chunkIndex ?? 'chunk'}`,
+      retrievedAt: document.retrievedAt || new Date().toISOString(),
+      trustLevel: document.verificationScore === 1 ? 'verified' : 'unverified',
+      expiresAt,
+      originalContentHash: document.originalContentHash
+        || createStableHash(document.text || document.description || ''),
+      ...ragValidity(document),
+      transformations: [
+        'metadata_filtering',
+        'permission_filtering',
+        'near_duplicate_deduplication',
+        'query_reranking',
+        'contradiction_detection',
+        ...(document.compressed ? ['extractive_compression'] : []),
+        'token_budgeting',
+        'citation_assembly',
+      ],
+    },
   });
 }
 

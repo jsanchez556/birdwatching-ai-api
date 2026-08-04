@@ -17,6 +17,7 @@ const {
   traceBirdIdentificationPipeline,
   traceBirdIdentificationRagRetrieval,
   traceCacheOperation,
+  traceContextAssembly,
   traceConversationContext,
   traceImageInput,
   traceLlmCall,
@@ -132,6 +133,60 @@ describe('AI tracing middleware', () => {
       writeSucceeded: undefined,
       errorCode: undefined,
     });
+  });
+
+  it('returns content-free item provenance on context assembly traces', async () => {
+    const contextProvenance = [{
+      contextItemId: 'ctx_92',
+      sourceType: 'tour_database',
+      sourceId: 'tour_42',
+      trustLevel: 'verified',
+      retrievedAt: '2026-07-30T22:00:00.000Z',
+      expiresAt: null,
+      originalContentHash: 'a'.repeat(64),
+      validityStatus: 'valid',
+      isValid: true,
+      transformations: ['field_filtering', 'tool_result_compaction'],
+    }];
+
+    await traceContextAssembly('chat_generation_context_assembly', {
+      parentTraceId: 'root-trace-1',
+      conversationId: 'conversation-1',
+      stage: 'generation',
+    }, async () => ({
+      estimatedTokens: 120,
+      traceProvenance: contextProvenance,
+      metrics: {
+        stage: 'generation',
+        task: 'tour_recommendation',
+        model: 'gpt-4o',
+        candidateItemCount: 3,
+        selectedItemCount: 2,
+        droppedItemCount: 1,
+      },
+    }));
+
+    const traceOptions = mockTrace.mock.calls[0][0];
+    expect(traceOptions).toMatchObject({
+      type: 'context_assembly',
+      name: 'chat_generation_context_assembly',
+      parentTraceId: 'root-trace-1',
+    });
+    expect(traceOptions.outputMetadata({
+      estimatedTokens: 120,
+      traceProvenance: contextProvenance,
+      metrics: {
+        stage: 'generation',
+        task: 'tour_recommendation',
+        model: 'gpt-4o',
+        candidateItemCount: 3,
+        selectedItemCount: 2,
+        droppedItemCount: 1,
+      },
+    })).toEqual(expect.objectContaining({
+      provenanceItemCount: 1,
+      contextProvenance,
+    }));
   });
 
   it('wraps RAG pipeline grounding context metadata', async () => {

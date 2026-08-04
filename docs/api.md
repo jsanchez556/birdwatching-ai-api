@@ -84,6 +84,11 @@ maximum range of 366 days.
   answer-relevance, retrieval, and evaluated-tool success metrics from stored
   offline evaluation artifacts. It never runs an evaluation or contacts an AI
   or tracing provider.
+- `GET /admin/context-engineering` returns privacy-safe aggregate context
+  selection, input-token, retrieval, compaction, cost, and failure metrics for
+  the requested range. It never returns traces or context content. Field
+  semantics and formulas are documented in
+  [Context-engineering telemetry](./context-engineering-telemetry.md).
 - `GET /admin/reservations` returns paginated reservation, tour, participant,
   total-price, and timestamp data without customer contact details or
   confirmation codes.

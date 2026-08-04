@@ -4,14 +4,22 @@ import {
   getToolResultTotal,
   shouldCompactToolResult,
 } from './toolResultCompactor.js';
+import { validateToolResultForContext } from '../tools/toolResultValidation.js';
 
-function attachReference(result, referenceId) {
+function attachReference(result, referenceId, expiresAt) {
   if (!result || typeof result !== 'object' || !referenceId) return;
   Object.defineProperty(result, 'resultReferenceId', {
     value: referenceId,
     enumerable: false,
     configurable: true,
   });
+  if (expiresAt) {
+    Object.defineProperty(result, 'resultReferenceExpiresAt', {
+      value: expiresAt,
+      enumerable: false,
+      configurable: true,
+    });
+  }
 }
 
 async function persistLargeToolResult({
@@ -21,7 +29,12 @@ async function persistLargeToolResult({
   store = toolResultReferenceService,
   logger,
 } = {}) {
-  if (!shouldCompactToolResult(result) || !metadata.conversationId) return null;
+  const validation = result?.contextValidation || validateToolResultForContext(toolName, result, {
+    metadata,
+  });
+  if (validation.valid !== true || !shouldCompactToolResult(result) || !metadata.conversationId) {
+    return null;
+  }
   const { values } = findPrimaryCollection(result);
   const total = getToolResultTotal(result, values);
   try {
@@ -33,7 +46,7 @@ async function persistLargeToolResult({
       userId: metadata.userId,
     });
     if (!stored?.referenceId) return null;
-    attachReference(result, stored.referenceId);
+    attachReference(result, stored.referenceId, stored.expiresAt);
     metadata.toolResultReferences = [
       ...(metadata.toolResultReferences || []),
       {
@@ -55,4 +68,3 @@ async function persistLargeToolResult({
 }
 
 export { attachReference, persistLargeToolResult };
-

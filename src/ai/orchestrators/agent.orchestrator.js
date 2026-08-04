@@ -4,6 +4,7 @@ import logger from '../../utils/logger.js';
 import {
   traceAgentOrchestration,
   traceAgentPlanning,
+  traceContextAssembly,
 } from '../../tracing/aiTracing.middleware.js';
 import featureFlags from '../../featureFlags/featureFlag.service.js';
 import { FEATURE_FLAGS } from '../../featureFlags/flags.js';
@@ -635,8 +636,16 @@ export class AgentOrchestrator {
       hasRagContext: Number(metadata.ragTrace?.retrievedChunkCount || 0) > 0,
       plan,
     });
-    const generationContext = await contextBuilder.build({
+    const generationContext = await traceContextAssembly('chat_generation_context_assembly', {
+      parentTraceId: metadata.agentTraceId || metadata.parentTraceId,
+      requestCorrelationId: metadata.aiTraceId || metadata.parentTraceId,
+      conversationId: metadata.conversationId,
+      stage: 'generation',
+      memoryEligible: metadata.userId !== undefined && metadata.userId !== null,
+      ragEligible: true,
+    }, () => contextBuilder.build({
       userId: metadata.userId ?? null,
+      tenantId: metadata.tenantId ?? metadata.authUser?.tenantId ?? null,
       conversationId: metadata.conversationId,
       task: routingTask,
       stage: 'generation',
@@ -647,10 +656,11 @@ export class AgentOrchestrator {
       signal: options.signal,
       parentTraceId: metadata.parentTraceId,
       excludedMemoryIds: metadata.excludedMemoryIds,
-    });
+    }));
     const budgetedFinalMessages = formatContextPackage(generationContext);
     metadata.estimatedInputTokens = generationContext.estimatedTokens;
     metadata.contextMetrics = generationContext.metrics;
+    metadata.contextProvenance = generationContext.traceProvenance;
     const modelRoute = this.modelRouter({
       task: routingTask,
       estimatedInputTokens: metadata.estimatedInputTokens,

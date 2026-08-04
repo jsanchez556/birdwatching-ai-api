@@ -24,12 +24,13 @@ export class UserMemoryService {
   async prepare({
     userId,
     message,
+    sourceRole = 'user',
     conversationId,
     signal,
     usage,
     parentTraceId,
   } = {}) {
-    if (userId === undefined || userId === null) {
+    if (userId === undefined || userId === null || sourceRole !== 'user') {
       return { success: true, memories: [], clarificationRequired: [], skipped: true };
     }
 
@@ -37,6 +38,7 @@ export class UserMemoryService {
       const existingMemories = await this.queries.getActive(Number(userId), 50);
       const extraction = await this.extractor.extract({
         message,
+        sourceRole,
         existingMemories,
         signal,
         metadata: { conversationId, usage, parentTraceId },

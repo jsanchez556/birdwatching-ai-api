@@ -18,8 +18,13 @@ import {
 } from '../memory/memoryConflictResolver.js';
 import { createContextBudget, estimateTokens } from './contextBudget.js';
 import { buildContextMetrics } from './contextMetrics.js';
-import { createProvenance } from './contextProvenance.js';
+import {
+  createProvenance,
+  mergeTransformations,
+  toSafeProvenance,
+} from './contextProvenance.js';
 import { selectContextItems } from './contextSelector.js';
+import { applyContextTrustPolicy } from './contextTrustPolicy.js';
 import { inferConversationSignals } from './conversationMessageSelector.js';
 import { getSystemPrompt } from '../prompts/system.prompt.js';
 
@@ -34,7 +39,7 @@ const SYSTEM_DATA_MARKERS = Object.freeze([
 
 /**
  * @typedef {'planning'|'generation'} ContextStage
- * @typedef {'system'|'verified'|'user_provided'|'unverified'} TrustLevel
+ * @typedef {'system_policy'|'business_rule'|'verified_database_record'|'validated_tool_result'|'current_user_statement'|'validated_rag_document'|'conversation_summary'|'explicit_user_memory'|'inferred_user_memory'|'unverified_external_content'|'model_generated_claim'|'invalid'} TrustLevel
  * @typedef {'instruction'|'security_instruction'|'message'|'summary'|'memory'|'rag_document'|'tool_result'|'application_state'|'planner_guidance'} ContextItemType
  *
  * @typedef {Object} BuildContextInput
@@ -61,11 +66,15 @@ const SYSTEM_DATA_MARKERS = Object.freeze([
  * @property {ContextItemType} type
  * @property {string} content
  * @property {string} source
+ * @property {string} sourceType
  * @property {number} relevanceScore
  * @property {number} estimatedTokens
  * @property {TrustLevel} trustLevel
  * @property {Date|string} createdAt
+ * @property {Date|string} retrievedAt
  * @property {Date|string} [expiresAt]
+ * @property {string} originalContentHash
+ * @property {Array<string>} transformationHistory
  * @property {boolean} [required]
  * @property {Object} metadata
  */
@@ -100,10 +109,14 @@ function createItem({
   type,
   content,
   source,
+  sourceType,
   relevanceScore = 0.5,
   trustLevel = 'unverified',
   createdAt,
+  retrievedAt,
   expiresAt,
+  originalContentHash,
+  transformationHistory = [],
   required = false,
   metadata = {},
 }, tokenEstimator) {
@@ -113,10 +126,20 @@ function createItem({
     type,
     content: normalizedContent,
     source,
+    sourceType: sourceType || metadata.sourceType || source,
     relevanceScore,
     trustLevel,
     createdAt,
+    retrievedAt: retrievedAt || metadata.retrievedAt || createdAt,
     ...(expiresAt ? { expiresAt } : {}),
+    originalContentHash: originalContentHash
+      || metadata.originalContentHash
+      || createStableHash(content ?? ''),
+    transformationHistory: mergeTransformations(
+      transformationHistory,
+      metadata.transformations,
+      typeof content === 'string' ? [] : ['structured_serialization']
+    ),
     estimatedTokens: tokenEstimator(normalizedContent),
     ...(required ? { required: true } : {}),
     metadata,
@@ -164,17 +187,27 @@ function itemsFromProviderMessages(messages, input, now, tokenEstimator) {
   const items = normalizedMessages.flatMap((message, index) => {
     if (!message || typeof message.content !== 'string' || !message.content) return [];
     const sourceId = message.id || `message:${index}`;
+    const messageProvenance = message.contextProvenance || message.provenance;
     if (message.role === 'system') {
       const classification = classifySystemMessage(message.content);
       return [createItem({
         id: `context:${sourceId}`,
         ...classification,
+        trustLevel: messageProvenance?.trustLevel || classification.trustLevel,
         content: message.content,
         source: classification.type === 'instruction' ? 'prompt_asset' : classification.type,
+        sourceType: messageProvenance?.sourceType,
         relevanceScore: classification.required ? 1 : 0.75,
         createdAt: message.createdAt || now,
+        retrievedAt: messageProvenance?.retrievedAt || now,
+        expiresAt: messageProvenance?.expiresAt,
+        originalContentHash: messageProvenance?.originalContentHash,
+        transformationHistory: messageProvenance?.transformations,
         metadata: {
-          sourceId,
+          sourceId: messageProvenance?.sourceId || sourceId,
+          ...(messageProvenance?.scope ? { scope: messageProvenance.scope } : {}),
+          ...(Number.isInteger(messageProvenance?.ragChunksSelected)
+            ? { ragChunksSelected: messageProvenance.ragChunksSelected } : {}),
           order: index,
           role: 'system',
           ...(message.summaryVersion ? { summaryVersion: message.summaryVersion } : {}),
@@ -212,14 +245,20 @@ function itemsFromProviderMessages(messages, input, now, tokenEstimator) {
       type: 'message',
       content: currentRequest ? input.userMessage : message.content,
       source: currentRequest ? 'current_request' : 'conversation_history',
+      sourceType: messageProvenance?.sourceType,
       relevanceScore: signals.semanticRelevance,
       trustLevel: 'user_provided',
       createdAt: message.createdAt || now,
+      retrievedAt: messageProvenance?.retrievedAt || now,
+      expiresAt: messageProvenance?.expiresAt,
+      originalContentHash: messageProvenance?.originalContentHash,
+      transformationHistory: messageProvenance?.transformations,
       required: currentRequest
         || message.preserveDuringCompaction === true
         || signals.preservationReasons.length > 0,
       metadata: {
-        sourceId,
+        sourceId: messageProvenance?.sourceId || sourceId,
+        ...(messageProvenance?.scope ? { scope: messageProvenance.scope } : {}),
         order: index,
         role: message.role,
         currentRequest,
@@ -246,6 +285,7 @@ function itemsFromProviderMessages(messages, input, now, tokenEstimator) {
       relevanceScore: 1,
       trustLevel: 'user_provided',
       createdAt: now,
+      retrievedAt: now,
       required: true,
       metadata: {
         sourceId: 'current_request',
@@ -265,10 +305,14 @@ function normalizeExternalItems(items, defaults, now, tokenEstimator) {
     type: defaults.type,
     content: item.content || item.text || item.description || item,
     source: String(item.source || defaults.source),
+    sourceType: item.sourceType || item.metadata?.sourceType || defaults.sourceType,
     relevanceScore: item.relevanceScore ?? item.score ?? defaults.relevanceScore,
     trustLevel: item.trustLevel || defaults.trustLevel,
     createdAt: item.createdAt || now,
+    retrievedAt: item.retrievedAt || item.metadata?.retrievedAt || now,
     expiresAt: item.expiresAt,
+    originalContentHash: item.originalContentHash || item.metadata?.originalContentHash,
+    transformationHistory: item.transformationHistory || item.metadata?.transformations,
     required: item.required === true,
     metadata: {
       ...(item.metadata || {}),
@@ -426,6 +470,12 @@ class ContextBuilder {
         id: `application-state:${input.conversationId}`,
         content: sanitizeToolValue(input.applicationState),
         required: true,
+        metadata: {
+          sourceId: input.applicationState.sourceId || input.conversationId,
+          sourceType: 'application_state',
+          originalContentHash: createStableHash(input.applicationState),
+          transformations: ['field_filtering'],
+        },
       }], {
         type: 'application_state',
         source: 'application_state',
@@ -434,9 +484,16 @@ class ContextBuilder {
       }, now, this.tokenEstimator)
       : [];
     const toolResults = input.stage === 'generation'
-      ? this.toolCompactor(input.toolResults, { now })
+      ? this.toolCompactor(input.toolResults, {
+        now,
+        scope: {
+          tenantId: input.tenantId,
+          userId: input.userId,
+          conversationId: input.conversationId,
+        },
+      })
       : [];
-    const candidates = [
+    const unguardedCandidates = [
       ...explicitInstructions,
       ...memoryConflictInstructions,
       ...nonConversationItems,
@@ -450,6 +507,41 @@ class ContextBuilder {
       ...item,
       estimatedTokens: this.tokenEstimator(item.content) + CONTEXT_ITEM_OVERHEAD_TOKENS,
     }));
+    const trustResolution = applyContextTrustPolicy(unguardedCandidates, {
+      tenantId: input.tenantId,
+      userId: input.userId,
+      conversationId: input.conversationId,
+    }, { now });
+    const unresolvedNonMemoryGroups = trustResolution.unresolvedConflictIds.filter((group) => (
+      trustResolution.items.some((item) => (
+        item.metadata?.conflictGroup === group && item.type !== 'memory'
+      ))
+    ));
+    const conflictGuardItems = unresolvedNonMemoryGroups.length
+      ? normalizeExternalItems([{
+        id: `context-conflict:${createStableHash(unresolvedNonMemoryGroups)}`,
+        content: [
+          'An unresolved context conflict affects the current request.',
+          `Conflict group count: ${unresolvedNonMemoryGroups.length}.`,
+          'Ask one concise clarification question or refresh the authoritative source before relying on either value or taking an affected action.',
+          'Do not silently choose, merge, or operationalize either value.',
+        ].join(' '),
+        required: true,
+      }], {
+        type: 'instruction',
+        source: 'context_conflict',
+        relevanceScore: 1,
+        trustLevel: 'system_policy',
+      }, now, this.tokenEstimator)
+      : [];
+    const candidates = applyContextTrustPolicy([
+      ...trustResolution.items,
+      ...conflictGuardItems,
+    ], {
+      tenantId: input.tenantId,
+      userId: input.userId,
+      conversationId: input.conversationId,
+    }, { now }).items;
     const budget = this.budgetFactory({
       model: input.model,
       task: input.task,
@@ -457,20 +549,32 @@ class ContextBuilder {
     });
     const selection = selectContextItems(candidates, budget, { now });
     const compactedIds = new Set(compactedConversation.compactedItemIds);
-    const compactedProvenance = conversationItems
-      .filter((item) => compactedIds.has(item.id))
+    const compactedPolicyItems = applyContextTrustPolicy(
+      conversationItems.filter((item) => compactedIds.has(item.id)),
+      {
+        tenantId: input.tenantId,
+        userId: input.userId,
+        conversationId: input.conversationId,
+      },
+      { now }
+    ).items;
+    const compactedProvenance = compactedPolicyItems
       .map((item) => createProvenance(item, {
         selected: false,
         selectionReason: 'compacted',
-        transformations: ['compacted'],
+        transformations: mergeTransformations(
+          item.transformationHistory,
+          ['conversation_compaction']
+        ),
         finalEstimatedTokens: 0,
-      }));
+      }, { now }));
     selection.provenance.push(...compactedProvenance);
 
     const contextPackage = createEmptyPackage(selection.selected);
     contextPackage.estimatedTokens = selection.selected
       .reduce((total, item) => total + item.estimatedTokens, 0);
     contextPackage.provenance = selection.provenance;
+    contextPackage.traceProvenance = toSafeProvenance(selection.provenance);
     contextPackage.metrics = buildContextMetrics({
       stage: input.stage,
       task: input.task,
@@ -482,6 +586,8 @@ class ContextBuilder {
       durationMs: Math.max(0, Date.now() - startedAt),
       degradedSources,
       unresolvedConflictCount: memoryResolution.unresolvedConflictIds.length,
+      conflictResolutionCount: trustResolution.decisions.length,
+      memoriesRetrieved: memories.length,
     });
 
     try {

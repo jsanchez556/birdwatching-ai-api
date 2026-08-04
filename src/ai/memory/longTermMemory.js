@@ -195,11 +195,15 @@ class PostgresLongTermMemory {
       id: `user-memory:${entry.memory.id}`,
       content: entry.memory.content,
       createdAt: entry.memory.createdAt,
+      retrievedAt: now.toISOString(),
       expiresAt: entry.memory.expiresAt,
       relevanceScore: entry.relevanceScore,
       recencyScore: entry.recencyScore,
-      trustLevel: 'user_provided',
+      trustLevel: entry.memory.inferred === true
+        ? 'inferred_user_memory'
+        : 'explicit_user_memory',
       source: 'long_term_memory',
+      sourceType: 'long_term_memory',
       sourceId: entry.memory.sourceMessageId,
       metadata: {
         memoryId: entry.memory.id,
@@ -210,7 +214,22 @@ class PostgresLongTermMemory {
         recencyScore: entry.recencyScore,
         memoryTokens: entry.memoryTokens,
         isUserEditable: entry.memory.isUserEditable,
+        ownerUserId: Number(userId),
+        inferred: entry.memory.inferred === true,
+        scope: {
+          kind: 'user',
+          tenantId: null,
+          userId: String(userId),
+          conversationId: null,
+        },
         resolution: entry.memory.resolution || 'none',
+        transformations: [
+          'confidence_filtering',
+          'recency_filtering',
+          'semantic_retrieval',
+          'memory_deduplication',
+          'token_budgeting',
+        ],
         ...(entry.memory.conflictKey
           ? { conflictGroup: `${entry.memory.category}:${entry.memory.conflictKey}` }
           : {}),

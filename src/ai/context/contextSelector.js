@@ -1,14 +1,18 @@
 import { createStableHash } from '../../utils/hash.utils.js';
 import { normalizeWhitespace } from '../../utils/text.utils.js';
 import HttpError from '../../utils/httpError.js';
-import { createProvenance } from './contextProvenance.js';
+import { createProvenance, mergeTransformations } from './contextProvenance.js';
+import { CONTEXT_TRUST_LEVELS } from './contextTrustPolicy.js';
 
-const TRUST_SCORES = Object.freeze({
-  system: 1,
-  verified: 0.85,
-  user_provided: 0.65,
-  unverified: 0.35,
-});
+const TRUST_SCORES = Object.freeze(Object.fromEntries(
+  [
+    ...Object.entries(CONTEXT_TRUST_LEVELS).map(([key, value]) => [key, value / 110]),
+    ['system', 1],
+    ['verified', 0.85],
+    ['user_provided', 0.65],
+    ['unverified', 0.35],
+  ]
+));
 
 const SOURCE_PRIORITIES = Object.freeze({
   security_instruction: 1,
@@ -60,7 +64,8 @@ function computeRecencyScore(createdAt, now = new Date()) {
 
 function computeSelectionScore(item, now = new Date()) {
   if (item.type === 'message' && Number.isFinite(item.metadata?.contextScore)) {
-    return clampScore(item.metadata.contextScore);
+    const trust = TRUST_SCORES[item.trustLevel] ?? 0;
+    return Number((clampScore(item.metadata.contextScore) * 0.75 + trust * 0.25).toFixed(6));
   }
   const relevance = clampScore(item.relevanceScore, 0.5);
   const recency = clampScore(item.recencyScore, computeRecencyScore(item.createdAt, now));
@@ -164,18 +169,42 @@ function compareUnits(left, right) {
 }
 
 function selectContextItems(items, budget, { now = new Date() } = {}) {
-  const provenanceById = new Map(items.map((item) => [item.id, createProvenance(item)]));
+  const provenanceById = new Map(items.map((item) => [
+    item.id,
+    createProvenance(item, {}, { now }),
+  ]));
   const valid = [];
 
   for (const item of items) {
     const provenance = provenanceById.get(item.id);
-    if (!validateItem(item)) {
-      provenance.selectionReason = 'invalid';
+    if (item.metadata?.policyExclusionReason) {
+      provenance.selectionReason = item.metadata.policyExclusionReason === 'invalid_trust'
+        || item.metadata.policyExclusionReason === 'invalid_expiration'
+        ? 'invalid'
+        : item.metadata.policyExclusionReason;
+      provenance.isValid = false;
       continue;
     }
-    if (!item.required && item.expiresAt && new Date(item.expiresAt).getTime() <= now.getTime()) {
-      provenance.selectionReason = 'expired';
+    if (!validateItem(item)) {
+      provenance.selectionReason = 'invalid';
+      provenance.validityStatus = 'invalid';
+      provenance.isValid = false;
       continue;
+    }
+    if (item.expiresAt) {
+      const expiresAt = new Date(item.expiresAt).getTime();
+      if (!Number.isFinite(expiresAt)) {
+        provenance.selectionReason = 'invalid';
+        provenance.validityStatus = 'invalid_expiration';
+        provenance.isValid = false;
+        continue;
+      }
+      if (expiresAt <= now.getTime()) {
+        provenance.selectionReason = 'expired';
+        provenance.validityStatus = 'expired';
+        provenance.isValid = false;
+        continue;
+      }
     }
     valid.push({
       ...item,
@@ -189,7 +218,10 @@ function selectContextItems(items, budget, { now = new Date() } = {}) {
     const provenance = provenanceById.get(duplicateId);
     provenance.selectionReason = 'duplicate';
     provenance.duplicateOf = retainedId;
-    provenance.transformations = ['normalized_content_fingerprint'];
+    provenance.transformations = mergeTransformations(
+      provenance.transformations,
+      ['normalized_content_fingerprint']
+    );
   }
 
   const required = retained.filter((item) => item.required).sort(compareItems);

@@ -440,10 +440,11 @@ describe('ContextBuilder', () => {
     expect(context.metrics.discardedContext.tokensByReason.category_budget).toBeGreaterThan(0);
   });
 
-  it('does not expose raw tool diagnostics and retains reservation status', () => {
-    const [result] = compactToolResults([{
+  it('excludes unsuccessful reservation diagnostics from verified context', () => {
+    const result = compactToolResults([{
       tool: 'createReservation',
       result: {
+        success: false,
         reservationId: 'reservation-123',
         status: 'indeterminate',
         stack: 'sensitive stack',
@@ -452,12 +453,7 @@ describe('ContextBuilder', () => {
       },
     }], { now: NOW });
 
-    expect(result.required).toBe(true);
-    expect(result.content).toContain('indeterminate');
-    expect(result.content).toContain('reservation-123');
-    expect(result.content).not.toContain('sensitive stack');
-    expect(result.content).not.toContain('SELECT secret');
-    expect(result.content).not.toContain('token');
+    expect(result).toEqual([]);
   });
 });
 

@@ -22,3 +22,9 @@ export {
   measurementFromModelRoutingTelemetry,
   runModelRoutingEvaluation,
 } from './modelRoutingEvaluation.runner.js';
+
+export {
+  DEFAULT_STRATEGIES,
+  DEFAULT_THRESHOLDS,
+  runContextStrategyComparison,
+} from './contextStrategyComparison.runner.js';

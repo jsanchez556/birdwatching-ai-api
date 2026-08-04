@@ -180,7 +180,16 @@ export class UserMemoryExtractor {
     this.clock = clock;
   }
 
-  async extract({ message, existingMemories = [], signal, metadata = {} } = {}) {
+  async extract({
+    message,
+    sourceRole = 'user',
+    existingMemories = [],
+    signal,
+    metadata = {},
+  } = {}) {
+    if (sourceRole !== 'user') {
+      return { success: true, memories: [], skipped: true };
+    }
     if (!shouldExtractUserMemory(message)) {
       return { success: true, memories: [], skipped: true };
     }

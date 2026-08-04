@@ -1,4 +1,25 @@
 import observabilityService from '../observability/observability.service.js';
+import { toNormalizedContextTelemetry } from '../ai/context/contextMetrics.js';
+
+function traceContextAssembly(name, metadata, operation) {
+  return withAiTrace({
+    type: 'context_assembly',
+    name,
+    metadata,
+    outputMetadata: (result = {}) => ({
+      ...toNormalizedContextTelemetry(result.metrics),
+      stage: result.metrics?.stage,
+      task: result.metrics?.task,
+      model: result.metrics?.model,
+      estimatedInputTokens: result.estimatedTokens,
+      candidateItemCount: result.metrics?.candidateItemCount,
+      selectedItemCount: result.metrics?.selectedItemCount,
+      droppedItemCount: result.metrics?.droppedItemCount,
+      provenanceItemCount: result.traceProvenance?.length || 0,
+      contextProvenance: result.traceProvenance || [],
+    }),
+  }, operation);
+}
 
 function safeResultCount(result) {
   if (Array.isArray(result)) return result.length;
@@ -258,6 +279,7 @@ export {
   traceBirdIdentificationPipeline,
   traceBirdIdentificationRagRetrieval,
   traceCacheOperation,
+  traceContextAssembly,
   traceConversationContext,
   traceImageInput,
   traceLlmCall,

@@ -82,6 +82,20 @@ describe('tool result compaction', () => {
     expect(contextItem.content).not.toContain('databaseCreatedAt');
     expect(contextItem.content).not.toContain('do-not-expose');
     expect(contextItem.content.length).toBeLessThan(JSON.stringify(result).length / 3);
+    expect(contextItem).toEqual(expect.objectContaining({
+      sourceType: 'validated_tool_result',
+      retrievedAt: NOW.toISOString(),
+      trustLevel: 'validated_tool_result',
+      originalContentHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      transformationHistory: [
+        'field_filtering',
+        'tool_result_compaction',
+        'result_reference_storage',
+      ],
+      metadata: expect.objectContaining({
+        sourceId: 'search_tours_abc123',
+      }),
+    }));
   });
 
   it('stores the complete result while placing only its opaque reference in metadata', async () => {

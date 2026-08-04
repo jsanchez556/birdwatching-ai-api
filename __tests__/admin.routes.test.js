@@ -10,6 +10,7 @@ const adminMethods = [
   'getAiUsage',
   'getAiCosts',
   'getAiQuality',
+  'getContextEngineering',
   'getReservations',
   'getQueueHealth',
   'getFailures',
@@ -57,6 +58,7 @@ const endpoints = [
   ['/admin/ai-usage', 'getAiUsage'],
   ['/admin/ai-costs', 'getAiCosts'],
   ['/admin/ai-quality', 'getAiQuality'],
+  ['/admin/context-engineering', 'getContextEngineering'],
   ['/admin/reservations', 'getReservations'],
   ['/admin/queue-health', 'getQueueHealth'],
   ['/admin/failures', 'getFailures'],
@@ -298,6 +300,24 @@ describe('admin routes', () => {
       meta: {},
     });
     expect(adminServiceMock.getAiQuality).toHaveBeenCalledWith({
+      startDate: '2026-07-01',
+      endDate: '2026-08-01',
+    });
+  });
+
+  it('protects context telemetry and forwards only the reporting window', async () => {
+    adminServiceMock.getContextEngineering.mockResolvedValueOnce({ metrics: {} });
+    expect((await request(buildApp()).get('/admin/context-engineering')).status).toBe(401);
+    expect((await request(buildApp()).get('/admin/context-engineering')
+      .set('Authorization', authHeader('customer'))).status).toBe(403);
+
+    const response = await request(buildApp())
+      .get('/admin/context-engineering?startDate=2026-07-01&endDate=2026-08-01&ignored=value')
+      .set('Authorization', authHeader('admin'));
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ success: true, data: { metrics: {} }, meta: {} });
+    expect(adminServiceMock.getContextEngineering).toHaveBeenCalledWith({
       startDate: '2026-07-01',
       endDate: '2026-08-01',
     });

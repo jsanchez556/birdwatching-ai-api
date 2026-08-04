@@ -14,6 +14,7 @@ export {
   runModelRoutingEvaluation,
   buildModelRoutingEvaluationReport,
   measurementFromModelRoutingTelemetry,
+  runContextStrategyComparison,
 } from './runners/index.js';
 
 export {

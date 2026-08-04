@@ -44,6 +44,18 @@ describe('prompt builder', () => {
       expect.objectContaining({
         role: 'system',
         content: expect.stringContaining('Resplendent Quetzal'),
+        provenance: expect.objectContaining({
+          sourceType: 'rag_retrieval',
+          sourceId: expect.stringMatching(/^rag-selection:/),
+          originalContentHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          transformations: expect.arrayContaining([
+            'metadata_filtering',
+            'permission_filtering',
+            'query_reranking',
+            'token_budgeting',
+            'citation_assembly',
+          ]),
+        }),
       }),
       { role: 'user', content: 'Where can I see quetzals?' },
     ]);

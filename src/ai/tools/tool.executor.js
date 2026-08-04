@@ -20,6 +20,10 @@ import {
 } from './toolExecutionState.js';
 import toolResultReferenceService from '../../services/toolResultReference.service.js';
 import { persistLargeToolResult } from '../compaction/toolResultReference.js';
+import {
+  attachToolContextValidation,
+  validateToolResultForContext,
+} from './toolResultValidation.js';
 
 export const TOOL_EXECUTION_FAILED_MESSAGE = 'I could not complete that action right now. Please try again in a moment.';
 export const TOOL_RESULT_INDETERMINATE_MESSAGE =
@@ -39,6 +43,7 @@ export class ToolExecutor {
     this.logger = options.logger || logger;
     this.retryOptions = options.retry || {};
     this.toolResultStore = options.toolResultStore || toolResultReferenceService;
+    this.clock = options.clock || (() => new Date());
   }
 
   hasTool(name) {
@@ -122,6 +127,12 @@ export class ToolExecutor {
     for (let attempt = 0; attempt <= retryOptions.retries; attempt += 1) {
       try {
         const result = await handler(validatedArgs, metadata);
+        const contextValidation = validateToolResultForContext(name, result, {
+          metadata,
+          status: result?.status,
+          now: this.clock(),
+        });
+        attachToolContextValidation(result, contextValidation);
         const retryable = NON_RETRYABLE_SIDE_EFFECT_TOOLS.has(name)
           ? false
           : isRetryableToolResult(result);
@@ -161,6 +172,12 @@ export class ToolExecutor {
           logger: this.logger,
         });
         appendToolResponseMetadata(metadata, name, result, validatedArgs);
+        if (!contextValidation.valid) {
+          metadata.toolContextRejections = [
+            ...(metadata.toolContextRejections || []),
+            { tool: name, reason: contextValidation.reason },
+          ];
+        }
         this.logger.info('Agent tool call completed', {
           toolName: name,
           success: result?.success !== false,

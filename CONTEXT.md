@@ -31,6 +31,9 @@ This repository is a Node.js backend for Costa Rica birdwatching assistance, spl
 - Durable reservation conversation state: [docs/reservation-state.md](./docs/reservation-state.md)
 - Deployment and environment: [docs/deployment.md](./docs/deployment.md)
 - Privacy, retention, deletion, and export: [docs/privacy-retention.md](./docs/privacy-retention.md)
+- Context trust, freshness, and isolation: [docs/context-trust.md](./docs/context-trust.md)
+- Context telemetry and admin formulas: [docs/context-engineering-telemetry.md](./docs/context-engineering-telemetry.md)
+- Context-selection strategy evaluation: [docs/context-selection-evaluation.md](./docs/context-selection-evaluation.md)
 - Product analytics and event ownership: [docs/analytics.md](./docs/analytics.md)
 - Product feature flags and rollout ownership: [docs/feature-flags.md](./docs/feature-flags.md)
 - Product experiments and measurement ownership: [docs/experiments.md](./docs/experiments.md)
@@ -126,6 +129,23 @@ GET /chat/latest
   analysis. Each policy reserves output capacity and divides the remaining
   input budget among conversation, memory, knowledge, tools, and application
   state; aggregate metrics report discarded items/tokens by category and reason.
+- Every ContextBuilder candidate carries content-free provenance: source type and
+  identifier, retrieval/source timestamps, trust level, expiration/validity,
+  an SHA-256 hash of the pre-transformation content, and ordered transformation
+  history. Planning and generation emit dedicated context-assembly traces, and
+  final LLM traces receive the safe provenance projection without prompt text.
+  Both trace stages also carry normalized content-free selection, token,
+  compaction, summary, memory, RAG, tool-result, and latency telemetry. The
+  authenticated `GET /admin/context-engineering` endpoint aggregates only
+  correlated final-generation requests; see `docs/context-engineering-telemetry.md`.
+  Unsafe source identifiers are hashed; provenance sidecars are non-enumerable
+  and therefore never serialized into provider messages or public chat metadata.
+- ContextBuilder normalizes source authority, validates global/tenant/user/
+  conversation scope, rejects expired or malformed candidates, and records
+  conflict decisions before budgeting. Assistant claims and summaries remain
+  derived evidence; only schema-valid successful scoped tool results receive
+  validated-tool trust. Prompt-like RAG passages are quoted data and cannot
+  change system policy or tool permissions. See `docs/context-trust.md`.
 - Oversized tool results are persisted for seven days in `tool_result_references`
   under an opaque, conversation/user-scoped reference. The prompt receives only
   task-relevant identifiers and fields, totals, pagination, a bounded selection,

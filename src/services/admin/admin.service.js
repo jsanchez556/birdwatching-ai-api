@@ -7,6 +7,7 @@ import operationalErrorsService from './operationalErrors.service.js';
 import aiQualityService from './aiQuality.service.js';
 import { OPERATIONAL_ERROR_TYPE_SET } from '../../monitoring/operationalErrors.js';
 import HttpError from '../../utils/httpError.js';
+import { estimateCost } from '../../ai/telemetry/tokenUsage.js';
 
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 100;
@@ -175,6 +176,113 @@ function percentile(values, target) {
 
 function rate(numerator, denominator) {
   return denominator === 0 ? 0 : Number((numerator / denominator).toFixed(4));
+}
+
+function unavailableMetric(denominator = 0) {
+  return {
+    status: 'unavailable',
+    numerator: null,
+    denominator,
+    value: null,
+    rate: null,
+  };
+}
+
+function averageMetric(numerator, denominator) {
+  if (denominator === 0) return unavailableMetric(0);
+  return {
+    status: 'available',
+    numerator: Number(numerator.toFixed(6)),
+    denominator,
+    value: Number((numerator / denominator).toFixed(6)),
+    rate: null,
+  };
+}
+
+function ratioMetric(numerator, denominator) {
+  if (denominator === 0) return unavailableMetric(0);
+  const normalizedRate = Number((numerator / denominator).toFixed(4));
+  return {
+    status: 'available',
+    numerator,
+    denominator,
+    value: normalizedRate,
+    rate: normalizedRate,
+  };
+}
+
+function summarizeContextEngineering(records = []) {
+  const safeRecords = Array.isArray(records) ? records : [];
+  const groups = new Map();
+  for (const record of safeRecords) {
+    const correlationId = record?.requestCorrelationId || record?.traceId;
+    if (!correlationId) continue;
+    const group = groups.get(correlationId) || [];
+    group.push(record);
+    groups.set(correlationId, group);
+  }
+  const requests = [...groups.values()];
+  const finalGenerationRecords = requests.flatMap((group) => {
+    const recordsForStage = group.filter((record) => (
+      record.stage === 'generation' && !record.failureCategory
+    ));
+    return recordsForStage.length ? [recordsForStage[0]] : [];
+  });
+  const totalInputTokens = finalGenerationRecords.reduce(
+    (total, record) => total + number(record.inputTokens), 0
+  );
+  const actualTokenRequests = finalGenerationRecords
+    .filter((record) => record.inputTokenSource === 'actual').length;
+  const estimatedTokenRequests = finalGenerationRecords.length - actualTokenRequests;
+  const priced = finalGenerationRecords.map((record) => ({
+    record,
+    cost: estimateCost(record.model, {
+      promptTokens: number(record.inputTokens),
+      completionTokens: 0,
+    }),
+  }));
+  const allPriced = priced.length > 0 && priced.every(({ cost }) => cost !== null);
+  const costMetric = allPriced
+    ? averageMetric(priced.reduce((total, entry) => total + entry.cost, 0), priced.length)
+    : unavailableMetric(finalGenerationRecords.length);
+  const ragEligible = finalGenerationRecords.filter((record) => record.ragEligible === true);
+  const memoryEligible = finalGenerationRecords
+    .filter((record) => record.memoryEligible === true);
+  const failedRequests = requests.filter((group) => (
+    group.some((record) => typeof record.failureCategory === 'string')
+  ));
+
+  return {
+    aggregation: {
+      eligibleRequests: requests.length,
+      finalGenerationRequests: finalGenerationRecords.length,
+      planningTraces: safeRecords.filter((record) => record.stage === 'planning').length,
+      generationTraces: safeRecords.filter((record) => record.stage === 'generation').length,
+      actualTokenRequests,
+      estimatedTokenRequests,
+      tokenSemantics: actualTokenRequests > 0
+        ? (estimatedTokenRequests > 0 ? 'actual_with_estimated_fallback' : 'actual')
+        : 'estimated',
+      costSemantics: 'estimated_input_token_cost',
+    },
+    metrics: {
+      averageInputTokens: averageMetric(totalInputTokens, finalGenerationRecords.length),
+      contextCostPerRequest: costMetric,
+      ragContextUtilization: ratioMetric(
+        ragEligible.filter((record) => number(record.ragChunksSelected) > 0).length,
+        ragEligible.length
+      ),
+      memoryRetrievalRate: ratioMetric(
+        memoryEligible.filter((record) => number(record.memoriesRetrieved) > 0).length,
+        memoryEligible.length
+      ),
+      compactionFrequency: ratioMetric(
+        finalGenerationRecords.filter((record) => record.compactionTriggered === true).length,
+        finalGenerationRecords.length
+      ),
+      contextRelatedFailureRate: ratioMetric(failedRequests.length, requests.length),
+    },
+  };
 }
 
 function summarizeRoutingBreakdown(records, dimension) {
@@ -441,6 +549,20 @@ class AdminService {
     return this.qualityService.getQualitySummary(range);
   }
 
+  async getContextEngineering(query = {}) {
+    const range = normalizeRange(query, this.clock());
+    const records = this.telemetry.getContextEngineeringRecords?.(range);
+    const summary = summarizeContextEngineering(records || []);
+    return {
+      range: { ...range, timezone: 'UTC' },
+      source: {
+        type: 'process_local_telemetry',
+        scope: 'current_instance_bounded_retention',
+      },
+      ...summary,
+    };
+  }
+
   async getReservations(query) {
     const pagination = normalizePagination(query);
     const rows = await this.repository.getReservations(pagination);
@@ -486,5 +608,6 @@ export {
   normalizeRange,
   summarizeTelemetry,
   summarizeModelRoutingHealth,
+  summarizeContextEngineering,
 };
 export default new AdminService();

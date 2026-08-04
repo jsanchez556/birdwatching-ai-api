@@ -81,6 +81,7 @@ class RagService {
       ...(options.keywordWeight === undefined
         ? {} : { keywordWeight: options.keywordWeight }),
       userId: options.userId,
+      tenantId: options.tenantId,
       role: options.role,
       parentTraceId: options.parentTraceId,
       aiTraceId: options.aiTraceId,
@@ -205,6 +206,7 @@ class RagService {
       const evaluatedVariant = await this.featureFlags.getVariant({
         flag: FEATURE_FLAGS.ADVANCED_RAG,
         userId: metadata.userId,
+        tenantId: metadata.tenantId,
         anonymousId: metadata.conversationId,
         personProperties: {
           plan: metadata.authUser?.plan,

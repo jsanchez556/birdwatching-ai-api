@@ -1,8 +1,13 @@
 import { randomUUID } from 'crypto';
 import { Client as LangSmithClient } from 'langsmith';
 import env from '../config/env.js';
-import aiTelemetry, { normalizeTokenUsage, sanitizeTelemetryValue } from '../monitoring/aiTelemetry.js';
+import aiTelemetry, {
+  classifyContextFailure,
+  normalizeTokenUsage,
+  sanitizeTelemetryValue,
+} from '../monitoring/aiTelemetry.js';
 import { estimateCost } from '../ai/telemetry/tokenUsage.js';
+import { toNormalizedContextTelemetry } from '../ai/context/contextMetrics.js';
 import logger from '../utils/logger.js';
 
 function isTracingEnabled(config = env) {
@@ -147,6 +152,9 @@ class ObservabilityService {
       await this.completeLangSmithRun(trace, details || {}, usage);
       return result;
     } catch (error) {
+      if (trace.type === 'context_assembly') {
+        trace.annotate({ failureCategory: classifyContextFailure(error) });
+      }
       await this.failLangSmithRun(trace, error);
       trace.error(error);
       throw error;
@@ -166,6 +174,7 @@ class ObservabilityService {
       ai_execution_flow: 'chain',
       bird_identification_pipeline: 'chain',
       cache: 'tool',
+      context_assembly: 'chain',
       conversation_context: 'chain',
       final_response: 'chain',
       image_input: 'tool',
@@ -217,11 +226,21 @@ class ObservabilityService {
     const estimatedCostUsd = model && tokenUsage
       ? estimateCost(model, tokenUsage)
       : null;
+    const contextTelemetry = trace.metadata?.contextTelemetry
+      ? {
+        ...toNormalizedContextTelemetry(trace.metadata.contextTelemetry),
+        ...(tokenUsage ? {
+          inputTokens: Math.max(0, Math.floor(Number(tokenUsage.promptTokens) || 0)),
+          inputTokenSource: 'actual',
+        } : {}),
+      }
+      : null;
 
     await this.sendLangSmithUpdate('complete', trace, async () => this.langSmithClient.updateRun(trace.id, {
       end_time: new Date(this.clock.now()).toISOString(),
       outputs: sanitizeTelemetryValue({
         ...details,
+        ...(contextTelemetry ? { contextTelemetry } : {}),
         ...(estimatedCostUsd === null ? {} : { estimatedCostUsd }),
       }),
       extra: {
@@ -229,6 +248,10 @@ class ObservabilityService {
           traceType: trace.type,
           langSmithEnabled: trace.langSmithEnabled,
           ...sanitizeTelemetryValue(trace.metadata || {}),
+          ...(contextTelemetry ? {
+            contextStage: trace.metadata.contextTelemetry.stage || 'unknown',
+            contextTelemetry,
+          } : {}),
           ...(estimatedCostUsd === null ? {} : { estimatedCostUsd }),
         },
       },
@@ -245,7 +268,18 @@ class ObservabilityService {
 
     await this.sendLangSmithUpdate('fail', trace, async () => this.langSmithClient.updateRun(trace.id, {
       end_time: new Date(this.clock.now()).toISOString(),
-      error: error?.message || 'AI operation failed',
+      error: trace.type === 'context_assembly'
+        ? 'Context processing failed'
+        : (error?.message || 'AI operation failed'),
+      extra: {
+        metadata: {
+          traceType: trace.type,
+          ...sanitizeTelemetryValue(trace.metadata || {}),
+          ...(trace.type === 'context_assembly' ? {
+            contextTelemetry: toNormalizedContextTelemetry({}),
+          } : {}),
+        },
+      },
     }));
   }
 

@@ -166,6 +166,20 @@ Chat context is assembled through:
 6. provider formatting and one immutable final message set reused by routed
    retries/fallbacks
 
+Each candidate's provenance answers where it came from, when it was obtained,
+how much it should be trusted, and whether it remains valid. The canonical
+record includes `sourceType`, `sourceId`, `retrievedAt`, `trustLevel`,
+`expiresAt`, `validityStatus`, `originalContentHash`, and `transformations`, plus
+selection outcome fields. Original hashes are computed before field filtering,
+summarization, RAG compression, or tool-result compaction. Expired and malformed
+expiration values fail closed, including on items marked required.
+
+`formatContextPackage` carries a non-enumerable provenance sidecar between the
+planning and generation passes. JSON/provider serialization sees only `role`
+and `content`. Dedicated planning/generation `context_assembly` traces and final
+LLM traces receive a content-free safe projection; unsafe identifiers are
+replaced by deterministic hashes.
+
 Compaction never deletes the transcript. `conversation_summaries` stores
 immutable cumulative versions and the exact message-row IDs covered by each
 version. A PostgreSQL function locks the conversation and checks the expected

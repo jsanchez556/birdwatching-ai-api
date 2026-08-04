@@ -72,9 +72,14 @@ buildPrompt({
 `src/ai/context/contextBuilder.js` is the canonical runtime selection boundary
 around these messages. It converts candidate messages into typed context
 items, applies deterministic deduplication and category/total token budgets,
-retains provenance without raw content, and returns privacy-safe metrics.
+retains provenance without raw content, and returns privacy-safe metrics. Every
+candidate records source type/ID, retrieval time, trust, expiration and current
+validity, original-content SHA-256, transformations, and selection outcome.
+Expired or malformed-expiration candidates are rejected rather than promoted by
+required-item priority.
 `contextFormatter.js` converts the selected provider-neutral package back into
-role messages at the AI boundary.
+role messages at the AI boundary. It preserves provenance between assembly
+stages in non-enumerable sidecars that are not included in provider JSON.
 
 Assembly occurs twice:
 

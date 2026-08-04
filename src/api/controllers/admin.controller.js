@@ -33,6 +33,13 @@ class AdminController {
     }));
   }
 
+  async getContextEngineering(req, res) {
+    return sendSuccess(res, await adminService.getContextEngineering({
+      startDate: req.query?.startDate,
+      endDate: req.query?.endDate,
+    }));
+  }
+
   async getAiFeatures(req, res) {
     return sendSuccess(res, await adminOperationsService.getAiFeatureStates());
   }

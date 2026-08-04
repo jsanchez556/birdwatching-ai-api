@@ -12,3 +12,9 @@ export {
 export {
   evaluateToolCorrectness,
 } from './toolCorrectness.scorer.js';
+
+export {
+  CONTEXT_FAILURE_CATEGORIES,
+  classifyEvaluationFailure,
+  scoreContextStrategyRun,
+} from './contextStrategy.scorer.js';

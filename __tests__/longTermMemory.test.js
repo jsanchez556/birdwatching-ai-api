@@ -72,7 +72,7 @@ describe('long-term memory adapters', () => {
         id: 'user-memory:1',
         content: 'Interested in hummingbirds.',
         sourceId: 42,
-        trustLevel: 'user_provided',
+        trustLevel: 'explicit_user_memory',
         metadata: expect.objectContaining({
           memoryId: 1,
           sourceMessageId: 42,

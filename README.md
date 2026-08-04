@@ -8,7 +8,7 @@ The implementation is a Node.js 22/Express 5 application with a separately start
 
 The central design constraint is that probabilistic model output must not become transactional truth. Retrieval may degrade to an ungrounded path, tool failures are converted to structured results, and reservation confirmation is emitted only after the PostgreSQL write path succeeds.
 
-The browser application lives in [birdwatching-ai-ui](https://github.com/jsanchez556/birdwatching-ai-ui). See [CONTEXT.md](./CONTEXT.md) for a source map and [docs/backend-guidelines.md](./docs/backend-guidelines.md) for repository conventions.
+The browser application lives in [birdwatching-ai-ui](https://github.com/jsanchez556/birdwatching-ai-ui). See [CONTEXT.md](./CONTEXT.md) for a source map, [docs/context-trust.md](./docs/context-trust.md) for context authority/freshness/isolation rules, and [docs/backend-guidelines.md](./docs/backend-guidelines.md) for repository conventions.
 
 ## 2. Capability status
 
@@ -262,6 +262,12 @@ Schemas and handlers are registered together so a missing handler or duplicate t
 Oversized tool outputs are stored for seven days behind opaque, user/conversation-scoped references. Dependent plan steps keep the complete request-local value, while model context receives at most five allowlisted rows plus totals, pagination, omitted counts, and the result reference. Internal margins, supplier/database fields, raw provider details, credentials, queries, and diagnostics are never copied into the compact prompt projection.
 
 The OpenAI model is used to produce the final natural-language answer, not to choose arbitrary executable code. Unknown tools and invalid arguments return controlled structured failures.
+
+Context assembly records content-free provenance for every candidate and returns
+it on planning, generation, and final LLM traces. Source IDs, retrieval time,
+trust, expiry/validity, original-content hashes, transformations, and selection
+outcomes remain internal; non-enumerable sidecars preserve them across assembly
+passes without adding fields to provider messages or public chat responses.
 
 ### AI agent tool-execution flow
 

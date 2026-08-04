@@ -153,6 +153,12 @@ Prompt regression results should compare:
 - retrieval quality
 - prompt quality versus prompt cost
 
+Context-selection regression is a separate deterministic/live comparison of
+full history, Last-6, and production dynamic assembly. Run
+`npm run ai:evals:context`; methodology, formulas, safety boundaries, report
+schemas, live-executor contract, and configured acceptance thresholds are in
+[`context-selection-evaluation.md`](./context-selection-evaluation.md).
+
 The expected summary shape is:
 
 ```js

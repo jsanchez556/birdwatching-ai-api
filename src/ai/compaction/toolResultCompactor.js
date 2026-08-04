@@ -1,4 +1,6 @@
 import { estimateTokens } from '../context/contextBudget.js';
+import { createStableHash } from '../../utils/hash.utils.js';
+import { validateToolResultForContext } from '../tools/toolResultValidation.js';
 
 const UNSAFE_KEY_PATTERN = /(?:authorization|cookie|password|secret|token|stack|sql|query|providerResponse|raw|internal|supplier[_-]?contract|database[_-]?(?:created|updated)[_-]?at)/i;
 const DEFAULT_MAX_INLINE_ITEMS = 8;
@@ -155,11 +157,23 @@ function compactToolResultForPrompt(tool, result, options = {}) {
   return sanitizeToolValue(result, { reservationResult: tool === 'createReservation' });
 }
 
-function compactToolResults(toolResults = [], { now = new Date() } = {}) {
-  return (Array.isArray(toolResults) ? toolResults : []).map((step, index) => {
+function compactToolResults(toolResults = [], { now = new Date(), scope = {} } = {}) {
+  return (Array.isArray(toolResults) ? toolResults : []).flatMap((step, index) => {
     const tool = String(step?.tool || 'unknown_tool');
     const reservationResult = tool === 'createReservation';
     const rawResult = step?.result ?? step?.error ?? null;
+    const contextValidation = rawResult?.contextValidation
+      || validateToolResultForContext(tool, rawResult, {
+        metadata: {
+          tenantId: scope.tenantId ?? step?.tenantId,
+          userId: scope.userId ?? step?.userId,
+          conversationId: scope.conversationId ?? step?.conversationId ?? 'legacy_internal_context',
+        },
+        status: step?.status,
+        now,
+      });
+    if (!contextValidation.valid) return [];
+    const largeResult = shouldCompactToolResult(rawResult);
     const safeResult = compactToolResultForPrompt(tool, rawResult, {
       resultReferenceId: step?.resultReferenceId || rawResult?.resultReferenceId,
     });
@@ -169,23 +183,37 @@ function compactToolResults(toolResults = [], { now = new Date() } = {}) {
       result: safeResult,
     });
 
-    return {
+    return [{
       id: String(step?.id || `tool-result:${tool}:${index}`),
       type: 'tool_result',
       content,
       source: `tool:${tool}`,
+      sourceType: 'validated_tool_result',
       relevanceScore: reservationResult ? 1 : 0.85,
-      trustLevel: 'verified',
+      trustLevel: 'validated_tool_result',
       createdAt: step?.createdAt || now,
+      retrievedAt: contextValidation.retrievedAt || now,
+      ...((rawResult?.resultReferenceExpiresAt || contextValidation.expiresAt)
+        ? { expiresAt: rawResult?.resultReferenceExpiresAt || contextValidation.expiresAt } : {}),
+      originalContentHash: createStableHash(rawResult),
+      transformationHistory: [
+        'field_filtering',
+        ...(largeResult ? ['tool_result_compaction'] : []),
+        ...(rawResult?.resultReferenceId ? ['result_reference_storage'] : []),
+      ],
       estimatedTokens: estimateTokens(content),
       required: reservationResult,
       metadata: {
         tool,
+        sourceType: 'validated_tool_result',
+        sourceId: rawResult?.resultReferenceId || step?.id || `${tool}:${index}`,
         status: step?.status || (step?.error ? 'failed' : 'completed'),
+        contextValidation,
+        scope: contextValidation.scope,
         compacted: true,
         order: index,
       },
-    };
+    }];
   });
 }
 

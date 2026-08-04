@@ -15,6 +15,7 @@ import HttpError from '../utils/httpError.js';
 import aiTelemetry from '../monitoring/aiTelemetry.js';
 import {
   traceAiExecutionFlow,
+  traceContextAssembly,
   traceConversationContext,
 } from '../tracing/aiTracing.middleware.js';
 import { injectResponseModeMessage } from '../ai/prompts/prompt.builder.js';
@@ -377,6 +378,7 @@ class ChatService {
       : await userMemoryService.prepare({
         userId,
         message,
+        sourceRole: 'user',
         conversationId: activeConversationId,
         signal,
         usage,
@@ -414,6 +416,7 @@ class ChatService {
       clientIP,
       conversationId: activeConversationId,
       userId,
+      tenantId: authUser?.tenantId,
       role,
       ...(authUser ? { authUser } : {}),
       parentTraceId,
@@ -428,8 +431,16 @@ class ChatService {
     const unbudgetedPromptMessages = responseMode
       ? injectResponseModeMessage(ragContext.messages, responseMode)
       : ragContext.messages;
-    const planningContext = await contextBuilder.build({
+    const planningContext = await traceContextAssembly('chat_planning_context_assembly', {
+      parentTraceId,
+      requestCorrelationId: options.aiTraceId || parentTraceId,
+      conversationId: activeConversationId,
+      stage: 'planning',
+      memoryEligible: userId !== undefined && userId !== null,
+      ragEligible: true,
+    }, () => contextBuilder.build({
       userId: userId ?? null,
+      tenantId: authUser?.tenantId ?? null,
       conversationId: activeConversationId,
       task: Number(ragContext.ragTrace?.retrievedChunkCount || 0) > 0
         ? 'rag_answer'
@@ -447,7 +458,7 @@ class ChatService {
       signal,
       parentTraceId,
       excludedMemoryIds,
-    });
+    }));
     const promptMessages = formatContextPackage(planningContext);
     const openAiMetadata = {
       clientIP,
@@ -460,12 +471,15 @@ class ChatService {
       },
       source: resolveChatSource(options),
       ...(userId ? { userId } : {}),
+      ...(authUser?.tenantId ? { tenantId: authUser.tenantId } : {}),
       ...(authUser ? { authUser } : {}),
       ...(customerContext ? { customerContext } : {}),
       ...(options.conversationContext ? { conversationContext: options.conversationContext } : {}),
       ...(ragContext.ragTrace ? { ragTrace: ragContext.ragTrace } : {}),
       estimatedInputTokens: planningContext.estimatedTokens,
       contextMetrics: planningContext.metrics,
+      requestCorrelationId: options.aiTraceId || parentTraceId,
+      contextProvenance: planningContext.traceProvenance,
       ...(usage.openAiUsage ? { openAiUsage: usage.openAiUsage } : {}),
       ...(excludedMemoryIds.length ? { excludedMemoryIds } : {}),
       ...getDegradationMetadata(ragContext),

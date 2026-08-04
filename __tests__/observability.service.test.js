@@ -571,6 +571,19 @@ describe('AI observability service', () => {
         },
       },
     });
+
+    const provenance = Array.from({ length: 30 }, (_, index) => ({
+      contextItemId: `ctx_${index}`,
+      originalContentHash: 'a'.repeat(64),
+      content: 'must be redacted',
+    }));
+    const sanitizedProvenance = sanitizeTelemetryValue({ contextProvenance: provenance });
+    expect(sanitizedProvenance.contextProvenance).toHaveLength(30);
+    expect(sanitizedProvenance.contextProvenance[0]).toEqual({
+      contextItemId: 'ctx_0',
+      originalContentHash: 'a'.repeat(64),
+      content: '[redacted]',
+    });
   });
 
   it('records centralized AI error events with redacted details', () => {

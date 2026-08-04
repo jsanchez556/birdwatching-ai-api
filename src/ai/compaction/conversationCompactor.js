@@ -1,4 +1,5 @@
 import { estimateTokens } from '../context/contextBudget.js';
+import { createStableHash } from '../../utils/hash.utils.js';
 
 const CONVERSATION_SUMMARY_MARKER = 'Validated structured conversation summary';
 
@@ -81,6 +82,14 @@ function formatStructuredConversationSummary(summaryRecord) {
       JSON.stringify(summaryRecord.summary),
     ].join('\n'),
     summaryVersion: summaryRecord.version,
+    provenance: {
+      sourceType: 'conversation_summary',
+      sourceId: `conversation-summary:${summaryRecord.version}`,
+      retrievedAt: new Date().toISOString(),
+      trustLevel: 'user_provided',
+      originalContentHash: createStableHash(summaryRecord.summary),
+      transformations: ['conversation_compaction', 'structured_summary_validation'],
+    },
   };
 }
 

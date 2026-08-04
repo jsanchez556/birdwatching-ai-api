@@ -2203,11 +2203,17 @@ describe('multi-tool agent planning and orchestration', () => {
       executePlan: jest.fn().mockResolvedValue([
         {
           tool: 'checkAvailability',
-          result: { success: true, tourId: 5, availableSlots: 6 },
+          result: { success: true, tourId: 5, availableSlots: 6, isAvailable: true },
         },
         {
           tool: 'calculatePricing',
-          result: { success: true, tourId: 5, totalPrice: 240 },
+          result: {
+            success: true,
+            tourId: 5,
+            participants: 2,
+            totalPrice: 240,
+            currency: 'USD',
+          },
         },
       ]),
     };

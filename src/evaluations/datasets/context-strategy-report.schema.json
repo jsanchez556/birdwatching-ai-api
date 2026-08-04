@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Context Selection Strategy Evaluation Report",
+  "type": "object",
+  "required": [
+    "schemaVersion", "evaluationType", "datasetVersion", "configuration",
+    "thresholds", "perCase", "aggregates", "byCategory",
+    "regressionDeltasAgainstFullHistory", "disagreements", "acceptance", "conclusion", "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "evaluationType": { "const": "context_selection_strategy_comparison" },
+    "perCase": { "type": "array" },
+    "aggregates": {
+      "type": "object",
+      "required": ["full_history", "last_n", "dynamic"]
+    },
+    "acceptance": {
+      "type": "object",
+      "required": ["status", "checks"],
+      "properties": { "status": { "enum": ["passed", "failed", "unavailable"] } }
+    }
+  },
+  "additionalProperties": true
+}

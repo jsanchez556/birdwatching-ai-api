@@ -341,9 +341,7 @@ describe('RagService', () => {
           familyCommonName: 'Trogons',
         },
       },
-    ])).toContain(
-      '[R1] Resplendent Quetzal\nSource: Unknown\nDocument/chunk: Unknown/Unknown\nSimilarity score: 0.9877\nCommon name: Resplendent Quetzal\nScientific name: Pharomachrus mocinno\nFamily: Trogons\nLocations: Monteverde\nDescription: Cloud forest bird.'
-    );
+    ])).toContain('> {"citation":"R1","title":"Resplendent Quetzal"');
   });
 
   it('preserves citation provenance and opposing citations for contradictory passages', () => {
@@ -362,10 +360,10 @@ describe('RagService', () => {
       },
     }]);
 
-    expect(context).toContain('[R2] Reserve status note');
-    expect(context).toContain('Source: reserve-advisory.json');
-    expect(context).toContain('Document/chunk: 12/34');
-    expect(context).toContain('Contradiction warning: this claim conflicts with another retrieved passage ([R1]).');
+    expect(context).toContain('> {"citation":"R2","title":"Reserve status note"');
+    expect(context).toContain('"source":"reserve-advisory.json"');
+    expect(context).toContain('"documentId":12,"chunkId":34');
+    expect(context).toContain('"contradictsCitations":["R1"]');
   });
 
   it('injects relevant retrieved context after the base system message', async () => {
@@ -555,6 +553,25 @@ describe('RagService', () => {
         semanticScore: 0.912346,
         keywordScore: 0.25,
         textLength: 59,
+        provenance: {
+          sourceType: 'knowledge_document',
+          sourceId: 'doc-1:chunk-a',
+          retrievedAt: expect.any(String),
+          trustLevel: 'unverified',
+          expiresAt: null,
+          originalContentHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          validityStatus: 'valid',
+          isValid: true,
+          transformations: [
+            'metadata_filtering',
+            'permission_filtering',
+            'near_duplicate_deduplication',
+            'query_reranking',
+            'contradiction_detection',
+            'token_budgeting',
+            'citation_assembly',
+          ],
+        },
       },
     ]);
   });

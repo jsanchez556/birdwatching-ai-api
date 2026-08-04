@@ -21,6 +21,10 @@ router.get('/subscriptions', asyncHandler(adminController.getSubscriptions.bind(
 router.get('/ai-usage', asyncHandler(adminController.getAiUsage.bind(adminController)));
 router.get('/ai-costs', asyncHandler(adminController.getAiCosts.bind(adminController)));
 router.get('/ai-quality', asyncHandler(adminController.getAiQuality.bind(adminController)));
+router.get(
+  '/context-engineering',
+  asyncHandler(adminController.getContextEngineering.bind(adminController))
+);
 router.get('/ai-features', asyncHandler(adminController.getAiFeatures.bind(adminController)));
 router.get('/reservations', asyncHandler(adminController.getReservations.bind(adminController)));
 router.get('/queue-health', asyncHandler(adminController.getQueueHealth.bind(adminController)));

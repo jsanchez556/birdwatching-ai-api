@@ -1,5 +1,6 @@
 import { estimateTokens } from '../../ai/context/contextBudget.js';
 import { normalizeRagQuery } from './queryNormalization.js';
+import { createStableHash } from '../../utils/hash.utils.js';
 
 const DEFAULT_NEAR_DUPLICATE_THRESHOLD = 0.82;
 const DEFAULT_RAG_TOKEN_BUDGET = 900;
@@ -96,16 +97,19 @@ function recencyScore(document = {}, now = new Date()) {
   return Number(Math.exp(-ageDays / 365).toFixed(6));
 }
 
-function permissionAllows(document = {}, { userId, role } = {}) {
+function permissionAllows(document = {}, { userId, tenantId, role } = {}) {
   const metadata = document.documentMetadata || document.metadata || {};
   const visibility = normalizeString(metadata.visibility || 'public');
   const normalizedRole = normalizeString(role || (userId == null ? 'visitor' : 'customer'));
   const normalizedUserId = userId == null ? null : String(userId);
+  const normalizedTenantId = tenantId == null ? null : String(tenantId);
   if (!['public', 'authenticated', 'admin', 'private'].includes(visibility)) return false;
   if (visibility === 'authenticated' && normalizedUserId === null) return false;
   if (visibility === 'admin' && normalizedRole !== 'admin') return false;
   if (visibility === 'private' && normalizedUserId === null) return false;
   if (metadata.ownerUserId != null && String(metadata.ownerUserId) !== normalizedUserId) return false;
+  if (metadata.ownerTenantId != null
+    && String(metadata.ownerTenantId) !== normalizedTenantId) return false;
 
   const allowedRoles = Array.isArray(metadata.allowedRoles)
     ? metadata.allowedRoles.map(normalizeString)
@@ -119,6 +123,10 @@ function permissionAllows(document = {}, { userId, role } = {}) {
   const deniedUserIds = Array.isArray(metadata.deniedUserIds)
     ? metadata.deniedUserIds.map(String)
     : [];
+  const allowedTenantIds = Array.isArray(metadata.allowedTenantIds)
+    ? metadata.allowedTenantIds.map(String)
+    : [];
+  if (allowedTenantIds.length > 0 && !allowedTenantIds.includes(normalizedTenantId)) return false;
   return normalizedUserId === null || !deniedUserIds.includes(normalizedUserId);
 }
 
@@ -134,6 +142,12 @@ function matchesMetadataFilters(document = {}, filters = {}, now = new Date()) {
   if (metadata.expiresAt && (expiresAt === null || expiresAt <= now.getTime())) return false;
   if (metadata.effectiveAt && (effectiveAt === null || effectiveAt > now.getTime())) return false;
   if (['draft', 'withdrawn', 'rejected'].includes(normalizeString(metadata.publicationStatus))) return false;
+  const operationalType = normalizeString(
+    metadata.operationalType || document.documentType || metadata.documentType
+  );
+  if (['availability', 'pricing', 'inventory', 'quote', 'search_result',
+    'reservation_draft', 'booking_readiness'].includes(operationalType)
+    && !metadata.expiresAt) return false;
   if (filters.active === false) return false;
   if (filters.category && normalizeString(document.category) !== normalizeString(filters.category)) return false;
   if (filters.source && normalizeString(document.source) !== normalizeString(filters.source)) return false;
@@ -287,8 +301,15 @@ function compressDocument(document, query, {
   maxChunkTokens = DEFAULT_MAX_CHUNK_TOKENS,
 } = {}) {
   const content = documentContent(document);
+  const originalContentHash = document.originalContentHash || createStableHash(content);
   if (tokenEstimator(content) <= maxChunkTokens) {
-    return { ...document, text: content, description: content, compressed: false };
+    return {
+      ...document,
+      text: content,
+      description: content,
+      compressed: false,
+      originalContentHash,
+    };
   }
   const queryTokens = new Set(tokenize(query));
   const sentences = splitSentences(content).map((sentence, index) => ({
@@ -316,6 +337,7 @@ function compressDocument(document, query, {
     description: compressed,
     compressed: true,
     originalTokenCount: tokenEstimator(content),
+    originalContentHash,
   };
 }
 
@@ -412,7 +434,11 @@ class RagContextSelector {
       tokenEstimator: this.tokenEstimator,
       maxChunksPerDocument,
     });
-    const documents = assignCitations(budgeted.documents);
+    const documents = assignCitations(budgeted.documents.map((document) => ({
+      ...document,
+      retrievedAt: now.toISOString(),
+      ...(document.metadata?.expiresAt ? { expiresAt: document.metadata.expiresAt } : {}),
+    })));
     return {
       documents,
       contradictions,

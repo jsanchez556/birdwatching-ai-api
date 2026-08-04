@@ -99,6 +99,10 @@ class OpenAIClient {
         toolIteration: iteration,
         messageCount: conversation.length,
         toolCount: tools.length,
+        contextProvenance: metadata.contextProvenance,
+        contextTelemetry: metadata.contextMetrics,
+        requestCorrelationId: metadata.requestCorrelationId
+          || metadata.aiTraceId || metadata.parentTraceId,
       }, () => executeOpenAIWithRetry(({ signal: requestSignal }) => (
         this.client.chat.completions.create({
         model,
@@ -238,6 +242,10 @@ class OpenAIClient {
       routePosition: options.metadata?.modelRouteAttempt?.routePosition,
       sameModelAttempt: options.metadata?.modelRouteAttempt?.sameModelAttempt,
       remainingDeadlineMs: options.timeoutMs,
+      contextProvenance: options.metadata?.contextProvenance,
+      contextTelemetry: options.metadata?.contextMetrics,
+      requestCorrelationId: options.metadata?.requestCorrelationId
+        || options.metadata?.aiTraceId || options.metadata?.parentTraceId,
     }, async (trace) => {
       try {
         const stream = await executeOpenAIWithRetry(({ signal: requestSignal }) => (

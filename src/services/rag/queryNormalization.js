@@ -26,10 +26,11 @@ export function buildRetrievalCacheKey(question, options = {}) {
     keywordWeight: options.keywordWeight,
     retrievalVariant: options.retrievalVariant,
     userId: options.userId,
+    tenantId: options.tenantId,
     role: options.role,
     ragTokenBudget: options.ragTokenBudget,
     maxChunkTokens: options.maxChunkTokens,
     nearDuplicateThreshold: options.nearDuplicateThreshold,
-    selectionPipelineVersion: '1.0.0',
+    selectionPipelineVersion: '1.1.0',
   });
 }
