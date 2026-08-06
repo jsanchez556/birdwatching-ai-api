@@ -8,6 +8,9 @@ Run the full suite with:
 npm test
 ```
 
+The deterministic context-engineering coverage map and focused command are in
+[`context-engineering-testing.md`](./context-engineering-testing.md).
+
 Run the focused model-routing reliability suite with:
 
 ```bash

@@ -62,6 +62,8 @@ function isEligibleMemory(memory, {
   const expiresAt = memory?.expiresAt ? new Date(memory.expiresAt).getTime() : null;
   return Boolean(
     memory
+    && memory.isActive !== false
+    && (memory.supersededById === null || memory.supersededById === undefined)
     && typeof memory.content === 'string'
     && memory.content.trim()
     && Number.isFinite(confidence)

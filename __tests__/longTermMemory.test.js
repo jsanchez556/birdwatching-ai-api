@@ -87,13 +87,15 @@ describe('long-term memory adapters', () => {
     ]);
   });
 
-  it('filters low-confidence, stale, expired, and invalid-date memories before embedding', async () => {
+  it('filters inactive, superseded, low-confidence, stale, expired, and invalid-date memories before embedding', async () => {
     const memories = [
       memory(),
-      memory({ id: 2, confidence: 0.7 }),
-      memory({ id: 3, createdAt: '2023-01-01T00:00:00.000Z' }),
-      memory({ id: 4, expiresAt: '2026-07-31T23:59:59.000Z' }),
-      memory({ id: 5, createdAt: 'invalid' }),
+      memory({ id: 2, isActive: false }),
+      memory({ id: 3, supersededById: 9 }),
+      memory({ id: 4, confidence: 0.7 }),
+      memory({ id: 5, createdAt: '2023-01-01T00:00:00.000Z' }),
+      memory({ id: 6, expiresAt: '2026-07-31T23:59:59.000Z' }),
+      memory({ id: 7, createdAt: 'invalid' }),
     ];
     const { store, embeddingClient } = buildStore(memories, [
       [1, 0],

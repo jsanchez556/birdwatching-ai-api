@@ -182,6 +182,53 @@ describe('ContextBuilder', () => {
     ]));
   });
 
+  it('keeps latest structured reservation state operational after corrected history is compacted', async () => {
+    const builder = new ContextBuilder({
+      clock: () => NOW,
+      conversationCompactor: (items) => ({
+        items: items.filter((item) => item.metadata.currentRequest),
+        compactedItemIds: items
+          .filter((item) => !item.metadata.currentRequest)
+          .map((item) => item.id),
+      }),
+    });
+    const context = await builder.build(baseInput({
+      task: 'reservation_planning',
+      userMessage: 'Book using the confirmed details.',
+      providerMessages: [
+        { role: 'system', content: 'Follow platform and booking rules.' },
+        { id: 'message-1', role: 'user', content: 'We are three.' },
+        { id: 'message-2', role: 'assistant', content: 'I noted three participants.' },
+        { id: 'message-3', role: 'user', content: 'Actually, make it four.' },
+        { role: 'user', content: 'Book using the confirmed details.' },
+      ],
+      applicationState: {
+        sourceId: 'reservation-state:conversation-123:7',
+        version: 7,
+        status: 'ready_for_confirmation',
+        confirmed: { participants: 4 },
+        proposed: {},
+      },
+    }));
+
+    expect(context.applicationState).toHaveLength(1);
+    const operationalState = JSON.parse(context.applicationState[0].content);
+    expect(operationalState).toEqual(expect.objectContaining({
+      version: 7,
+      status: 'ready_for_confirmation',
+      confirmed: { participants: 4 },
+      proposed: {},
+    }));
+    expect(context.applicationState[0].content).not.toContain('"participants":3');
+    expect(context.conversation.map((item) => item.content)).toEqual([
+      'Book using the confirmed details.',
+    ]);
+    expect(context.provenance).toEqual(expect.arrayContaining([
+      expect.objectContaining({ contextItemId: 'conversation:message-1', selectionReason: 'compacted' }),
+      expect.objectContaining({ contextItemId: 'conversation:message-3', selectionReason: 'compacted' }),
+    ]));
+  });
+
   it('uses a conservative documented limit for an unknown model', () => {
     expect(createContextBudget({
       model: 'future-model',
@@ -592,6 +639,49 @@ describe('context selection', () => {
       expect.objectContaining({ contextItemId: 'b', selectionReason: 'category_budget' }),
     ]));
   });
+
+  it.each([
+    ['below', 11, true],
+    ['exactly at', 10, true],
+  ])('accepts required context %s the total token budget boundary', (_label, limit, selected) => {
+    const result = selectContextItems([
+      candidate({ id: 'required', required: true, estimatedTokens: 10 }),
+    ], {
+      effectiveInputBudget: limit,
+      categories: { memories: { soft: limit, hard: limit } },
+    }, { now: NOW });
+
+    expect(result.selected.some((item) => item.id === 'required')).toBe(selected);
+    expect(result.selected.reduce((total, item) => total + item.estimatedTokens, 0))
+      .toBeLessThanOrEqual(limit);
+  });
+
+  it('fails safely when required context is one token over budget', () => {
+    expect(() => selectContextItems([
+      candidate({ id: 'required', required: true, estimatedTokens: 10 }),
+    ], {
+      effectiveInputBudget: 9,
+      categories: { memories: { soft: 9, hard: 9 } },
+    }, { now: NOW })).toThrow(expect.objectContaining({
+      code: 'CONTEXT_REQUIRED_BUDGET_EXCEEDED',
+    }));
+  });
+
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY, '10'])
+    ('rejects malformed token counts without selecting partial context: %p', (estimatedTokens) => {
+      const result = selectContextItems([
+        candidate({ id: 'malformed', estimatedTokens }),
+      ], budget, { now: NOW });
+
+      expect(result.selected).toEqual([]);
+      expect(result.provenance).toEqual([
+        expect.objectContaining({
+          contextItemId: 'malformed',
+          selected: false,
+          selectionReason: 'invalid',
+        }),
+      ]);
+    });
 
   it('excludes expired optional items', () => {
     const result = selectContextItems([

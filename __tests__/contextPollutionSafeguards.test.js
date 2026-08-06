@@ -76,6 +76,7 @@ describe('context pollution safeguards', () => {
 
   it.each([
     ['failed', { success: false, code: 'FAILED' }],
+    ['cancelled', { success: false, status: 'cancelled' }],
     ['timed out', { success: false, status: 'timed_out' }],
     ['partial', { success: true, partial: true, tours: [] }],
     ['malformed', { success: true, tours: [{ name: 'Missing ID' }] }],
@@ -191,6 +192,32 @@ describe('context pollution safeguards', () => {
       resolvedAt: NOW.toISOString(),
     }]);
     expect(result.items.find((item) => item.id === 'model-claim')
+      .metadata.policyExclusionReason).toBe('superseded_context');
+  });
+
+  it('does not allow an unverified RAG document to override verified database data', () => {
+    const result = applyContextTrustPolicy([
+      policyItem('verified-tour-record', {
+        content: 'Tour 42 costs USD 120.',
+        metadata: { conflictGroup: 'tour:42:price' },
+      }),
+      policyItem('unverified-rag-price', {
+        type: 'rag_document',
+        content: 'Tour 42 costs USD 80.',
+        source: 'external-document',
+        sourceType: 'rag_document',
+        trustLevel: 'unverified',
+        metadata: { conflictGroup: 'tour:42:price' },
+      }),
+    ], { userId: 7, conversationId: 'conversation-a' }, { now: NOW });
+
+    expect(result.decisions).toEqual([{
+      winningContextItemId: 'verified-tour-record',
+      supersededContextItemIds: ['unverified-rag-price'],
+      resolution: 'higher_trust_source',
+      resolvedAt: NOW.toISOString(),
+    }]);
+    expect(result.items.find((item) => item.id === 'unverified-rag-price')
       .metadata.policyExclusionReason).toBe('superseded_context');
   });
 
