@@ -79,11 +79,10 @@ describe('ReservationQueries', () => {
     });
 
     expect(mockQuery).toHaveBeenCalledWith(
-      expect.stringContaining('create_tour_reservation'),
-      [1, 2, 'Ana Gomez', null, 'conversation-123', 'BW-ABC123', 0, null]
+      expect.stringContaining('create_tour_reservation_for_conversation'),
+      [1, null, 2, 'Ana Gomez', null, 'conversation-123', 'BW-ABC123', 0, null]
     );
-    expect(mockQuery.mock.calls[0][0]).toContain('ensure_conversation($5, $8)');
-    expect(mockQuery.mock.calls[0][0]).toContain('(SELECT id FROM conversation_row)');
+    expect(mockQuery.mock.calls[0][0]).not.toContain('ensure_conversation');
   });
 
   it('passes user ID to the PostgreSQL reservation function', async () => {
@@ -121,8 +120,8 @@ describe('ReservationQueries', () => {
     });
 
     expect(mockQuery).toHaveBeenCalledWith(
-      expect.stringContaining('create_tour_reservation'),
-      [1, 2, 'Ana Gomez', 'ana@example.com', 'conversation-123', 'BW-USER', 0, 7]
+      expect.stringContaining('create_tour_reservation_for_conversation'),
+      [1, null, 2, 'Ana Gomez', 'ana@example.com', 'conversation-123', 'BW-USER', 0, 7]
     );
     expect(mockQuery).toHaveBeenCalledTimes(1);
     expect(mockQuery.mock.calls[0][0]).not.toContain('metadata');

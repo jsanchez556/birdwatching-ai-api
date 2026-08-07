@@ -3,6 +3,7 @@ import reservationQueries from '../db/queries/reservation.queries.js';
 import reservationService from './reservation.service.js';
 import HttpError from '../utils/httpError.js';
 import { normalizeText } from '../utils/normalizer.utils.js';
+import tourQueries from '../db/queries/tour.queries.js';
 
 function isIsoDate(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
@@ -31,6 +32,26 @@ function assertScheduledDate(settings, scheduledDate) {
     && (scheduledDate < settings.itineraryStartDate || scheduledDate > settings.itineraryEndDate)
   ) {
     throw new HttpError(422, 'Scheduled date must be inside the itinerary range', {
+      code: 'VALIDATION_ERROR',
+    });
+  }
+}
+
+function assertTourCapacity(tour, scheduledDate, participants) {
+  if (tour.tourType !== 'scheduled') {
+    if (participants > tour.maxParticipants) {
+      throw new HttpError(422, `This tour accepts at most ${tour.maxParticipants} participants`, {
+        code: 'VALIDATION_ERROR',
+      });
+    }
+    return;
+  }
+  const occurrence = (tour.occurrenceDates || []).find((item) => (
+    item.date === scheduledDate && item.status === 'scheduled'
+    && item.remainingSpaces >= participants
+  ));
+  if (!occurrence) {
+    throw new HttpError(422, 'Choose an available date for this scheduled tour', {
       code: 'VALIDATION_ERROR',
     });
   }
@@ -90,7 +111,15 @@ class CartService {
       : toPositiveInteger(body.participants, 'participants');
     const cart = await cartQueries.getCart(userId);
 
+    const tour = await tourQueries.getTourById(tourId);
+    if (!tour) {
+      throw new HttpError(404, 'Tour was not found or is not publicly available', {
+        code: 'TOUR_NOT_FOUND',
+      });
+    }
+
     assertScheduledDate(cart.settings, body.scheduledDate);
+    assertTourCapacity(tour, body.scheduledDate, participants);
 
     try {
       return await cartQueries.addItem({
@@ -114,16 +143,27 @@ class CartService {
 
   async updateItem(userId, itemId, body = {}) {
     const cart = await cartQueries.getCart(userId);
+    const normalizedItemId = toPositiveInteger(itemId, 'itemId');
+    const existingItem = cart.items.find((item) => item.id === normalizedItemId);
+    if (!existingItem) {
+      throw new HttpError(404, 'Cart item was not found', { code: 'NOT_FOUND' });
+    }
     assertScheduledDate(cart.settings, body.scheduledDate);
+    const tour = await tourQueries.getTourById(existingItem.tourId);
+    if (!tour) throw new HttpError(404, 'Tour was not found or is not publicly available', { code: 'TOUR_NOT_FOUND' });
+    const participants = body.participants === undefined
+      ? existingItem.participants
+      : toPositiveInteger(body.participants, 'participants');
+    assertTourCapacity(tour, body.scheduledDate ?? existingItem.scheduledDate, participants);
 
     let item;
 
     try {
       item = await cartQueries.updateItem({
         userId,
-        itemId: toPositiveInteger(itemId, 'itemId'),
+        itemId: normalizedItemId,
         scheduledDate: body.scheduledDate,
-        participants: body.participants === undefined ? undefined : toPositiveInteger(body.participants, 'participants'),
+        participants: body.participants === undefined ? undefined : participants,
         needsTransportation: body.needsTransportation,
       });
     } catch (error) {
@@ -208,6 +248,7 @@ class CartService {
         customerName: user.name || user.email,
         customerEmail: user.email,
         conversationId,
+        date: item.scheduledDate,
         itineraryStartDate: item.scheduledDate,
         itineraryEndDate: item.scheduledDate,
       }, {

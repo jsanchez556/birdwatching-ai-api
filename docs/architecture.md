@@ -357,13 +357,13 @@ and locations. Explicit tour selection can be made by ID or clear/partial tour
 name; service matching resolves names such as `Monteverde tour` to the
 database-backed tour before selection validation.
 
-When a selected tour is available but participant count is missing, tool
-metadata includes a `participant_count` `uiAction` with numeric options from
-`1` through the selected tour's available slots. A user reply from that action
-can complete the reservation details and is persisted as `participants` in safe
-response metadata for subsequent turns. If transportation preference is still
-unknown, metadata includes a choice `uiAction` asking whether the customer wants
-transportation before final reservation confirmation. `calculateTransportation`
+When a selected tour has multiple missing reservation fields, tool metadata
+includes one `reservation_details` `uiAction`. It contains only unresolved
+date, participant, transportation, conditional pickup, customer, and itinerary
+fields, and the UI submits them in one message. A lone unresolved date,
+participant count, or transportation preference may retain its focused legacy
+action. Submitted values become proposed structured state and are not requested
+again unless invalid, unavailable, or ambiguous. `calculateTransportation`
 can return a `transportation_selection` action; the selected option is stored as
 `selectedTransportation`, and an explicit no is stored as
 `transportationDeclined`. These inputs are normalized into versioned proposed
@@ -372,7 +372,13 @@ transportation is either selected or declined, and an explicit confirmation
 transition has promoted the latest values.
 
 Tour data, availability, reservations, and structured workflow state are stored
-in PostgreSQL. `createReservation` accepts only the expected structured-state
+in PostgreSQL. Flexible-date tours use `max_participants` and omit public
+schedule fields, and reservation group size is checked against `max_participants`.
+Scheduled tours are discoverable only before `start_date` and when they have a
+future bookable `tour_occurrences` row; their reservation capacity is checked
+against that occurrence's remaining spaces. Tour duration is canonical `duration_value`
+plus an `hours` or `days` unit, with `duration_hours` retained as a normalized
+compatibility field. `createReservation` accepts only the expected structured-state
 version. `book_reservation_from_state(...)` locks and revalidates the latest
 confirmed values, then invokes `create_tour_reservation(...)`, which locks the
 tour, verifies slots, updates availability, calculates the total, and inserts
@@ -546,14 +552,14 @@ relevance scoring, confidence/age/expiry filtering, normalized deduplication,
 and result/token limiting while retaining source-message provenance. This data
 is never used as reservation booking state.
 
-Migration `029_add_user_memory_conflict_resolution.sql` records conflict keys,
+The consolidated `001_schema.sql` migration records conflict keys,
 resolution reasons, and supersession timestamps. Explicit recent correction is
 the only write path allowed to deactivate an active memory. Prior and new rows
 remain available through the internal owner-scoped history query. Ambiguous
 same-axis conflicts are not persisted; mandatory context asks the user to
 clarify before affected preferences are used.
 
-Query modules use SQL helper functions from `002_create_functions.sql`:
+Query modules use SQL helper functions from `003_functions.sql`:
 - `ensure_conversation`
 - `save_message`
 - `get_last_messages`
@@ -561,9 +567,8 @@ Query modules use SQL helper functions from `002_create_functions.sql`:
 - `get_all_messages`
 - `delete_message_by_id`
 
-Later migrations replace several helper signatures: `ensure_conversation` and
-`save_message` accept a `BIGINT` user ID, `save_message` accepts JSONB metadata,
-and history readers can filter by owner. Recent context is returned in
+`ensure_conversation` and `save_message` accept a user ID, `save_message`
+accepts JSONB metadata, and history readers can filter by owner. Recent context is returned in
 chronological order by `get_last_messages` after limiting the newest exchanges.
 
 The `users` table stores authentication state:
@@ -578,14 +583,15 @@ token lookup. The `usage_logs` table stores authenticated OpenAI usage records:
 `user_id`, non-negative prompt/completion token counts, optional estimated cost,
 and `created_at`.
 
-The `tours` and `reservations` tables store durable booking state:
-- `tours.available_slots` is decremented transactionally
-- `tours.node_id` can reference `node(id)` and tours may include latitude, longitude, `start_date`, and `end_date`
+The `tours`, `tour_occurrences`, and `reservations` tables store durable booking state:
+- `tours.tour_type` distinguishes scheduled inventory from flexible-date unscheduled tours; `is_active`, `max_participants`, and `minimum_price` define shared eligibility and pricing bounds
+- scheduled `tour_occurrences` own timestamped capacity and remaining spaces, which are locked and decremented transactionally; expired, cancelled, completed, and full occurrences are unavailable
+- `tours.node_id` can reference `node(id)` and tours retain latitude, longitude, `start_date`, and `end_date` for compatibility
 - `reservations.confirmation_code` is unique
-- each reservation records optional `user_id`, `conversation_id`, `customer_name`, optional `customer_email`, `tour_id`, `participants`, `confirmation_code`, `created_at`, and `total_price`
-- query modules call `get_tour_by_id(...)`, `get_available_tours(...)`, `select_tour(...)`, and `create_tour_reservation(...)` from `003_create_tour_reservations.sql`
+- each reservation records optional `user_id`, `conversation_id`, `customer_name`, optional `customer_email`, `tour_id`, explicit `tour_date`, optional `occurrence_id`, `participants`, `confirmation_code`, `created_at`, and `total_price`
+- `001_schema.sql` defines scheduled/unscheduled tours, occurrence inventory, and legacy-compatible price/slot columns; `003_functions.sql` defines the authoritative date-aware reservation functions.
 
-The birding reference graph from `011_tours_seed_data.sql` stores geographic and
+The birding reference graph from `001_schema.sql` stores geographic and
 species seed data:
 - `country` has unique `acr` values such as `CR`.
 - `zone` belongs to `country`, has `name`, required `des`, ranked ordering, and `is_active DEFAULT true`.
@@ -593,11 +599,9 @@ species seed data:
 - `birds` has unique `name`, optional unique `species_code`, optional text-array `tags`, and `is_active DEFAULT true`.
 - `birds_by_node` joins nodes to birds with a per-node rank, `is_active DEFAULT true`, primary key `(node_id, bird_id)`, and unique `(node_id, rank)`.
 
-The same migration seeds Costa Rica, six birding zones, hierarchical birding
-nodes, target birds with tags/species codes when known, and ranked node-bird
-associations. It drops and recreates the birding reference tables before
-seeding, while preserving existing tour/reservation tables and adding tour
-location metadata.
+`002_seed.sql` deterministically seeds Costa Rica, six birding zones,
+hierarchical birding nodes, target birds with tags/species codes when known,
+and ranked node-bird associations without dropping application tables.
 
 The RAG store is separate from the birding reference graph. `knowledge_documents`
 stores one normalized source document per `external_id` with `tags`, JSONB

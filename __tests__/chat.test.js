@@ -66,7 +66,7 @@ describe('POST /chat', () => {
         sources: [],
         meta: {
           promptVersions: {
-            chat: '2.3.0',
+            chat: '2.5.0',
           },
         },
       });
@@ -79,7 +79,7 @@ describe('POST /chat', () => {
         sources: [],
         meta: {
           promptVersions: {
-            chat: '2.3.0',
+            chat: '2.5.0',
           },
         },
       };

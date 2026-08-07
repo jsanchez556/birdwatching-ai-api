@@ -2,6 +2,7 @@ import { jest } from '@jest/globals';
 
 const mockGetAvailableTours = jest.fn();
 const mockGetBirdProfile = jest.fn();
+const TOUR_IMAGE_PATH = 'tours/550e8400-e29b-41d4-a716-446655440000.png';
 
 await jest.unstable_mockModule('../src/services/tour.service.js', () => ({
   default: {
@@ -36,7 +37,7 @@ describe('HomepageService media enrichment', () => {
     jest.clearAllMocks();
   });
 
-  it('uses configured tour portrait assets as media route paths', async () => {
+  it('uses the persisted UUID tour image as a media route path', async () => {
     mockGetAvailableTours.mockResolvedValue({
       success: true,
       tours: [
@@ -50,6 +51,8 @@ describe('HomepageService media enrichment', () => {
           pricePerPerson: 120,
           durationHours: 4,
           difficulty: 'moderate',
+          imagePath: TOUR_IMAGE_PATH,
+          imageVersion: '1788477600000',
         },
       ],
     });
@@ -60,7 +63,8 @@ describe('HomepageService media enrichment', () => {
         title: 'Monteverde Quetzal Tour',
         node: 'Miravalles',
         subnode: 'Bijagua',
-        portraitUrl: '/files/tours/1.png',
+        imagePath: TOUR_IMAGE_PATH,
+        portraitUrl: `/files/${TOUR_IMAGE_PATH}?v=1788477600000`,
       }),
     ]);
 
@@ -72,7 +76,7 @@ describe('HomepageService media enrichment', () => {
     ]);
   });
 
-  it('returns empty media fallbacks when a tour has no configured portrait', async () => {
+  it('derives a read-only deterministic portrait path when no image is persisted', async () => {
     mockGetAvailableTours.mockResolvedValue({
       success: true,
       tours: [
@@ -89,6 +93,72 @@ describe('HomepageService media enrichment', () => {
     await expect(homepageService.getFeaturedTours()).resolves.toEqual([
       expect.objectContaining({
         id: 999,
+        imagePath: null,
+        portraitUrl: '/files/tours/999.png',
+      }),
+    ]);
+  });
+
+  it('accepts a persisted deterministic image path', async () => {
+    mockGetAvailableTours.mockResolvedValue({
+      success: true,
+      tours: [{
+        tourId: 1,
+        name: 'Stored portrait tour',
+        location: 'Osa',
+        pricePerPerson: 180,
+        durationHours: 6,
+        imagePath: 'tours/1.png',
+      }],
+    });
+
+    await expect(homepageService.getFeaturedTours()).resolves.toEqual([
+      expect.objectContaining({
+        imagePath: 'tours/1.png',
+        portraitUrl: '/files/tours/1.png',
+      }),
+    ]);
+  });
+
+  it('accepts a legacy extensionless numeric image path', async () => {
+    mockGetAvailableTours.mockResolvedValue({
+      success: true,
+      tours: [{
+        tourId: 11,
+        name: 'Legacy portrait tour',
+        location: 'Bijagua',
+        pricePerPerson: 150,
+        durationHours: 3,
+        imagePath: 'tours/11',
+        imageVersion: '1788480238110',
+      }],
+    });
+
+    await expect(homepageService.getFeaturedTours()).resolves.toEqual([
+      expect.objectContaining({
+        imagePath: 'tours/11',
+        portraitUrl: '/files/tours/11.png?v=1788480238110',
+      }),
+    ]);
+  });
+
+  it('does not derive a fallback for an invalid persisted image path', async () => {
+    mockGetAvailableTours.mockResolvedValue({
+      success: true,
+      tours: [{
+        tourId: 1,
+        name: 'Invalid portrait tour',
+        location: 'Osa',
+        pricePerPerson: 180,
+        durationHours: 6,
+        imagePath: 'tours/not-this-tour.jpg',
+        imageVersion: '1788477600000',
+      }],
+    });
+
+    await expect(homepageService.getFeaturedTours()).resolves.toEqual([
+      expect.objectContaining({
+        imagePath: 'tours/not-this-tour.jpg',
         portraitUrl: null,
       }),
     ]);

@@ -255,6 +255,18 @@ function requiresReservationIntentExtraction(message, plan = {}) {
     || (plan.steps || []).some((step) => BUSINESS_TOOLS.has(step.tool));
 }
 
+function isFinalConfirmationResponse(message, context = {}) {
+  const action = context.recentMetadata?.uiAction;
+  const offersConfirmation = action?.type === 'reservation_confirmation'
+    && Array.isArray(action.options)
+    && action.options.some((option) => option.value === 'confirm_reservation');
+  return Boolean(
+    offersConfirmation
+      && /^(?:confirm|confirm reservation|yes|yeah|yep|ok|okay|sure|go ahead|proceed)$/i
+        .test(message.trim())
+  );
+}
+
 function buildExtractionFailurePlan(extraction) {
   const refused = extraction?.code === 'RESERVATION_INTENT_REFUSED';
 
@@ -428,8 +440,7 @@ export class AgentOrchestrator {
             extraction: stateExtraction,
             customerContext: metadata.customerContext,
             sourceId: metadata.aiTraceId || metadata.parentTraceId,
-            confirm: /^(?:yes|yeah|yep|ok|okay|sure)$/i.test(userMessage.trim())
-              && (plan.steps || []).some((step) => step.tool === 'createReservation'),
+            confirm: isFinalConfirmationResponse(userMessage, conversationContext),
           });
           metadata.reservationState = stateUpdate.state;
           conversationContext.reservationState = stateUpdate.state;
@@ -446,7 +457,10 @@ export class AgentOrchestrator {
             steps: [],
             message: 'The booking details changed concurrently. Ask the user to retry so the latest reservation state can be loaded.',
           };
-        } else if (extraction.data.intent === 'unknown') {
+        } else if (
+          extraction.data.intent === 'unknown'
+          && stateUpdate.state?.status !== 'ready_for_confirmation'
+        ) {
           plan = {
             status: 'intent_unknown',
             steps: [],

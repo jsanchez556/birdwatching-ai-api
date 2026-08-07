@@ -1,3 +1,5 @@
+import { USER_ROLE_VALUES } from '../../constants/userRoles.js';
+
 const JOB_ID_PATTERN = /^[A-Za-z0-9:_-]{1,200}$/;
 const REASON_CODES = new Set(['abuse', 'spam', 'security', 'policy_violation']);
 const MAX_DISABLE_MINUTES = 24 * 60;
@@ -102,6 +104,16 @@ export function validateUnsuspendUser(req) {
     errors,
     value: { userId },
   };
+}
+
+export function validateChangeUserRole(req) {
+  const errors = [];
+  const userId = Number(req.params?.userId);
+  const role = req.body?.role;
+  if (!Number.isSafeInteger(userId) || userId <= 0) errors.push('userId must be a positive integer');
+  if (!USER_ROLE_VALUES.includes(role)) errors.push(`role must be one of: ${USER_ROLE_VALUES.join(', ')}`);
+  if (unknownFields(req.body, new Set(['role'])).length) errors.push('Change-role payload contains unknown fields');
+  return { message: 'Invalid role-change request', errors, value: { userId, role } };
 }
 
 export { MAX_DISABLE_MINUTES, REASON_CODES };

@@ -106,8 +106,8 @@ describe('VectorRepository helpers', () => {
 
     const [query, values] = pool.query.mock.calls[0];
 
-    expect(query).toContain('content');
-    expect(query).toContain('content = EXCLUDED.content');
+    expect(query).toContain('upsert_knowledge_document');
+    expect(query).not.toContain('INSERT INTO knowledge_documents');
     expect(values).toEqual([
       'bird-quetza1',
       'Resplendent Quetzal',
@@ -121,6 +121,29 @@ describe('VectorRepository helpers', () => {
       'hash-1',
       true,
     ]);
+  });
+
+  it('replaces document chunks atomically through one PostgreSQL function call', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [{ replace_knowledge_chunks: null }] });
+
+    await vectorRepository.replaceDocumentChunks(7, [{
+      index: 0,
+      content: 'Quetzal profile',
+      tokenCount: 3,
+      metadata: { source: 'birds' },
+      embedding: [1, 0.5],
+    }]);
+
+    expect(pool.query).toHaveBeenCalledWith(
+      'SELECT replace_knowledge_chunks($1, $2::jsonb)',
+      [7, JSON.stringify([{
+        chunk_index: 0,
+        content: 'Quetzal profile',
+        token_count: 3,
+        metadata: { source: 'birds' },
+        embedding: '[1,0.5]',
+      }])]
+    );
   });
 
   it('keeps search relevance cutoff and limit placeholders aligned', async () => {

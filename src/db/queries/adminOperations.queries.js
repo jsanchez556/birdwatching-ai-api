@@ -69,6 +69,14 @@ class AdminOperationsQueries {
     );
     return result.rows[0] || null;
   }
+
+  async changeUserRole({ auditId, adminUserId, userId, role }) {
+    const result = await pool.query(
+      'SELECT * FROM change_user_role_by_admin($1, $2, $3, $4)',
+      [auditId, adminUserId, userId, role]
+    );
+    return result.rows[0] || null;
+  }
 }
 
 export { AdminOperationsQueries };

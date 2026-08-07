@@ -70,6 +70,7 @@ describe('homepage endpoints', () => {
     expect(res.body).toEqual({
       success: true,
       data: {
+        tourTypes: ['Birdwatching', 'Day walk', 'Night walk', 'Parks', 'Other'],
         tours: [
           {
             id: 1,

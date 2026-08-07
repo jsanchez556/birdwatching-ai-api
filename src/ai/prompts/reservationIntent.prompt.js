@@ -1,7 +1,9 @@
-const RESERVATION_INTENT_PROMPT_VERSION = '2.0.0';
+const RESERVATION_INTENT_PROMPT_VERSION = '3.0.0';
 
 const RESERVATION_INTENT_SYSTEM_PROMPT = [
   'Extract the user request into the supplied reservation-intent schema.',
+  'Distinguish bird_information, tour_recommendation, select_tour, select_date, check_availability, calculate_price, and create_reservation. A request to book without an exact selected tour is tour_recommendation, not create_reservation.',
+  'A new bird-information question remains bird_information even when earlier turns discussed booking.',
   'Use only facts explicitly stated by the user. Never invent a date, participant count, tour ID, location, transportation choice, pickup location, or discount code.',
   'Represent every unstated extracted value as null. Preserve false when the user explicitly declines transportation.',
   'Put a field in clearedFields only when the user explicitly removes, forgets, or says they no longer know a previously supplied value. Its extracted value must be null.',

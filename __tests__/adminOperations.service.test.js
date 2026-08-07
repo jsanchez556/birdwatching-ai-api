@@ -14,6 +14,7 @@ function buildRepository() {
     disableAiFeature: jest.fn(),
     enableAiFeature: jest.fn(),
     unsuspendUser: jest.fn(),
+    changeUserRole: jest.fn(),
     getAiFeatureStates: jest.fn(),
   };
 }
@@ -264,5 +265,36 @@ describe('AdminOperationsService', () => {
         disabledUntil: null,
       },
     ]));
+  });
+
+  it('changes a user role through the audited operation and reports session revocation', async () => {
+    const repository = buildRepository();
+    repository.changeUserRole.mockResolvedValue({
+      user_id: 7, previous_role: 'customer', role: 'tour guide',
+    });
+    const service = new AdminOperationsService({ repository });
+    await expect(service.changeUserRole({
+      adminUserId: 1, userId: 7, role: 'tour guide',
+    })).resolves.toEqual({
+      auditId: '41',
+      user: { id: '7', previousRole: 'customer', role: 'tour guide' },
+      sessionsRevoked: true,
+    });
+    expect(repository.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: ADMIN_ACTIONS.CHANGE_USER_ROLE,
+      metadata: { outcome: 'attempted', role: 'tour guide' },
+    }));
+  });
+
+  it.each([
+    ['SELF_ADMIN_DEMOTION_FORBIDDEN', 'SELF_ADMIN_DEMOTION_FORBIDDEN'],
+    ['LAST_ACTIVE_ADMIN_REQUIRED', 'LAST_ACTIVE_ADMIN_REQUIRED'],
+  ])('maps protected role conflict %s to 409', async (message, code) => {
+    const repository = buildRepository();
+    repository.changeUserRole.mockRejectedValue(new Error(message));
+    const service = new AdminOperationsService({ repository });
+    await expect(service.changeUserRole({
+      adminUserId: 1, userId: 1, role: 'customer',
+    })).rejects.toMatchObject({ status: 409, code });
   });
 });

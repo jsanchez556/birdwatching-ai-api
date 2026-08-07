@@ -2,6 +2,7 @@ import HttpError from '../../utils/httpError.js';
 import { verifyAuthToken } from '../../utils/authTokens.js';
 import env from '../../config/env.js';
 import userAccessQueries from '../../db/queries/userAccess.queries.js';
+import { canManageTours, normalizeUserRole, USER_ROLES } from '../../constants/userRoles.js';
 
 function getBearerToken(req) {
   const header = req.get('authorization');
@@ -45,7 +46,7 @@ function createAuthMiddleware({
             code: 'ACCOUNT_SUSPENDED',
           }));
         }
-        req.user.role = access.role === 'admin' ? 'admin' : 'customer';
+        req.user.role = normalizeUserRole(access.role) || USER_ROLES.CUSTOMER;
       }
       return next();
     } catch (error) {
@@ -66,6 +67,18 @@ export function requireAdmin(req, res, next) {
     return next(new HttpError(403, 'Admin access is required', { code: 'FORBIDDEN' }));
   }
 
+  return next();
+}
+
+export function requireTourManager(req, res, next) {
+  if (!req.user) {
+    return next(new HttpError(401, 'Authentication is required', { code: 'UNAUTHORIZED' }));
+  }
+  if (!canManageTours(req.user.role)) {
+    return next(new HttpError(403, 'Guide or administrator access is required', {
+      code: 'FORBIDDEN',
+    }));
+  }
   return next();
 }
 

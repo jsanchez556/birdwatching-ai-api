@@ -237,7 +237,17 @@ describe('AdminService', () => {
       meta: { page: 2, limit: 25, total: 26, totalPages: 2 },
     });
     expect(JSON.stringify(result)).not.toContain('must-not-leak');
-    expect(repository.getUsers).toHaveBeenCalledWith({ page: 2, limit: 25, offset: 25 });
+    expect(repository.getUsers).toHaveBeenCalledWith({ page: 2, limit: 25, offset: 25, search: '' });
+  });
+
+  it('normalizes user search before querying paginated administration data', async () => {
+    const repository = buildRepository();
+    repository.getUsers.mockResolvedValue({ rows: [], total: 0 });
+    const service = new AdminService({ repository, clock: () => now });
+    await service.getUsers({ search: '  guide@example.com  ', page: '1', limit: '25' });
+    expect(repository.getUsers).toHaveBeenCalledWith(expect.objectContaining({
+      search: 'guide@example.com', offset: 0,
+    }));
   });
 
   it('aggregates estimated AI costs by model, feature, plan, and user', async () => {

@@ -71,10 +71,19 @@ function normalizeTourSummary(tour) {
     subnode: normalizeOptionalText(tour.subnode),
     zone: normalizeOptionalText(tour.zone),
     pricePerPerson: Number.isFinite(Number(tour.pricePerPerson)) ? Number(tour.pricePerPerson) : undefined,
-    availableSlots: Number.isFinite(Number(tour.availableSlots)) ? Number(tour.availableSlots) : undefined,
+    availableSlots: tour.availableSlots !== null && tour.availableSlots !== undefined
+      && Number.isFinite(Number(tour.availableSlots)) ? Number(tour.availableSlots) : undefined,
     duration: normalizeOptionalText(tour.duration),
+    durationValue: Number.isInteger(Number(tour.durationValue)) && Number(tour.durationValue) > 0
+      ? Number(tour.durationValue)
+      : undefined,
+    durationUnit: ['hours', 'days'].includes(tour.durationUnit) ? tour.durationUnit : undefined,
     durationHours: Number.isFinite(Number(tour.durationHours)) ? Number(tour.durationHours) : undefined,
     difficulty: normalizeOptionalText(tour.difficulty),
+    tourType: ['scheduled', 'unscheduled'].includes(tour.tourType) ? tour.tourType : undefined,
+    maxParticipants: Number.isInteger(Number(tour.maxParticipants)) && Number(tour.maxParticipants) > 0
+      ? Number(tour.maxParticipants)
+      : undefined,
     scheduledDate: isIsoDate(tour.scheduledDate) ? tour.scheduledDate : undefined,
     participants: Number.isInteger(Number(tour.participants)) && Number(tour.participants) > 0
       ? Number(tour.participants)

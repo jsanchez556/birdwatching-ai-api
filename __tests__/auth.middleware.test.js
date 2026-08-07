@@ -7,7 +7,7 @@ await jest.unstable_mockModule('../src/config/env.js', () => ({
   },
 }));
 
-const { createAuthMiddleware, requireAdmin } = await import('../src/api/middleware/auth.middleware.js');
+const { createAuthMiddleware, requireAdmin, requireTourManager } = await import('../src/api/middleware/auth.middleware.js');
 
 describe('auth middleware', () => {
   it('allows admin users through the admin guard', () => {
@@ -66,5 +66,22 @@ describe('auth middleware', () => {
       status: 403,
       code: 'ACCOUNT_SUSPENDED',
     }));
+  });
+
+  it('refreshes a guide role from live access state and allows tour management', async () => {
+    const token = (await import('jsonwebtoken')).default.sign(
+      { email: 'guide@example.com', role: 'customer' }, 'test-jwt-secret',
+      { subject: '7', expiresIn: '1h' }
+    );
+    const middleware = createAuthMiddleware({ required: true, accessRepository: {
+      getAccessState: jest.fn().mockResolvedValue({ id: 7, role: 'tour guide', suspended_at: null }),
+    } });
+    const req = { get: jest.fn().mockReturnValue(`Bearer ${token}`) };
+    const authenticateNext = jest.fn();
+    await middleware(req, {}, authenticateNext);
+    expect(req.user.role).toBe('tour guide');
+    const authorizeNext = jest.fn();
+    requireTourManager(req, {}, authorizeNext);
+    expect(authorizeNext).toHaveBeenCalledWith();
   });
 });

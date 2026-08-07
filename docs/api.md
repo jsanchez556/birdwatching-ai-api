@@ -1,5 +1,126 @@
 # API Contracts
 
+## Nature tour categories and admin maintenance
+
+Tours expose two distinct fields: `type` is the required customer-facing
+activity category (`Birdwatching`, `Day walk`, `Night walk`, `Parks`, or
+`Other`), while `tourType` remains the `scheduled`/`unscheduled` booking mode.
+Legacy rows are backfilled to `Birdwatching`.
+
+`GET /tours` accepts an optional exact `type` query and returns
+`data: { tours, tourTypes }`. Invalid categories return `422 validation_error`.
+
+Authenticated administrators can use `GET` and `POST` on these collections and
+`GET`, `PATCH`, and `DELETE` on their `/:id` records:
+
+- `/admin/countries`
+- `/admin/zones`
+- `/admin/nodes`
+- `/admin/birds`
+- `/admin/birds-by-node` (item IDs use `nodeId:birdId`)
+- `/admin/tours`
+
+Lists accept `search`, `page`, and `limit`; relevant resources also accept
+`countryId`, `zoneId`, `nodeId`, or tour `type`. Responses use `data.items`
+and `meta: { page, limit, total, totalPages }`. Creates return `201` with
+`data.entity`; deletes return `data: { entity, archived }`. Countries are
+deleted only when unreferenced; other maintenance records are archived.
+Foreign-key conflicts return `409 REFERENTIAL_INTEGRITY_CONFLICT`.
+
+Country records expose nullable `latitude`, `longitude`, and `zoom` for the
+initial node-maintenance map view. Latitude accepts `-90..90`, longitude accepts
+`-180..180`, and zoom must be an integer from `0..19`. Costa Rica is backfilled
+to `9.75`, `-84.2`, zoom `7`. Incomplete viewport triplets are permitted by the
+API; the frontend applies its documented fallback instead of treating values as
+map constraints. Legacy north/south/east/west boundary fields are not part of
+the schema or API contract.
+
+Node creates require valid `lat` and `lon`. Tour create/update bodies do not
+accept coordinate fields: the server resolves the selected `nodeId`, rejects a
+node without coordinates with `422 NODE_COORDINATES_REQUIRED`, and persists the
+node coordinates into the backward-compatible tour coordinate columns. Database
+triggers keep those columns synchronized whenever the tour changes node or the
+node marker moves.
+
+`PUT /admin/tours/:tourId/image` is administrator-only and accepts
+`multipart/form-data` with exactly one `image` field. The file must be a valid
+PNG no larger than 5 MB. Each upload writes a new immutable object at
+`tours/{uuid}.png`. After storage succeeds, the API persists that key in the
+nullable `tours.image_path` column and returns `data: { tour, image }`, with the
+same key in `tour.imagePath` and `image.key`. The response also includes the
+resolved image URL, byte size, MIME type, stable version derived from the
+successful database update timestamp, and whether cleanup of a superseded tour
+object remains pending. Upload errors leave the existing database path unchanged
+and are normalized without exposing AWS details. New immutable objects use a
+one-year immutable browser/CDN cache policy; replacement uploads remain immediate
+because their object path changes.
+
+Tour maintenance responses expose `imagePath` as an S3 object key such as
+`tours/550e8400-e29b-41d4-a716-446655440000.png`, never as a signed, bucket, or
+CloudFront URL. A valid non-empty stored numeric-ID or UUID key is authoritative. When the field is null
+or empty, homepage reads derive `tours/{tourId}.png` without persisting it. The
+field remains read-only on ordinary tour CRUD; only the image-upload endpoint
+may persist it after a successful storage write.
+
+The returned `image.url` carries `?v={version}` and direct CloudFront and
+`/files` clients preserve it. The immutable object key is the authoritative
+cache boundary, so the CloudFront behavior does not need to include `v` in its
+cache key for replacements to become visible. The version remains stable for a
+given successful upload and is never generated during rendering.
+
+Cross-origin browser clients preflight this authenticated multipart request.
+The API CORS policy therefore explicitly allows `PUT`, `Authorization`, and
+`Content-Type`; deployments must not override those response headers with a
+narrower proxy policy.
+
+`GET /admin/location-search?q=<place>&countryCode=<ISO-2>` is admin-only and
+returns `data.items: [{ name, latitude, longitude }]`. The API proxies the
+configured open geocoder, bounds results to six, removes provider-specific
+fields, and returns safe `400`, `502`, or `503` errors. Configure
+`GEOCODING_PROVIDER_URL` and `GEOCODING_USER_AGENT` server-side; no provider key
+is sent to the browser.
+
+The same protected endpoint accepts
+`GET /admin/location-search?latitude=<lat>&longitude=<lon>` for reverse
+geocoding. Both coordinates are required and range-validated. A readable match
+is returned as a zero-or-one-item `data.items` array so the frontend can retain
+the selected coordinates even when the provider has no human-readable result.
+The service forwards latitude as the provider's `lat` parameter and longitude
+as `lon` without swapping or application-level rounding. Provider-returned
+coordinates describe the readable match only; clients keep their validated
+device or map coordinates authoritative.
+
+## Tour ownership and My Tours
+
+`tours.created_by_user_id` records the authenticated creator. Existing rows are
+left `NULL` as legacy/system inventory so they remain publicly discoverable and
+administrator-managed. Every new tour created through `/my-tours` or
+`/admin/tours` receives the authenticated caller as owner; creator fields in a
+request body are rejected and edits preserve ownership.
+
+Guide (`tour guide` in storage) and administrator users can use:
+
+- `GET /my-tours` with search, pagination, type, status, and geography filters.
+- `POST /my-tours` to create a server-owned tour.
+- `GET /my-tours/:id` and `PATCH /my-tours/:id` for an authorized tour.
+- `GET /my-tours/references` for country, zone, and node selectors.
+
+Administrators see all tours. Guides are owner-scoped in SQL before pagination
+and receive `403 FORBIDDEN` for another owner’s direct ID. Unauthenticated
+requests receive `401`; customers receive `403`.
+
+Public discovery requires an active tour and either an active owner or a `NULL`
+legacy owner. Suspended-owner tours are excluded from homepage discovery,
+search, selection, AI recommendations, cart entry, and reservation preflight.
+
+## Administrator role changes
+
+`GET /admin/users` accepts `search`, `page`, and `limit`. `PATCH
+/admin/users/:userId/role` accepts exactly `{ "role": "admin" | "customer" |
+"tour guide" }`. It is audited and revokes the target’s refresh tokens. Live
+access-state lookup makes the new role immediately authoritative. Self-demotion
+and removal of the last active administrator return protected-account `409`s.
+
 Back to [Project Context](../CONTEXT.md). See [Architecture](./architecture.md) for request flow details.
 
 All responses use:
@@ -869,7 +990,7 @@ Success data:
 These endpoints are public, return normalized JSON envelopes, and are used by the frontend homepage instead of chat streaming for static product content.
 
 ### `GET /tours`
-Returns featured tour cards from PostgreSQL-backed tour data, including display fields such as `id`, `title`, `description`, `location`, `node`, `subnode`, `zone`, `duration`, `pricePerPerson`, `difficulty`, and optional media.
+Returns featured tour cards from PostgreSQL-backed tour data, including display fields such as `id`, `title`, `description`, `location`, `node`, `subnode`, `zone`, `duration`, `pricePerPerson`, `difficulty`, and optional media. Each card also exposes `tourType` (`scheduled` or `unscheduled`), `isActive`, `maxParticipants`, `minimumPrice`, `availableSlots`, and `occurrenceDates`. Each occurrence has `occurrenceId`, `startsAt`, Costa Rica calendar `date`, `remainingSpaces`, and `status`. Expired, inactive, and full scheduled occurrences are omitted from `occurrenceDates`; inactive or unavailable tours are not returned as bookable cards.
 
 ### `GET /birds/highlights`
 Returns curated Costa Rica bird highlight cards. The backend can source names from `HOMEPAGE_BIRD_HIGHLIGHTS`/`HEAD_LINE_BIRDS`, falling back to built-in highlights.
@@ -1264,11 +1385,12 @@ Validation:
 - `conversationContext` is optional and must be an object when provided. The validator only preserves safe recent assistant metadata used by guided booking flows.
 - `responseMode` is optional. Set it to `"field_assistant"` for concise, voice-friendly field guidance capped at two sentences.
 - Homepage/cart reservation entry points may send `conversationType: "reservation_entry"`, `conversationSource`/`entrySource` of `featured_tour` or `tour_cart`, and a safe `reservationEntry` object containing selected tour/cart summaries. These values are treated as already provided context, not authoritative reservation records.
+- A featured-tour entry includes the exact `selectedTour` and `selectedTourId`. This does not create a reservation; it resumes the normal date, participant, transportation, and confirmation workflow.
 
 SSE events:
 ```text
 event: start
-data: {"conversationId":"conversation-123","sources":[],"meta":{"promptVersions":{"chat":"2.3.0"}}}
+data: {"conversationId":"conversation-123","sources":[],"meta":{"promptVersions":{"chat":"2.4.0"}}}
 
 event: chunk
 data: {"content":"Hello"}
@@ -1277,7 +1399,7 @@ event: replace
 data: {"content":"I can help with Costa Rica birdwatching, tours, pricing, or reservations. Could you rephrase what you would like to do next?"}
 
 event: done
-data: {"conversationId":"conversation-123","response":"Hello from AI","sources":[],"meta":{"promptVersions":{"chat":"2.3.0"}}}
+data: {"conversationId":"conversation-123","response":"Hello from AI","sources":[],"meta":{"promptVersions":{"chat":"2.4.0"}}}
 
 event: error
 data: {"code":"STREAM_ERROR","message":"Unable to stream chat response right now."}
@@ -1419,25 +1541,27 @@ assistant turn that produced them.
 
 Tour tool notes:
 - Tour and reservation state comes from PostgreSQL.
-- `tours` store price, availability, location, duration, difficulty, optional `node_id`, coordinates, and optional start/end dates; `node_id` references the Costa Rica birding `node` table when present.
-- `reservations` store customer details, optional authenticated `user_id`, `conversation_id`, `tour_id`, participant count, unique confirmation code, persisted tour total, and creation time.
+- `tours` explicitly distinguish scheduled and unscheduled inventory. Scheduled capacity lives per row-locked `tour_occurrences` record. Unscheduled tours use `minimum_price` as the per-person price floor and `max_participants` as the per-booking limit.
+- `reservations` store customer details, optional authenticated `user_id`, `conversation_id`, `tour_id`, explicit Costa Rica calendar `tour_date`, optional occurrence ID, participant count, unique confirmation code, persisted tour total, and creation time.
 - Birding location/reference data is modeled separately from RAG in `country`, `zone`, `node`, `birds`, and `birds_by_node`. Zones and nodes are ranked, nodes can be hierarchical, birds may have optional `species_code` and `tags`, and each of those tables has `is_active DEFAULT true`.
 - The pgvector RAG tables are `knowledge_documents` and `knowledge_chunks`; they are the source for retrieved text and `birdMatches`, while the birding reference graph supports structured tour/location relationships and seed data.
 - Available tour tools are `searchTours`, `calculateTransportation`, `checkAvailability`, `calculatePricing`, and `createReservation`.
 - Users should receive available or recommended tours through response metadata and explicitly select one before pricing or reservation creation.
+- Recommendation mode requests three results by default. Strong deterministic matches rank first; remaining slots are filled by the best eligible alternatives and marked with `matchStrength: "alternative"` plus an alternative reason. If fewer than three eligible tours exist, all are returned with `fewerThanRequestedReason`.
 - Recommendation-mode results expose `done.meta.tourRecommendation`; legacy
   `meta.tours` remains available for existing guided booking controls.
 - `searchTours` supports broad listing and recommendation mode. `checkAvailability` and `calculatePricing` use the latest validated structured selection. `createReservation` does not accept operational booking details from message-derived tool arguments; it accepts only `expectedStateVersion` and re-reads confirmed state in PostgreSQL.
 - Species or topic queries such as `where can I see quetzals?` are passed into tour ranking so direct name/location matches like `Monteverde Quetzal Tour` outrank weak generic availability matches.
-- When availability is checked for a selected tour and participant count is still missing, `done.meta.uiAction` may contain a `participant_count` action with `min`, `max`, and numeric `options` from `1` through `availableSlots`.
+- When more than one reservation value is unresolved, `done.meta.uiAction` contains a `reservation_details` action with only the missing fields. Its `fields` may include `date`, `participants`, `transportationRequired`, conditional `pickupLocation`, `customerName`, `customerEmail`, `itineraryStartDate`, and `itineraryEndDate`; clients submit all visible values in one message. A lone missing participant count may retain the backward-compatible `participant_count` action with numeric options from `1` through the tour limit.
+- Availability requires an explicit `YYYY-MM-DD` date. Scheduled choices come only from live occurrences within the itinerary and with sufficient remaining capacity; unscheduled choices may use any calendar date within the itinerary. A lone missing date may retain the backward-compatible `date_picker` action rather than choosing a date automatically.
 - Once supplied, participant count is persisted as proposed structured state and may also remain in safe response metadata for UI continuity. Only its latest confirmed structured value is eligible for reservation creation.
-- Before final reservation confirmation, booking flows with an unknown transportation preference return a choice `uiAction` asking whether the customer wants transportation. Choosing `show_transportation` triggers transportation options; choosing `decline_transportation` persists `meta.transportationDeclined: true` for the booking flow.
+- Before final reservation confirmation, an unknown transportation preference is included in the combined reservation-details request (with pickup conditionally required when transportation is requested). A lone missing preference may retain the backward-compatible choice action. Requesting transportation triggers concrete options; declining it persists `meta.transportationDeclined: true` for the booking flow.
 - `calculateTransportation` estimates shared shuttle and private transfer options for supported tour regions and returns a `transportation_selection` `uiAction` when options are available.
 - `calculatePricing` supports optional `discountCode`. Recognized codes are currently `EARLYBIRD`, `STUDENT`, and `LOCAL`; group discounts can also apply.
-- `createReservation` requires `expectedStateVersion`. The atomic database wrapper rejects proposed, missing, invalid, or stale state and supplies only confirmed values to the existing reservation transaction. Validated `customerContext` values enter the same proposal/confirmation lifecycle; authenticated reservations continue to persist `user_id`.
-- A participant-count reply from that UI action can complete the booking context; the backend then asks for transportation preference when unknown and only calls `createReservation` after transportation is selected or declined and final confirmation is received.
-- Final confirmation accepts the structured `confirm_reservation` action and affirmative text such as `Yes` only when the previous assistant metadata contained the final confirmation action. This deterministic transition promotes proposals; assistant text alone never changes confirmation state.
-- Successful reservation tool results include `id`, `reservationId`, `userId`, `customerName`, `customerEmail`, `conversationId`, `tourId`, `tourName`, `participants`, `confirmationCode`, `createdAt`, `totalPrice`, `tourTotalPrice`, itinerary dates, `currency`, `remainingSlots`, `discountRate`, and `discountReason`. Transportation selection and transportation-derived totals are calculated from chat-level `meta.selectedTransportation`, not embedded as `meta.reservation.transportation`.
+- `createReservation` requires `expectedStateVersion`. The atomic database wrapper rejects proposed, missing, invalid, stale, or out-of-itinerary state and supplies only confirmed values to `create_tour_reservation_for_date(...)`. That function locks scheduled inventory, decrements capacity atomically, rejects overbooking and participant-limit violations, and enforces one reservation per customer per Costa Rica calendar day.
+- A combined reservation-details reply can complete the booking context in one turn. The backend follows up only for missing, invalid, unavailable, or ambiguous values and calls `createReservation` only after transportation is selected or declined and final confirmation is received.
+- Final confirmation accepts the structured `confirm_reservation` action and affirmative text such as `Confirm` or `Yes` only when the previous assistant metadata contained the final confirmation action. This deterministic transition promotes proposals; assistant text alone never changes confirmation state, and an `unknown` intent classification cannot override a valid guided confirmation transition.
+- Successful reservation tool results include `id`, `reservationId`, `userId`, `customerName`, `customerEmail`, `conversationId`, `tourId`, `tourName`, `tourDate`, `participants`, `confirmationCode`, `createdAt`, `totalPrice`, `tourTotalPrice`, itinerary dates, `currency`, `remainingSlots`, `discountRate`, and `discountReason`. Transportation selection and transportation-derived totals are calculated from chat-level `meta.selectedTransportation`, not embedded as `meta.reservation.transportation`.
 - Reservations are associated with the active chat `conversationId` internally.
 - Reservation-entry chat exchanges are saved with `conversation_type = "reservation_entry"` and optional `conversation_source` so they can support server-side reservation flow without becoming the user's regular latest chat.
 - The public stream does not expose raw tool messages, but safe structured tool data is returned in the `done` event `meta` object for frontend rendering.

@@ -34,19 +34,39 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
   },
 }));
 
-const { default: reservationService } = await import('../src/services/reservation.service.js');
+const {
+  default: reservationService,
+  calculatePriceForTour,
+  validateTourDate,
+} = await import('../src/services/reservation.service.js');
 
 describe('ReservationService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('checks tour availability from PostgreSQL state', async () => {
+  function futureDate(days = 30) {
+    const date = new Date();
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0, 10);
+  }
+
+  function costaRicaDate() {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Costa_Rica', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date());
+    const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${byType.year}-${byType.month}-${byType.day}`;
+  }
+
+  it('requires an explicit date while returning the selected tour and valid next step', async () => {
     mockGetTourById.mockResolvedValue({
       id: 1,
       name: 'Monteverde Quetzal Tour',
       price: 120,
       availableSlots: 5,
+      maxParticipants: 5,
+      tourType: 'unscheduled',
       location: 'Monteverde',
       durationHours: 4,
       difficulty: 'moderate',
@@ -69,8 +89,10 @@ describe('ReservationService', () => {
     })).resolves.toMatchObject({
       success: true,
       tourId: 1,
-      availableSlots: 5,
-      isAvailable: true,
+      availableSlots: null,
+      isAvailable: false,
+      requiresDateSelection: true,
+      code: 'TOUR_DATE_REQUIRED',
     });
     expect(mockGetTourById).toHaveBeenCalledWith(1);
     expect(mockAnalyticsTrack).toHaveBeenCalledWith({
@@ -95,8 +117,8 @@ describe('ReservationService', () => {
         source: 'voice',
         tourId: 1,
         participants: undefined,
-        availabilityResult: true,
-        availableSlots: 5,
+        availabilityResult: false,
+        availableSlots: null,
       },
     });
   });
@@ -161,6 +183,7 @@ describe('ReservationService', () => {
       participants: 2,
       customerName: 'Ana Gomez',
       conversationId: 'conversation-123',
+      date: '2026-06-02',
     }, {
       authUser: { plan: 'PRO' },
       model: 'gpt-test',
@@ -287,6 +310,7 @@ describe('ReservationService', () => {
       customerName: 'Ana Gomez',
       customerEmail: 'ana@example.com',
       conversationId: 'conversation-123',
+      date: '2026-06-02',
     }, {
       userId: 7,
       selectedTransportation: transportation,
@@ -346,6 +370,7 @@ describe('ReservationService', () => {
       participants: 2,
       customerName: 'Ana Gomez',
       conversationId: 'conversation-123',
+      date: '2026-06-02',
     });
 
     expect(result).toMatchObject({
@@ -355,10 +380,7 @@ describe('ReservationService', () => {
       participants: 2,
       remainingSlots: 2,
     });
-    expect(mockGetAvailableTours).toHaveBeenCalledWith({
-      location: 'Cerro de la Muerte',
-      minSlots: 2,
-    });
+    expect(mockGetAvailableTours).toHaveBeenCalledWith({ minSlots: 2 });
     expect(mockCreateReservation).toHaveBeenCalledWith(expect.objectContaining({
       tourId: 10,
       participants: 2,
@@ -428,6 +450,7 @@ describe('ReservationService', () => {
       customerName: 'Ana Gomez',
       customerEmail: 'ana@example.com',
       conversationId: 'conversation-123',
+      date: '2026-06-02',
     }, {
       userId: 7,
     });
@@ -477,6 +500,7 @@ describe('ReservationService', () => {
       tourId: 1,
       participants: 2,
       customerName: 'Ana Gomez',
+      date: '2026-06-02',
     }, {
       conversationId: 'conversation-456',
     });
@@ -550,8 +574,9 @@ describe('ReservationService', () => {
       tourId: 1,
       participants: 500,
       customerName: 'Ana Gomez',
-      itineraryStartDate: 'yesterday',
-      itineraryEndDate: 'yesterday',
+      date: '2026-06-02',
+      itineraryStartDate: '2026-06-01',
+      itineraryEndDate: '2026-06-03',
     })).resolves.toMatchObject({
       success: false,
       code: 'INSUFFICIENT_AVAILABILITY',
@@ -561,5 +586,70 @@ describe('ReservationService', () => {
       tourId: 1,
       participants: 500,
     }));
+  });
+
+  it('limits scheduled dates to available occurrences inside the itinerary', () => {
+    const tour = {
+      tourType: 'scheduled',
+      occurrenceDates: [
+        { date: '2026-09-09', status: 'scheduled', remainingSpaces: 4 },
+        { date: '2026-09-10', status: 'scheduled', remainingSpaces: 1 },
+        { date: '2026-09-11', status: 'scheduled', remainingSpaces: 4 },
+      ],
+    };
+    expect(validateTourDate(tour, {
+      date: '2026-09-11', participants: 3, itineraryStartDate: '2026-09-10', itineraryEndDate: '2026-09-12',
+    })).toMatchObject({ success: true, date: '2026-09-11' });
+    expect(validateTourDate(tour, {
+      date: '2026-09-10', participants: 3, itineraryStartDate: '2026-09-10', itineraryEndDate: '2026-09-12',
+    })).toMatchObject({ success: false, code: 'TOUR_DATE_UNAVAILABLE' });
+    expect(validateTourDate(tour, {
+      date: '2026-09-09', participants: 1, itineraryStartDate: '2026-09-10', itineraryEndDate: '2026-09-12',
+    })).toMatchObject({ success: false, code: 'DATE_OUTSIDE_ITINERARY' });
+  });
+
+  it('enforces unscheduled minimum pricing', () => {
+    expect(calculatePriceForTour({ id: 2, name: 'Flexible', price: 80, minimumPrice: 100 }, 2)).toMatchObject({
+      success: true,
+      pricePerPerson: 100,
+      subtotal: 200,
+      totalPrice: 200,
+    });
+  });
+
+  it('uses max participants only for flexible tours and occurrence slots only for scheduled tours', async () => {
+    mockGetTourById
+      .mockResolvedValueOnce({
+        id: 1, name: 'Flexible', location: 'Forest', isActive: true,
+        tourType: 'unscheduled', maxParticipants: 5, availableSlots: 1,
+      })
+      .mockResolvedValueOnce({
+        id: 2, name: 'Scheduled', location: 'Wetland', isActive: true,
+        tourType: 'scheduled', maxParticipants: 2, availableSlots: 5,
+        startDate: futureDate(),
+      });
+
+    await expect(reservationService.resolveTour({ tourId: 1, participants: 4 }))
+      .resolves.toMatchObject({ success: true, tour: { name: 'Flexible' } });
+    await expect(reservationService.resolveTour({ tourId: 2, participants: 4 }))
+      .resolves.toMatchObject({ success: true, tour: { name: 'Scheduled' } });
+  });
+
+  it('rejects flexible max-participant overflow and scheduled tours that have started', async () => {
+    const today = costaRicaDate();
+    mockGetTourById
+      .mockResolvedValueOnce({
+        id: 1, name: 'Flexible', isActive: true, tourType: 'unscheduled',
+        maxParticipants: 3, availableSlots: 100,
+      })
+      .mockResolvedValueOnce({
+        id: 2, name: 'Scheduled', isActive: true, tourType: 'scheduled',
+        maxParticipants: 100, availableSlots: 10, startDate: today,
+      });
+
+    await expect(reservationService.resolveTour({ tourId: 1, participants: 4 }))
+      .resolves.toMatchObject({ success: false, code: 'TOUR_UNAVAILABLE' });
+    await expect(reservationService.resolveTour({ tourId: 2, participants: 2 }))
+      .resolves.toMatchObject({ success: false, code: 'TOUR_UNAVAILABLE' });
   });
 });

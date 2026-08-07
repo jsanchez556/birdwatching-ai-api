@@ -41,7 +41,7 @@ describe('UsageQueries', () => {
     })).resolves.toBe(usageLog);
 
     expect(mockQuery).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO usage_logs'),
+      expect.stringContaining('record_usage_log($1, $2, $3, $4)'),
       [7, 1200, 300, 0.006]
     );
   });

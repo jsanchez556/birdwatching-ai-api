@@ -9,15 +9,13 @@ describe('admin operations migrations', () => {
     const migration = await readFile(
       path.resolve(
         __dirname,
-        '../src/db/migrations/025_create_admin_operations.sql'
+        '../src/db/migrations/003_functions.sql'
       ),
       'utf8'
     );
 
-    expect(migration).toContain(
-      'ON CONFLICT ON CONSTRAINT ai_feature_controls_pkey DO UPDATE'
-    );
+    expect(migration).toMatch(/ON CONFLICT ON CONSTRAINT ai_feature_controls_pkey DO UPDATE/i);
     expect(migration).not.toContain('ON CONFLICT (feature)');
-    expect(migration).toContain('RETURNS TABLE (\n  feature TEXT,');
+    expect(migration).toMatch(/RETURNS TABLE\s*\(feature text,/i);
   });
 });

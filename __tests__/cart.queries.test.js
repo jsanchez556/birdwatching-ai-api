@@ -71,7 +71,7 @@ describe('CartQueries', () => {
     });
 
     expect(mockQuery).toHaveBeenCalledWith(
-      'SELECT * FROM get_tour_cart_items($1)',
+      expect.stringContaining('get_tour_cart_items($1)'),
       [7]
     );
   });
@@ -93,7 +93,7 @@ describe('CartQueries', () => {
     });
 
     expect(mockQuery).toHaveBeenCalledWith(
-      'SELECT * FROM upsert_tour_cart_item($1, $2, $3, $4, $5, $6::jsonb)',
+      expect.stringContaining('upsert_tour_cart_item($1, $2, $3, $4, $5, $6::jsonb)'),
       [7, 3, '2026-06-12', 2, true, JSON.stringify({ selectedTransportation: 'shared_shuttle' })]
     );
   });
@@ -111,7 +111,7 @@ describe('CartQueries', () => {
     });
 
     expect(mockQuery).toHaveBeenCalledWith(
-      'SELECT * FROM update_tour_cart_item($1, $2, $3, $4, $5)',
+      expect.stringContaining('update_tour_cart_item($1, $2, $3, $4, $5)'),
       [7, 12, null, 3, undefined]
     );
   });

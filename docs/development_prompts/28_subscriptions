@@ -88,9 +88,9 @@ billing management, and webhook normalization. Generic API responses use
 `provider_price_id`.
 
 Treat the provider-agnostic billing schema as the baseline implementation, not
-as a follow-up compatibility migration. The final
-`src/db/migrations/018_create_subscription_plans.sql` migration creates
-provider-neutral subscription storage directly:
+as a follow-up compatibility migration. The consolidated
+`src/db/migrations/001_schema.sql` migration creates provider-neutral
+subscription storage directly, while `003_functions.sql` owns its SQL helpers:
 
 - `user_subscriptions` must define `billing_provider`,
   `provider_customer_id`, `provider_subscription_id`, and `provider_price_id`
@@ -100,12 +100,12 @@ provider-neutral subscription storage directly:
 - Do not include migration-only `ALTER TABLE`, `UPDATE`, `DROP COLUMN`, or
   `DROP FUNCTION` steps that only exist to convert the old Stripe-specific
   schema.
-- Include `plan_provider_mappings` in `018` so internal plans can map to
+- Include `plan_provider_mappings` in the schema so internal plans can map to
   provider products, prices, SKUs, or equivalent identifiers.
-- Define provider-neutral SQL helpers in `018`, including
+- Define provider-neutral SQL helpers in the schema, including
   `get_user_subscription_plan`, `upsert_provider_subscription`, and
   `update_provider_subscription_status`.
-- Keep usage tracking and quota functions in `018`, but make sure they read
+- Keep usage tracking and quota functions in the schema, but make sure they read
   the provider-neutral subscription shape.
 
 ---

@@ -20,9 +20,8 @@ class RefreshTokenQueries {
   async create({ userId, tokenHash, expiresAt }) {
     try {
       const query = `
-        INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
-        VALUES ($1, $2, $3)
-        RETURNING id, user_id, token_hash, expires_at, revoked_at, created_at
+        SELECT id, user_id, token_hash, expires_at, revoked_at, created_at
+        FROM create_refresh_token($1, $2, $3)
       `;
       const result = await pool.query(query, [userId, tokenHash, expiresAt]);
       return mapRefreshToken(result.rows[0]);
@@ -48,12 +47,7 @@ class RefreshTokenQueries {
   }
 
   async revokeByHash(tokenHash) {
-    const query = `
-      UPDATE refresh_tokens
-      SET revoked_at = NOW()
-      WHERE token_hash = $1
-        AND revoked_at IS NULL
-    `;
+    const query = 'SELECT revoke_refresh_token($1) AS revoked';
     await pool.query(query, [tokenHash]);
   }
 }

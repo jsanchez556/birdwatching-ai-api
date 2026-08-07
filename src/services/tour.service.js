@@ -1,6 +1,8 @@
 import tourQueries from '../db/queries/tour.queries.js';
 import { normalizeComparableText, normalizeText } from '../utils/normalizer.utils.js';
 import { invalidArguments, toPositiveInteger } from '../utils/toolResponses.js';
+import { normalizeTourType } from '../constants/tourTypes.js';
+import { normalizeTourDuration } from '../utils/tourDuration.utils.js';
 
 const budgetMaxPrice = {
   budget: 110,
@@ -53,16 +55,7 @@ function tourNameMatchesSelection(tourName, selectedName) {
     return false;
   }
 
-  if (name === selection || name.includes(selection) || selection.includes(name)) {
-    return true;
-  }
-
-  const selectionTokens = selection
-    .split(/\s+/)
-    .filter((token) => token.length > 2);
-
-  return selectionTokens.length > 0
-    && selectionTokens.every((token) => name.includes(token));
+  return name === selection;
 }
 
 function normalizeBudget(value) {
@@ -78,14 +71,22 @@ function normalizeDifficulty(value) {
 }
 
 function formatTour(tour) {
+  const isScheduled = tour.tourType === 'scheduled';
+  const duration = normalizeTourDuration(tour);
   const formattedTour = {
     tourId: tour.id,
     name: tour.name,
     location: tour.location,
     pricePerPerson: tour.price,
-    availableSlots: tour.availableSlots,
-    durationHours: tour.durationHours,
+    availableSlots: isScheduled ? tour.availableSlots : null,
+    durationValue: duration.durationValue,
+    durationUnit: duration.durationUnit,
+    durationHours: duration.durationHours,
+    duration: duration.duration,
     difficulty: tour.difficulty,
+    type: tour.type || 'Birdwatching',
+    imagePath: tour.imagePath ?? null,
+    imageVersion: tour.imageVersion ?? null,
   };
 
   [
@@ -95,6 +96,7 @@ function formatTour(tour) {
     ['subnode', tour.subnode],
     ['zone', tour.zone],
     ['rank', tour.rank],
+    ['zoneRank', tour.zoneRank],
     ['lat', tour.lat],
     ['lon', tour.lon],
     ['start_date', tour.startDate],
@@ -104,6 +106,15 @@ function formatTour(tour) {
     if (value !== undefined) {
       formattedTour[key] = value;
     }
+  });
+  [
+    ['tourType', tour.tourType],
+    ['isActive', tour.isActive],
+    ['maxParticipants', tour.maxParticipants],
+    ['minimumPrice', tour.minimumPrice],
+    ['occurrenceDates', tour.occurrenceDates],
+  ].forEach(([key, value]) => {
+    if (value !== undefined) formattedTour[key] = value;
   });
 
   return formattedTour;
@@ -115,6 +126,9 @@ function scoreTour(tour, {
   budget,
   difficulty,
   participants,
+  requestedDate,
+  itineraryStartDate,
+  itineraryEndDate,
 } = {}) {
   let score = 0;
   const reasons = [];
@@ -161,13 +175,32 @@ function scoreTour(tour, {
     }
   }
 
-  if (participants && tour.availableSlots >= participants) {
+  const capacity = tour.tourType === 'scheduled'
+    ? tour.availableSlots
+    : (tour.maxParticipants ?? tour.availableSlots);
+  if (participants && capacity >= participants) {
     score += 2;
-    reasons.push(`Has ${tour.availableSlots} slots available`);
+    reasons.push(tour.tourType === 'scheduled'
+      ? `Has ${tour.availableSlots} slots available`
+      : `Supports up to ${tour.maxParticipants} participants`);
   }
 
-  if (tour.availableSlots > 0) {
+  if (capacity > 0) {
     score += 1;
+  }
+
+  const validDates = (tour.occurrenceDates || []).filter((occurrence) => {
+    if (!occurrence.date || occurrence.status !== 'scheduled' || occurrence.remainingSpaces < (participants || 1)) return false;
+    if (itineraryStartDate && occurrence.date < itineraryStartDate) return false;
+    if (itineraryEndDate && occurrence.date > itineraryEndDate) return false;
+    return true;
+  });
+  if (requestedDate && (tour.tourType === 'unscheduled' || validDates.some((item) => item.date === requestedDate))) {
+    score += 7;
+    reasons.push(`Available on ${requestedDate}`);
+  } else if (!requestedDate && validDates.length > 0) {
+    score += 2;
+    reasons.push('Has dates within the itinerary');
   }
 
   return {
@@ -183,6 +216,7 @@ class TourService {
     difficulty,
     maxPrice,
     participants,
+    type,
   } = {}) {
     let minSlots;
 
@@ -193,16 +227,21 @@ class TourService {
     }
 
     const parsedMaxPrice = maxPrice === undefined || maxPrice === null ? null : Number(maxPrice);
+    const normalizedType = type === undefined || type === null || type === ''
+      ? null
+      : normalizeTourType(type);
 
     if (parsedMaxPrice !== null && (!Number.isFinite(parsedMaxPrice) || parsedMaxPrice < 0)) {
       return invalidArguments(new Error('maxPrice must be a positive number'));
     }
+    if (type && !normalizedType) return invalidArguments(new Error('type is not supported'));
 
     const tours = await tourQueries.getAvailableTours({
       location: normalizeText(location),
       difficulty: normalizeDifficulty(difficulty),
       maxPrice: parsedMaxPrice,
       minSlots,
+      type: normalizedType,
     });
 
     return {
@@ -217,7 +256,11 @@ class TourService {
     budget,
     difficulty,
     participants,
+    date,
+    itineraryStartDate,
+    itineraryEndDate,
     limit = 3,
+    type,
   } = {}) {
     let participantCount;
     let resultLimit;
@@ -230,27 +273,67 @@ class TourService {
     }
 
     const normalizedBudget = normalizeBudget(budget);
-    const tours = await tourQueries.getAvailableTours({
+    const strongTours = await tourQueries.getAvailableTours({
       location: normalizeText(location),
       difficulty: normalizeDifficulty(difficulty),
       maxPrice: normalizedBudget ? budgetMaxPrice[normalizedBudget] : null,
       minSlots: participantCount,
+      type: type ? normalizeTourType(type) : null,
     });
+    let tours = Array.isArray(strongTours) ? strongTours : [];
+    const strongTourIds = new Set(tours.map((tour) => String(tour.id)));
+    if (tours.length < resultLimit) {
+      const alternatives = await tourQueries.getAvailableTours({
+        minSlots: participantCount,
+        type: type ? normalizeTourType(type) : null,
+      });
+      const byId = new Map(tours.map((tour) => [String(tour.id), tour]));
+      for (const tour of alternatives || []) byId.set(String(tour.id), tour);
+      tours = [...byId.values()];
+    }
 
-    const recommendedTours = tours
+    const eligibleTours = tours
+      .filter((tour) => tour.isActive !== false)
+      .filter((tour) => tour.tourType === 'scheduled'
+        || (tour.maxParticipants ?? tour.availableSlots) >= participantCount)
+      .filter((tour) => tour.tourType !== 'scheduled' || (tour.occurrenceDates || [])
+        .some((occurrence) => occurrence.status === 'scheduled'
+          && occurrence.remainingSpaces >= participantCount
+          && (!date || occurrence.date === date)
+          && (!itineraryStartDate || occurrence.date >= itineraryStartDate)
+          && (!itineraryEndDate || occurrence.date <= itineraryEndDate)));
+
+    const recommendedTours = eligibleTours
       .map((tour) => scoreTour(tour, {
         location,
         query,
         budget,
         difficulty,
         participants: participantCount,
+        requestedDate: date,
+        itineraryStartDate,
+        itineraryEndDate,
       }))
-      .sort((left, right) => right.recommendationScore - left.recommendationScore || left.pricePerPerson - right.pricePerPerson)
+      .map((tour) => {
+        const strong = strongTourIds.has(String(tour.tourId));
+        return {
+          ...tour,
+          matchStrength: strong ? 'strong' : 'alternative',
+          reasons: strong ? tour.reasons : [...tour.reasons, 'Alternative eligible option'],
+        };
+      })
+      .sort((left, right) => right.recommendationScore - left.recommendationScore
+        || left.pricePerPerson - right.pricePerPerson || left.tourId - right.tourId)
       .slice(0, resultLimit);
 
     return {
       success: true,
       tours: recommendedTours,
+      requestedCount: resultLimit,
+      eligibleCount: eligibleTours.length,
+      fewerThanRequestedReason: recommendedTours.length < resultLimit
+        ? `Only ${recommendedTours.length} eligible tour${recommendedTours.length === 1 ? '' : 's'} can accommodate the request.`
+        : null,
     };
   }
 

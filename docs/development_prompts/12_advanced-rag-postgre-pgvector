@@ -19,9 +19,11 @@ Organize the implementation around these responsibilities:
 
 ```txt
 src/db/
-  vector/
-    vector.repository.js
-    vector.schema.sql
+  migrations/
+    001_schema.sql
+  repositories/
+    vector/
+      vector.repository.js
   retrieval/
     services/retrieval.service.js
 src/ingestion/
@@ -39,7 +41,7 @@ Create a repository layer responsible for all PostgreSQL vector operations.
 
 It should handle:
 
-- Creating or migrating the vector tables
+- Verifying that the migration-managed vector tables are ready
 - Inserting knowledge documents
 - Inserting document chunks with embeddings
 - Querying chunks by semantic similarity

@@ -160,7 +160,7 @@ describe('OpenAIService response caching', () => {
       expect.stringMatching(/^ai-response:[a-f0-9]{64}$/),
       {
         response: 'Fresh motmot answer.',
-        promptVersion: '2.3.0',
+        promptVersion: '2.5.0',
         estimatedCostUsd: 0,
       },
       {
@@ -263,7 +263,7 @@ describe('OpenAIService response caching', () => {
         .mockResolvedValueOnce([
           {
             scope: {
-              promptVersion: '2.3.0',
+              promptVersion: '2.5.0',
               role: 'visitor',
             },
             embedding: [0.99, 0.01],
@@ -322,7 +322,7 @@ describe('OpenAIService response caching', () => {
         .mockResolvedValueOnce([
           {
             scope: {
-              promptVersion: '2.3.0',
+              promptVersion: '2.5.0',
               role: 'visitor',
             },
             embedding: [0, 1],

@@ -3,12 +3,16 @@
 AI-agent entry point for the Birdwatching AI API. Read this file first, then follow links for deeper details.
 
 ## What This Is
-This repository is a Node.js backend for Costa Rica birdwatching assistance, split into separate HTTP API and BullMQ worker entrypoints. It supports:
+This repository is a Node.js backend for Costa Rica nature-tour and birdwatching assistance, split into separate HTTP API and BullMQ worker entrypoints. It supports:
 - conversational chat with short-term PostgreSQL history and conservative authenticated long-term user memory
 - PostgreSQL-backed RAG over ingested `src/ingestion/data` documents using pgvector
 - reusable external bird data clients for eBird, iNaturalist, and Xeno-canto ingestion jobs
 - media file lookup for relative bird media keys through CloudFront or `GET /files/:folderName/:filename`
 - public homepage content for hero media, featured tours, bird highlights, and transportation add-ons
+- required activity categories alongside the scheduled/unscheduled tour model
+- admin maintenance for countries, zones, nodes, birds, bird assignments, and tours, with node-owned tour coordinates and protected forward/reverse location lookup
+- countries expose nullable initial-map `latitude`, `longitude`, and `zoom`; maps consume the center/zoom triplet only as an initial view and never as a constraint
+- owner-scoped My Tours management, audited administrator role changes, and public suppression of suspended-owner tours
 - authenticated bird identification through `POST /birds/identify`, accepting image URLs or validated image uploads before running rich visual evidence extraction, direct-image-aware candidate generation, bird-profile RAG verification/reranking, and final response assembly
 - voice chat through `POST /voice-chat`, combining speech-to-text, chat orchestration, text-to-speech, S3 storage, and CloudFront-relative audio URLs
 - OpenAI/agent tool calling for tour search, availability, transportation, pricing, discounts, and durable reservations
@@ -109,6 +113,7 @@ GET /chat/latest
 - Rate limiting is an in-memory per-IP bucket: 60 requests per minute.
 - `POST /auth/signup`, `POST /auth/login`, `POST /auth/refresh`, and `POST /auth/logout` are public; login/signup issue access tokens plus DB-backed rotating refresh tokens, refresh rotates sessions, and logout revokes the supplied refresh token.
 - `PATCH /auth/profile` and `POST /auth/profile-image` require JWT bearer auth and update only the current user. Profile image uploads accept raw JPEG, PNG, or WebP bytes up to 5 MB, store S3 objects under `user-profile-images/`, and return a safe `imageUrl`.
+- `PUT /admin/tours/:tourId/image` requires administrator auth and accepts one multipart PNG up to 5 MB. It validates the PNG signature, writes a new immutable `tours/{uuid}.png` object, and persists that key in `tours.image_path` before best-effort cleanup of the superseded tour image. Its response exposes the persisted `tour.imagePath`, a stable timestamp-based image version, and the versioned `image.url`. Public tour formatting preserves both fields through homepage normalization so cards use the database-backed key. Changing the object key makes replacements visible even when CloudFront ignores query strings. The centralized CORS policy includes `PUT` so deployed cross-origin browser clients can complete the multipart preflight. Homepage normalization canonicalizes legacy extensionless numeric keys such as `tours/11` to the existing `tours/11.png` object, accepts numeric and UUID PNG keys, and derives `tours/{tourId}.png` only for reads when the stored path is empty.
 - `POST /billing/checkout`, `POST /billing/portal`, and `GET /billing/usage` require JWT bearer auth. Billing endpoints accept an optional provider name, default to `BILLING_DEFAULT_PROVIDER`, and return provider-neutral payment or management URLs. Provider customer/subscription IDs are resolved from the authenticated user's stored subscription and are never accepted from the client. Billing usage correlates LangSmith trace IDs, AI request cost, plan/subscription status, provider revenue, and profitability for the authenticated user's current month. `GET /billing/admin/dashboard` is admin-only and reports MRR, ARR, active/cancelled subscriptions, and revenue by paid plan. `POST /billing/admin/simulate-payment` is admin-only and records internal provider-neutral lifecycle events under provider `Other` for testing subscription flows without external provider calls.
 - `POST /chat` accepts JWT-authenticated customer/admin users or unauthenticated visitor requests, while `GET /chat/latest` requires JWT bearer auth through `requireAuth`.
 - `POST /birds/identify` requires JWT bearer auth. JSON URL requests preserve the existing `{ imageUrl }` flow; raw JPEG, PNG, WebP, or GIF uploads are capped at 10 MB, uploaded to S3 under `bird-identification/`, converted to a CloudFront URL, and passed into the same image-analysis pipeline. The multimodal bird identification pipeline now returns `status`, `bestMatch`, `candidates`, rich `imageAnalysis`, compatibility `imageObservations`, and conservative `notes`; confidence below `0.55` is `uncertain`, and below `0.40` is `unknown`.
@@ -207,13 +212,13 @@ GET /chat/latest
   portfolio artifacts, with honest unavailable/null/sample-size semantics.
   Synthetic scorer self-tests are explicitly excluded. It does not execute
   evaluations or contact OpenAI/LangSmith.
-- Tour data, availability, selection, and reservations are stored in PostgreSQL through functions in `003_create_tour_reservations.sql`; the tour helpers join the Costa Rica `country`/`zone`/`node`/`birds`/`birds_by_node` reference graph and return `location`, `node`, `subnode`, and `zone` for tour discovery, selection, and reservation metadata.
+- Tour data, activity categories, explicit hour/day durations, occurrence-level scheduled availability, flexible-date participant capacity, explicit date selection, and reservations are defined in `src/db/migrations/001_schema.sql`; functions and triggers in `src/db/migrations/003_functions.sql` derive tour coordinates from the selected node and propagate node marker changes while retaining compatibility columns for reads. `004_tour_image_path.sql` installs the image-path write contract, backfills duration units, and creates bookable occurrences for valid legacy scheduled inventory.
 - Safe admin mutations use `POST /admin/jobs/:jobId/retry`,
   `POST /admin/users/:userId/suspend`, and
   `POST /admin/ai-features/:feature/disable`. They require current admin
   authorization, write an audit intent before attempting a side effect, and
   never store raw job payloads, user content, provider errors, or secrets in
-  audit metadata. Migration `025_create_admin_operations.sql` owns
+  audit metadata. The consolidated schema migration owns
   `admin_audit_logs`, account suspension state, and expiring AI feature
   controls, including the feature-disable function's unambiguous named
   primary-key conflict target.
@@ -221,9 +226,9 @@ GET /chat/latest
   middleware also reads the current user access state so a previously issued
   access token cannot bypass a later suspension or role change.
 - Tour listing, recommendation, guided action, pricing, transportation, and reservation details are returned in the `/chat` stream `done.meta` object for frontend rendering; recommendation-mode search results additionally expose the all-or-nothing Zod-validated `meta.tourRecommendation` card contract, while assistant text stays short.
-- Tour selection accepts a tour ID or a clear/partial tour name such as `Monteverde tour` before pricing or reservation.
+- Tour selection accepts a tour ID or an exact normalized tour name. Recommendations return three eligible deterministic choices when possible, filling weak matches as labeled alternatives. A structured `featured_tour` reservation entry is already an exact confirmed selection and bypasses recommendation search.
 - `GET /chat/latest` loads the most recent conversation for `req.user.id` before the frontend creates a new conversation ID. If that conversation has a reservation, the response includes frontend-safe `meta.reservation` details plus chat-level booking state such as `meta.participants` and `meta.selectedTransportation`. Chat requests can include `customerContext` with name, email, and itinerary dates plus `conversationContext.recentAssistantMetadata` for continuing guided booking flows. For authenticated requests, the JWT user email is authoritative and the JWT user name is preferred when available.
-- Reservation creation can include optional `customerEmail`, `discountCode`, itinerary dates, and selected transportation metadata; discounts are calculated in `reservation.service.js` and the tour total is computed inside the PostgreSQL function.
+- Reservation creation requires an explicit valid `tourDate` within the itinerary. Scheduled occurrence capacity is decremented under a row lock, unscheduled participant limits/minimum pricing are enforced, and the database prevents more than one tour per customer calendar day.
 - `createReservation` is non-retryable at the agent tool executor. An ambiguous
   thrown failure returns an indeterminate result that requires reservation
   status verification; model fallback reuses completed tool context and never
@@ -236,18 +241,18 @@ GET /chat/latest
 - LangSmith-compatible evaluation helpers model the flow as `Run -> Evaluation -> Score -> Comparison`; dashboard helpers summarize quality trends, regression detection, and retrieval performance using safe numeric metadata.
 - `.github/workflows/ai-evals.yml` runs the synthetic scorer self-test separately, requires a configured real-pipeline artifact for the portfolio gate, uploads both artifacts, and fails closed when real outputs are absent or thresholds are violated.
 - AI response caching records `CACHE HIT` and `CACHE MISS` logs, tracks cache hit/miss metrics and estimated OpenAI savings, and skips response reuse when metadata contains user-specific, reservation, tool, or conversation-scoped state.
-- Chat persistence uses the `conversations` and `messages` tables plus SQL helper functions from `src/db/migrations/002_create_functions.sql`; later migrations make those helpers owner-aware and merge safe JSONB booking metadata into `conversations.metadata`.
-- Authenticated chat may extract allowlisted durable user memories only after its source message is saved. Migration `028_create_user_memories.sql` provides owner/source validation, active-value deduplication, expiration filtering, and atomic explicit supersession. Visitors are excluded, and memory is context only—not reservation state.
+- Chat persistence uses the `conversations` and `messages` tables plus owner-aware SQL helper functions from `src/db/migrations/003_functions.sql`, including safe JSONB booking-metadata merging into `conversations.metadata`.
+- Authenticated chat may extract allowlisted durable user memories only after its source message is saved. The consolidated schema provides owner/source validation, active-value deduplication, expiration filtering, and atomic explicit supersession. Visitors are excluded, and memory is context only—not reservation state.
 - Durable-memory retrieval is request-relevant rather than automatic: active rows pass confidence, age, expiry, embedding-similarity, normalized-deduplication, result-count, and token-budget gates before ContextBuilder selection. Internal context retains memory and source-message provenance.
-- Memory conflicts use category plus a semantic conflict key. Migration `029_add_user_memory_conflict_resolution.sql` permits atomic deactivation only for validated explicit recent corrections, retains superseded rows and resolution metadata for internal audit, and routes insufficient-confidence conflicts into required user clarification instead of choosing by recency.
+- Memory conflicts use category plus a semantic conflict key. `003_functions.sql` permits atomic deactivation only for validated explicit recent corrections, retains superseded rows and resolution metadata for internal audit, and routes insufficient-confidence conflicts into required user clarification instead of choosing by recency.
 - Voice chat uses the same chat orchestration and conversation memory as `POST /chat`. `src/ai/audio/speechToText.adapter.js` and `src/ai/audio/textToSpeech.adapter.js` are internal services; standalone transcribe/speak routes are not exposed publicly.
 - `POST /voice-chat` accepts raw MP3/WAV audio only, including `audio/mpeg`, `audio/mp3`, `audio/wav`, and `audio/x-wav`. Browser clients that record `audio/webm` should convert to WAV before upload or the backend validation will reject the request.
 - Generated voice-chat MP3 responses are uploaded to S3 under `voice-chat/<uuid>.mp3`; the API returns a relative `/files/voice-chat/...` URL that clients resolve through CloudFront-backed media delivery.
 - Voice chat creates one LangSmith-compatible parent trace with child spans for transcription, conversation context/RAG retrieval, agent execution/tool work, final chat response, and speech generation when tracing is enabled.
 - Cache lookups and writes are traced as LangSmith-compatible cache/tool spans with hit, miss, skipped, avoided-LLM-call, hit-rate, and savings metadata when tracing is enabled.
 - User authentication uses `users`, DB-backed refresh sessions use `refresh_tokens`, authenticated token/cost accounting uses `usage_logs`, and subscriptions use provider-neutral `user_subscriptions` plus optional `plan_provider_mappings`.
-- Reservation persistence uses `tours` and `reservations` plus PostgreSQL functions from `003_create_tour_reservations.sql`; transaction, row locking, derived tour location metadata, and authenticated `user_id` persistence live in database functions after ownership migration. Chat-level booking metadata such as transportation selections is stored in `conversations.metadata`.
-- Reservation workflow inputs are separately persisted in versioned `reservation_conversation_states` with append-only audit events. Migration `027_create_reservation_conversation_state.sql` owns optimistic mutations and the atomic, idempotent booking wrapper. Booking tools use only latest confirmed state plus an expected version; messages and chat metadata are never reconstructed into booking arguments.
+- Reservation persistence uses `tours` and `reservations` plus PostgreSQL functions from `003_functions.sql`; transaction, row locking, derived tour location metadata, and authenticated `user_id` persistence live in database functions. Chat-level booking metadata such as transportation selections is stored in `conversations.metadata`.
+- Reservation workflow inputs are separately persisted in versioned `reservation_conversation_states` with append-only audit events. `003_functions.sql` owns optimistic mutations and the atomic, idempotent booking wrapper. Booking tools use only latest confirmed state plus an expected version; messages and chat metadata are never reconstructed into booking arguments.
 
 ## Testing
 Tests live in `__tests__/` and cover routes, services, and query helpers with ESM module mocks.

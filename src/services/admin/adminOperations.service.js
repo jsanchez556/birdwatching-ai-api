@@ -5,6 +5,7 @@ import { FEATURE_FLAGS } from '../../featureFlags/flags.js';
 import { getQueueNameForJobType, isKnownJobType } from '../../jobs/jobTypes.js';
 import HttpError from '../../utils/httpError.js';
 import logger from '../../utils/logger.js';
+import { USER_ROLE_VALUES } from '../../constants/userRoles.js';
 
 const ADMIN_ACTIONS = Object.freeze({
   RETRY_JOB: 'RETRY_FAILED_JOB',
@@ -12,6 +13,7 @@ const ADMIN_ACTIONS = Object.freeze({
   DISABLE_AI_FEATURE: 'DISABLE_AI_FEATURE',
   ENABLE_AI_FEATURE: 'ENABLE_AI_FEATURE',
   UNSUSPEND_USER: 'UNSUSPEND_USER',
+  CHANGE_USER_ROLE: 'CHANGE_USER_ROLE',
 });
 
 const DISABLEABLE_AI_FEATURES = new Set([
@@ -298,6 +300,45 @@ class AdminOperationsService {
         : error?.message === 'ADMIN_USER_UNSUSPENSION_FORBIDDEN'
           ? operationError(409, 'ADMIN_USER_UNSUSPENSION_FORBIDDEN', 'Admin users cannot be reactivated')
           : error;
+      await this.finalizeFailure(audit, adminUserId, mapped);
+      throw mapped;
+    }
+  }
+
+  async changeUserRole({ adminUserId, userId, role }) {
+    if (!USER_ROLE_VALUES.includes(role)) {
+      throw operationError(400, 'INVALID_USER_ROLE', 'Role is not supported');
+    }
+    const audit = await this.beginAudit({
+      adminUserId,
+      action: ADMIN_ACTIONS.CHANGE_USER_ROLE,
+      targetType: 'user',
+      targetId: userId,
+      metadata: { role },
+    });
+    try {
+      const result = await this.repository.changeUserRole({
+        auditId: audit.id, adminUserId, userId, role,
+      });
+      return {
+        auditId: String(audit.id),
+        user: {
+          id: String(result.user_id),
+          previousRole: result.previous_role,
+          role: result.role,
+        },
+        sessionsRevoked: true,
+      };
+    } catch (error) {
+      const mapped = error?.message === 'TARGET_USER_NOT_FOUND'
+        ? operationError(404, 'USER_NOT_FOUND', 'User not found')
+        : error?.message === 'SELF_ADMIN_DEMOTION_FORBIDDEN'
+          ? operationError(409, 'SELF_ADMIN_DEMOTION_FORBIDDEN', 'You cannot remove your own administrator role')
+          : error?.message === 'LAST_ACTIVE_ADMIN_REQUIRED'
+            ? operationError(409, 'LAST_ACTIVE_ADMIN_REQUIRED', 'At least one active administrator is required')
+            : error?.message === 'INVALID_USER_ROLE'
+              ? operationError(400, 'INVALID_USER_ROLE', 'Role is not supported')
+              : error;
       await this.finalizeFailure(audit, adminUserId, mapped);
       throw mapped;
     }

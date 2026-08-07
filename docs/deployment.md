@@ -34,7 +34,7 @@ Required outside tests:
 - `JWT_SECRET`
 
 Optional:
-- `PORT`, defaults to `3000`
+- `PORT`, defaults to `3001`
 - `NODE_ENV`, defaults to `development`; allowed values are `development`, `test`, `production`
 - `OPENAI_MODEL`, backward-compatible balanced-generation alias; defaults to `gpt-4o`
 - `OPENAI_ECONOMY_MODEL`, defaults to `gpt-4o-mini`
@@ -113,7 +113,7 @@ opening Checkout:
 ```bash
 stripe listen \
   --events checkout.session.completed,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted \
-  --forward-to localhost:3000/billing/webhook/stripe
+  --forward-to localhost:3001/billing/webhook/stripe
 ```
 
 Set `STRIPE_WEBHOOK_SECRET` to the signing secret printed by that listener and
@@ -148,6 +148,8 @@ verified webhook updates `user_subscriptions`.
 - `XENO_CANTO_API_BASE_URL`, required when using Xeno-canto ingestion clients
 - `XENO_CANTO_API_KEY`, required when using Xeno-canto ingestion clients
 - `WIKI_API_BASE_URL`, optional wiki lookup base URL
+- `GEOCODING_PROVIDER_URL`, optional open-geocoder base URL; defaults to the public Nominatim endpoint
+- `GEOCODING_USER_AGENT`, identifies this deployment to the geocoding provider; configure a deployment-specific contact value and follow the provider usage policy
 - `EXTERNAL_API_RATE_LIMIT_WINDOW_MS`, defaults to `60000`
 - `EXTERNAL_API_RATE_LIMIT_MAX_REQUESTS`, defaults to `40` and cannot exceed `40`
 - `HEAD_LINE_BIRDS` or `HOMEPAGE_BIRD_HIGHLIGHTS`, optional comma-separated homepage highlight bird names
@@ -176,33 +178,13 @@ provider callbacks into the normalized subscription sync shape.
 ## PostgreSQL
 The app expects tables and SQL helper functions from:
 ```text
-src/db/migrations/001_create_chat_interactions.sql
-src/db/migrations/002_create_functions.sql
-src/db/migrations/003_create_tour_reservations.sql
-src/db/migrations/004_create_vector_knowledge.sql
-src/db/migrations/005_create_users.sql
-src/db/migrations/006_add_user_ownership.sql
-src/db/migrations/007_save_conversation_metadata.sql
-src/db/migrations/008_create_usage_logs.sql
-src/db/migrations/009_add_user_roles.sql
-src/db/migrations/010_create_refresh_tokens.sql
-src/db/migrations/011_tours_seed_data.sql
-src/db/migrations/012_accent_insensitive_tour_search.sql
-src/db/migrations/013_expand_homepage_tours_response.sql
-src/db/migrations/014_create_tour_cart.sql
-src/db/migrations/015_reservations_refactor.sql
-src/db/migrations/016_create_bird_identifications.sql
-src/db/migrations/017_create_jobs.sql
-src/db/migrations/018_create_subscription_plans.sql
-src/db/migrations/019_add_user_profile_image.sql
-src/db/migrations/020_create_billing_events.sql
-src/db/migrations/021_create_billing_dashboard.sql
-src/db/migrations/022_fix_subscription_sync.sql
-src/db/migrations/023_create_experiment_assignments.sql
-src/db/migrations/024_create_ai_feature_economics.sql
+src/db/migrations/001_schema.sql
+src/db/migrations/002_seed.sql
+src/db/migrations/003_functions.sql
+src/db/migrations/004_tour_image_path.sql
 ```
 
-Run migrations in order with `psql`, Railway shell, or your deployment platform's database tooling before using chat memory, reservations, users, refresh-token sessions, usage logging, tour-location metadata, cart/reservation entry flows, bird-identification records, job polling, subscription plans, provider billing, profile images, or pgvector-backed RAG.
+Run all migration scripts in numeric order with `psql`, Railway shell, or your deployment platform's database tooling. `001_schema.sql` owns the complete empty-database structure, `002_seed.sql` installs deterministic Costa Rica reference data, plans, and sanitized development users, `003_functions.sql` installs executable database logic and its dependent triggers, and later migrations preserve deployed upgrade history.
 
 Production database connections default to `DATABASE_SSL_MODE=verify-full`,
 which verifies the certificate chain and hostname using the Node trust store.
@@ -277,10 +259,12 @@ exit code `0`; resource failure or hard timeout returns `1`.
 - External provider JSON exports are written to `src/ingestion/data` by `npm run enrich -- birds`. The eBird taxonomy export is incremental from the refreshed species list, eBird recent observations are fetched per species code from that list and written incrementally as a keyed `{ locations, lstDt }` summary. The enrich pipeline refreshes the species list monthly, taxonomy and Xeno-canto songs every six months, recent observations weekly, and iNaturalist images monthly.
 - RAG retrieval reads PostgreSQL `knowledge_documents` and `knowledge_chunks`; chat requests do not ingest files or write vectors.
 - Redis caches AI responses, semantic response candidates, embedding results, and RAG retrieval results when reachable. Cache misses or Redis errors fall back to OpenAI or pgvector, and PostgreSQL remains the source of truth for RAG.
-- Tour seed data begins in `003_create_tour_reservations.sql`; `011_tours_seed_data.sql` adds tour `node_id`, coordinates, start/end dates, and the `country`/`zone`/`node`/`birds`/`birds_by_node` reference tables for Costa Rica birding geography and target species.
+- `001_schema.sql` defines tour location and booking structure; `002_seed.sql` populates the `country`/`zone`/`node`/`birds`/`birds_by_node` reference graph and plans; `003_functions.sql` defines booking logic and triggers.
 - Tour reservation availability is durable PostgreSQL state and is updated transactionally by PostgreSQL functions.
 - Voice-chat generated speech responses are stored as MP3 objects under the S3 `voice-chat/` prefix. `POST /voice-chat` returns a relative `/files/voice-chat/...` URL, and `GET /files/:folderName/:filename` turns that relative key into a CloudFront URL using `CLOUDFRONT_BASE_URL`.
 - User profile images are stored as JPEG, PNG, or WebP objects under the S3 `user-profile-images/` prefix. Uploads are capped at 5 MB and the API persists only the object key.
+- `004_tour_image_path.sql` installs the image-path write contract, backfills hour-based durations, adds explicit hour/day units, clears flexible-only legacy schedule values, and backfills one occurrence for otherwise occurrence-less future scheduled tours.
+- Administrator-managed PNG images use immutable `tours/{uuid}.png` keys, a one-year immutable object cache policy, and a 5 MB cap. No CloudFront invalidation or query-string cache policy is required for replacements because every successful upload has a new path. The API also returns a stable database-update timestamp version for clients that preserve it.
 
 ## AI Observability
 Centralized AI telemetry lives under `src/observability`, `src/tracing`, and `src/monitoring`.
@@ -417,7 +401,7 @@ Store these values only in Railway variables and local `.env`; never commit
 credentials or expose them in API responses.
 
 ## Docker And Vercel
-No `Dockerfile`, `docker-compose.yml`, or `vercel.json` exists in the current tree. Add those only when there is an actual deployment target to support.
+`Dockerfile.local` supports local Redis development only. No production application `Dockerfile`, `docker-compose.yml`, or `vercel.json` exists in the current tree; add those only when there is an actual deployment target to support.
 
 ## Pre-Deploy Checks
 ```bash

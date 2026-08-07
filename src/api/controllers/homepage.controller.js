@@ -1,6 +1,7 @@
 import homepageService from '../../services/homepage.service.js';
 import { sendSuccess } from '../../utils/apiResponse.js';
 import HttpError from '../../utils/httpError.js';
+import { normalizeTourType, TOUR_TYPES } from '../../constants/tourTypes.js';
 
 function normalizeQueryValue(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -13,8 +14,15 @@ class HomepageController {
   }
 
   async handleGetTours(req, res) {
-    const tours = await homepageService.getFeaturedTours();
-    return sendSuccess(res, { tours });
+    const requestedType = normalizeQueryValue(req.query.type);
+    const type = requestedType ? normalizeTourType(requestedType) : null;
+    if (requestedType && !type) {
+      throw new HttpError(422, `type must be one of: ${TOUR_TYPES.join(', ')}`, {
+        code: 'validation_error',
+      });
+    }
+    const tours = await homepageService.getFeaturedTours({ type });
+    return sendSuccess(res, { tours, tourTypes: TOUR_TYPES });
   }
 
   async handleGetBirdHighlights(req, res) {

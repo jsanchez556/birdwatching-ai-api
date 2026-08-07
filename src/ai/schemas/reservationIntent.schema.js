@@ -12,7 +12,11 @@ const ReservationFieldSchema = z.enum([
 
 const ReservationIntentSchema = z.object({
   intent: z.enum([
+    'bird_information',
     'search',
+    'tour_recommendation',
+    'select_tour',
+    'select_date',
     'check_availability',
     'calculate_price',
     'create_reservation',

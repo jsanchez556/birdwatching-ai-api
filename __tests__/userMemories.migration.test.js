@@ -4,25 +4,30 @@ describe('user memory migration', () => {
   let sql;
 
   beforeAll(async () => {
-    sql = await readFile(new URL('../src/db/migrations/028_create_user_memories.sql', import.meta.url), 'utf8');
+    sql = (await Promise.all([
+      '001_schema.sql',
+      '003_functions.sql',
+    ].map((file) => readFile(new URL(`../src/db/migrations/${file}`, import.meta.url), 'utf8')))).join('\n');
   });
 
   it('creates a user-scoped, provenance-bearing, editable memory store', () => {
-    expect(sql).toContain('CREATE TABLE IF NOT EXISTS user_memories');
-    expect(sql).toContain('user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE');
-    expect(sql).toContain('source_message_id BIGINT REFERENCES messages(id) ON DELETE SET NULL');
-    expect(sql).toContain('confidence NUMERIC(4, 3)');
-    expect(sql).toContain('expires_at TIMESTAMPTZ');
-    expect(sql).toContain('is_user_editable BOOLEAN NOT NULL DEFAULT TRUE');
-    expect(sql).toContain('is_active BOOLEAN NOT NULL DEFAULT TRUE');
+    expect(sql).toMatch(/CREATE TABLE public\.user_memories/i);
+    expect(sql).toMatch(/user_id bigint NOT NULL/i);
+    expect(sql).toMatch(/user_memories_user_id_fkey FOREIGN KEY \(user_id\).*ON DELETE CASCADE/i);
+    expect(sql).toMatch(/source_message_id bigint/i);
+    expect(sql).toMatch(/user_memories_source_message_id_fkey.*ON DELETE SET NULL/i);
+    expect(sql).toMatch(/confidence numeric\(4,3\)/i);
+    expect(sql).toMatch(/expires_at timestamp with time zone/i);
+    expect(sql).toMatch(/is_user_editable boolean DEFAULT true NOT NULL/i);
+    expect(sql).toMatch(/is_active boolean DEFAULT true NOT NULL/i);
     expect(sql).toContain("'accessibility_requirements'");
     expect(sql).toContain("'budget_ranges'");
   });
 
   it('deduplicates active values and retrieves only active non-expired rows', () => {
-    expect(sql).toContain('CREATE UNIQUE INDEX IF NOT EXISTS idx_user_memories_active_fingerprint');
+    expect(sql).toMatch(/CREATE UNIQUE INDEX idx_user_memories_active_fingerprint/i);
     expect(sql).toContain('WHERE is_active = TRUE');
-    expect(sql).toContain('CREATE OR REPLACE FUNCTION get_active_user_memories');
+    expect(sql).toMatch(/CREATE FUNCTION public\.get_active_user_memories/i);
     expect(sql).toContain('um.expires_at > CURRENT_TIMESTAMP');
     expect(sql).toContain('ON CONFLICT (user_id, category, content_fingerprint) WHERE is_active = TRUE');
   });

@@ -2,7 +2,7 @@
 
 ## 1. Project overview
 
-This repository is the server-side AI and domain platform for Birdwatching AI. It serves a React client with grounded Costa Rica birding answers, multi-step tour and reservation assistance, asynchronous bird-image identification, voice conversation, account and billing workflows, and administrative operational views.
+This repository is the server-side AI and domain platform for a Costa Rica nature-tour experience. It serves a React client with multi-category outdoor tour discovery, grounded birding answers, reservations, bird-image identification, voice conversation, account and billing workflows, and administrative operations and data maintenance.
 
 The implementation is a Node.js 22/Express 5 application with a separately started BullMQ worker process. PostgreSQL is the durable source of truth; `pgvector` stores knowledge embeddings; Redis provides distributed rate-limit state, queue transport, and optional caches; OpenAI supplies text, embeddings, speech, and image analysis; S3/CloudFront holds public media; Stripe is the currently registered billing provider; LangSmith and PostHog are optional telemetry sinks.
 
@@ -21,6 +21,8 @@ Status is based on current code, migrations, tests, CI, and runtime configuratio
 | PostgreSQL/pgvector RAG | **Implemented, corpus-dependent** | Hybrid semantic/keyword retrieval, filters, context assembly, ingestion, embeddings, cache fallback, migrations, and tests exist. Useful grounding requires migrations plus ingested documents. |
 | Durable and short-term memory | **Implemented** | Owner-aware conversations/messages provide short-term history. Authenticated users also have conservative, source-linked structured memories in allowlisted categories; visitors do not. Anonymous continuity depends on a client-held conversation ID. |
 | Structured multi-tool orchestration | **Implemented** | Deterministic planning, schema/argument validation, registered tool handlers, intermediate state, retry policy, tracing, and transactional reservation tooling are tested. It is one agent with multi-step tools, not a distributed multi-agent system. |
+| Nature-tour catalog and maintenance | **Implemented** | Required activity categories, country-owned initial map center/zoom, public filtering, and admin CRUD for countries, zones, nodes, birds, assignments, and tours are backed by PostgreSQL migrations and protected REST endpoints. Tour coordinates are node-owned, synchronized by database triggers, and forward/reverse node location lookup is proxied through an admin-only open-geocoder adapter. |
+| Guide ownership and roles | **Implemented** | Owner-scoped My Tours APIs, legacy system inventory, suspended-owner public filtering, and audited administrator role changes are enforced server-side. |
 | Bird image identification | **Implemented** | Authenticated URL/upload intake, quota reservation, durable job records, BullMQ processing, uncertainty-aware structured output, polling, and tests exist. Queue/OpenAI/S3 configuration is required for the complete path. |
 | Voice chat | **Implemented, optional** | Raw MP3/WAV validation, STT, normal chat orchestration, TTS, S3 upload, media reference, tracing, and route tests exist. It is synchronous and non-streaming. |
 | Redis caching | **Implemented, optional for AI cache** | Exact response, semantic response, embedding, and retrieval caches are wired and tested; cache failures fall back to OpenAI or PostgreSQL. Redis is nevertheless required by queue and readiness wiring. |
@@ -163,7 +165,7 @@ The API never trusts frontend roles, quota state, feature availability, reservat
 | Ingestion | `POST /ingestions`, `GET /ingestions/:id` | Auth; current route does not require admin role |
 | Billing | Checkout, portal, usage, admin dashboard/economics/simulator, provider webhook | User/admin/public webhook as appropriate |
 | Feature availability | `GET /features/availability` | Public |
-| Admin operations | Metrics, users, subscriptions, queue/errors, job retry, feature control, suspension | Auth plus admin |
+| Admin operations | Metrics, users, subscriptions, queue/errors, job retry, feature control, suspension, and `PUT /admin/tours/:tourId/image` | Auth plus admin |
 
 JSON responses use `{ success, data, meta }`. Error middleware emits safe normalized failures and includes stack details only in server logs, not public responses. Chat streams named SSE events instead of the JSON envelope.
 
@@ -180,7 +182,7 @@ JSON responses use `{ success, data, meta }`. Error middleware emits safe normal
 
 ### Ingestion and storage
 
-Migration `004_create_vector_knowledge.sql` enables `vector` and creates `knowledge_documents` plus chunk embeddings and metadata/text indexes. Document ingestion:
+Migration `001_schema.sql` enables `vector` and creates `knowledge_documents` plus chunk embeddings and metadata/text indexes. Document ingestion:
 
 1. validates normalized JSON documents;
 2. persists document identity and metadata;
@@ -514,6 +516,53 @@ Gaps: the default suite does not prove live PostgreSQL/Redis/OpenAI/S3/Stripe/La
 
 S3/CloudFront, Stripe, LangSmith, PostHog, and external bird-data APIs are optional unless exercising their workflows.
 
+### Run Redis with Docker
+
+The local Redis image uses the lightweight Redis Alpine image, enables append-only persistence, and includes a health check. Build it from the repository root:
+
+```bash
+docker build -f Dockerfile.local -t birdwatching-redis-local .
+```
+
+Before starting the container, confirm that port `6379` is not already published by another Docker container:
+
+```bash
+docker ps --filter publish=6379 --format 'table {{.Names}}\t{{.Ports}}'
+```
+
+If the port is already in use, stop the conflicting container or service before continuing. Run Redis with its port bound only to the local machine and its data stored in a named volume:
+
+```bash
+docker run --name birdwatching-redis \
+  --restart unless-stopped \
+  -p 127.0.0.1:6379:6379 \
+  -v birdwatching-redis-data:/data \
+  -d birdwatching-redis-local
+```
+
+Verify that Redis responds:
+
+```bash
+redis-cli -h 127.0.0.1 -p 6379 ping
+```
+
+The expected response is `PONG`. The backend must use the matching local URL:
+
+```dotenv
+REDIS_URL=redis://localhost:6379
+```
+
+Manage the container with:
+
+```bash
+docker stop birdwatching-redis
+docker start birdwatching-redis
+docker restart birdwatching-redis
+docker rm birdwatching-redis
+```
+
+Run `docker rm` only after stopping the container. Removing the container does not remove the `birdwatching-redis-data` volume, so cached and queued Redis data survives container replacement. To intentionally erase that local data after removing the container, run `docker volume rm birdwatching-redis-data`.
+
 ### Install and configure
 
 ```bash
@@ -524,7 +573,7 @@ Create a local `.env` with at least:
 
 ```dotenv
 NODE_ENV=development
-PORT=3000
+PORT=3001
 OPENAI_API_KEY=replace-locally
 DATABASE_URL=postgresql://user:password@localhost:5432/birdwatching
 DATABASE_SSL_MODE=disable
@@ -560,7 +609,7 @@ npm run dev:api
 npm run dev:worker
 ```
 
-The React development proxy expects the API at `http://localhost:3000` by default.
+The React development proxy expects the API at `http://localhost:3001` by default.
 
 ### Optional corpus ingestion
 
@@ -596,7 +645,7 @@ Variables below are referenced by executable code/configuration. “Optional cap
 | Variable | Required | Used by | Purpose | Safe local default or notes |
 |---|---:|---|---|---|
 | `NODE_ENV` | No | Global config/TLS/logging | `development`, `test`, or `production` | `development`. |
-| `PORT` | No | API server | Listen port | `3000`. |
+| `PORT` | No | API server | Listen port | `3001`. |
 | `DATABASE_URL` | Yes | PostgreSQL pool | Durable application and vector database | No safe shared value; local PostgreSQL URL. |
 | `DATABASE_SSL_MODE` | Production | PostgreSQL TLS | `disable`, `require`, or `verify-full` | Development: `disable`; production default: `verify-full`. |
 | `DATABASE_SSL_CA_BASE64` | No | PostgreSQL TLS | Base64 private CA | Mutually exclusive with file; secret-store value. |

@@ -287,7 +287,7 @@ describe('AI observability service', () => {
       name: 'chat_completion',
       metadata: {
         model: 'gpt-4o-mini',
-        promptVersion: '2.3.0',
+        promptVersion: '2.4.0',
       },
       tokenUsage: (result) => result.usage,
       outputMetadata: () => ({
@@ -309,7 +309,7 @@ describe('AI observability service', () => {
       extra: {
         metadata: expect.objectContaining({
           model: 'gpt-4o-mini',
-          promptVersion: '2.3.0',
+          promptVersion: '2.4.0',
           estimatedCostUsd: 0.000027,
         }),
       },

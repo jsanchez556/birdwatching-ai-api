@@ -40,6 +40,32 @@ function buildParticipantCountAction(max = null) {
   };
 }
 
+function enumerateItineraryDates(startDate, endDate) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate || '') || !/^\d{4}-\d{2}-\d{2}$/.test(endDate || '')) return [];
+  const dates = [];
+  const cursor = new Date(`${startDate}T00:00:00.000Z`);
+  const end = new Date(`${endDate}T00:00:00.000Z`);
+  while (cursor <= end && dates.length < 367) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+function buildDateSelectionAction(result = {}, metadata = {}) {
+  const occurrenceDates = (result.availableDates || []).map((item) => item.date).filter(Boolean);
+  const flexibleDates = enumerateItineraryDates(
+    metadata.customerContext?.itineraryStartDate,
+    metadata.customerContext?.itineraryEndDate
+  );
+  return {
+    type: 'date_picker',
+    tourId: result.tourId,
+    prompt: `Choose a date for ${result.name}.`,
+    availableDates: result.tourType === 'scheduled' ? occurrenceDates : flexibleDates,
+  };
+}
+
 function buildConfirmReservationAction() {
   return {
     type: 'reservation_confirmation',
@@ -59,6 +85,90 @@ function buildTransportationPreferenceAction() {
       ['Yes, show transportation', 'show_transportation'],
       ['No, I have my own transportation', 'decline_transportation'],
     ]),
+  };
+}
+
+function getReservationValues(metadata = {}, args = {}) {
+  const state = metadata.reservationState || {};
+  return {
+    ...(state.confirmed || {}),
+    ...(state.proposed || {}),
+    ...args,
+  };
+}
+
+function buildReservationDetailsAction(result = {}, metadata = {}, args = {}) {
+  const values = getReservationValues(metadata, args);
+  const customerContext = metadata.customerContext || {};
+  const participantAction = buildParticipantCountAction(result.maxParticipants || result.availableSlots);
+  const dateAction = buildDateSelectionAction(result, metadata);
+  const transportationKnown = values.transportationRequired !== undefined
+    || Boolean(metadata.selectedTransportation || metadata.transportationDeclined);
+  const fields = [];
+
+  if (result.requiresDateSelection && !values.date) {
+    fields.push({
+      name: 'date',
+      type: 'date',
+      label: dateAction.prompt,
+      tourId: result.tourId,
+      availableDates: dateAction.availableDates,
+    });
+  }
+  if (!values.participants) {
+    fields.push({
+      name: 'participants',
+      type: 'select',
+      label: participantAction.prompt,
+      min: participantAction.min,
+      ...(participantAction.max ? { max: participantAction.max } : {}),
+      options: participantAction.options || [],
+    });
+  }
+  if (!transportationKnown) {
+    fields.push({
+      name: 'transportationRequired',
+      type: 'select',
+      label: 'Would you like transportation for this tour?',
+      options: toOptions([
+        ['Yes, I need transportation', true],
+        ['No, I have my own transportation', false],
+      ]),
+    });
+  }
+  if (values.transportationRequired === true && !values.pickupLocation) {
+    fields.push({
+      name: 'pickupLocation',
+      type: 'text',
+      label: 'Pickup location',
+    });
+  } else if (!transportationKnown) {
+    fields.push({
+      name: 'pickupLocation',
+      type: 'text',
+      label: 'Pickup location',
+      requiredWhen: { field: 'transportationRequired', equals: true },
+    });
+  }
+
+  const customerFields = [
+    ['customerName', 'text', 'Full name'],
+    ['customerEmail', 'email', 'Email'],
+    ['itineraryStartDate', 'date', 'Itinerary start date'],
+    ['itineraryEndDate', 'date', 'Itinerary end date'],
+  ];
+  customerFields.forEach(([name, type, label]) => {
+    if (!values[name] && !customerContext[name]) fields.push({ name, type, label });
+  });
+
+  if (fields.length === 0) return null;
+  if (fields.length === 1 && ['date', 'participants', 'transportationRequired'].includes(fields[0].name)) {
+    return null;
+  }
+  return {
+    type: 'reservation_details',
+    prompt: 'Please provide the remaining reservation details.',
+    fields,
   };
 }
 
@@ -155,23 +265,37 @@ export function appendToolResponseMetadata(metadata, toolName, result, args = {}
       location: result.location,
       pricePerPerson: result.pricePerPerson,
       availableSlots: result.availableSlots,
+      durationValue: result.durationValue,
+      durationUnit: result.durationUnit,
       durationHours: result.durationHours,
+      duration: result.duration,
       difficulty: result.difficulty,
+      type: result.type,
+      tourType: result.tourType,
+      maxParticipants: result.maxParticipants,
+      minimumPrice: result.minimumPrice,
+      occurrenceDates: result.occurrenceDates,
     };
     metadata.selectedTourId = result.tourId;
     if ([
       'select_tour', 'proceed_booking', 'transportation_selected', 'transportation_declined',
       'needs_clarification', 'needs_confirmation', 'needs_transportation_preference',
     ].includes(metadata.agentPlan?.status)) {
-      if (!args.participants) metadata.uiAction = buildParticipantCountAction(result.availableSlots);
-      else if (metadata.agentPlan?.status === 'needs_transportation_preference') {
-        metadata.uiAction = buildTransportationPreferenceAction();
-      } else if (
-        hasCompleteCustomerContext(metadata)
-        && (metadata.selectedTransportation || metadata.transportationDeclined)
-        && metadata.uiAction?.type !== 'transportation_selection'
-      ) {
-        metadata.uiAction = buildConfirmReservationAction();
+      const combinedDetailsAction = buildReservationDetailsAction(result, metadata, args);
+      const reservationValues = getReservationValues(metadata, args);
+      const transportationKnown = reservationValues.transportationRequired !== undefined
+        || Boolean(metadata.selectedTransportation || metadata.transportationDeclined);
+      const transportationResolved = reservationValues.transportationRequired === false
+        || Boolean(metadata.selectedTransportation || metadata.transportationDeclined);
+      if (metadata.uiAction?.type !== 'transportation_selection') {
+        if (combinedDetailsAction) metadata.uiAction = combinedDetailsAction;
+        else if (result.requiresDateSelection && !reservationValues.date) metadata.uiAction = buildDateSelectionAction(result, metadata);
+        else if (!reservationValues.participants) metadata.uiAction = buildParticipantCountAction(result.maxParticipants || result.availableSlots);
+        else if (!transportationKnown) metadata.uiAction = buildTransportationPreferenceAction();
+        else if (
+          hasCompleteCustomerContext(metadata)
+          && transportationResolved
+        ) metadata.uiAction = buildConfirmReservationAction();
       }
     }
   }

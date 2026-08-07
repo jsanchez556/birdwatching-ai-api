@@ -28,6 +28,7 @@ describe('tour recommendation structured contract', () => {
       recommendations: [{
         tourId: '12',
         tourName: 'Monteverde Quetzal Tour',
+        type: 'Birdwatching',
         location: 'Monteverde',
         estimatedPrice: { amount: 120, currency: 'USD' },
         matchReasons: ['Matches Monteverde', 'Fits moderate budget'],

@@ -35,6 +35,10 @@ class AdminOperationsRepository {
     return this.queries.unsuspendUser(input);
   }
 
+  changeUserRole(input) {
+    return this.queries.changeUserRole(input);
+  }
+
   getAiFeatureStates(input) {
     return this.featureQueries.getActiveDisables(input);
   }

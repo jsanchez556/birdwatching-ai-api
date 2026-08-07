@@ -25,7 +25,8 @@ export function includesAny(text, keywords) {
 
 export function extractParticipants(text) {
   const match = text.match(/\b(?:for|we are|group of|party of|spots? for|reserve)\s+(\d{1,2})\b/i)
-    || text.match(/\b(\d{1,2})\s+(?:people|persons|participants|guests|spots?)\b/i);
+    || text.match(/\b(\d{1,2})\s+(?:people|persons|participants|guests|spots?)\b/i)
+    || text.match(/\bparticipants?\s*:\s*(\d{1,2})\b/i);
   return match ? Number(match[1]) : undefined;
 }
 

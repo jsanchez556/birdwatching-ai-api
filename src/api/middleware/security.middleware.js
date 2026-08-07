@@ -3,7 +3,7 @@ import env from '../../config/env.js';
 import HttpError from '../../utils/httpError.js';
 
 const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
-const CORS_ALLOWED_METHODS = ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'];
+const CORS_ALLOWED_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
 
 export const securityHeaders = helmet({
   contentSecurityPolicy: false,

@@ -18,7 +18,7 @@ const EXPECTED_DEFAULT_ALLOWED_HEADERS = [
   'X-Customer-Context',
   'X-Conversation-Context',
 ];
-const EXPECTED_ALLOWED_METHODS = ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'];
+const EXPECTED_ALLOWED_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
 
 const BROWSER_PREFLIGHT_CASES = [
   {
@@ -43,6 +43,12 @@ const BROWSER_PREFLIGHT_CASES = [
     name: 'authenticated JSON PATCH',
     path: '/auth/profile',
     method: 'PATCH',
+    requestHeaders: ['authorization', 'content-type'],
+  },
+  {
+    name: 'authenticated multipart tour-image replacement',
+    path: '/admin/tours/7/image',
+    method: 'PUT',
     requestHeaders: ['authorization', 'content-type'],
   },
   {

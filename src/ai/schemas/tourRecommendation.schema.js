@@ -22,6 +22,7 @@ const EstimatedPriceSchema = z.object({
 const TourRecommendationItemSchema = z.object({
   tourId: z.string().trim().min(1),
   tourName: z.string().trim().min(1),
+  type: z.string().trim().min(1).optional(),
   location: z.string().trim().min(1),
   estimatedPrice: EstimatedPriceSchema,
   matchReasons: z.array(z.string().trim().min(3)).min(1),

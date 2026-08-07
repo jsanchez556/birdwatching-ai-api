@@ -231,14 +231,14 @@ describe('tool result compaction', () => {
   });
 
   it('defines expiring, conversation-scoped storage without a raw-result public endpoint', async () => {
-    const sql = await readFile(
-      new URL('../src/db/migrations/030_create_tool_result_references.sql', import.meta.url),
-      'utf8'
-    );
+    const sql = (await Promise.all([
+      '001_schema.sql',
+      '003_functions.sql',
+    ].map((file) => readFile(new URL(`../src/db/migrations/${file}`, import.meta.url), 'utf8')))).join('\n');
 
-    expect(sql).toContain('CREATE TABLE IF NOT EXISTS tool_result_references');
-    expect(sql).toContain('conversation_code TEXT NOT NULL');
-    expect(sql).toContain('expires_at TIMESTAMPTZ NOT NULL');
+    expect(sql).toMatch(/CREATE TABLE public\.tool_result_references/i);
+    expect(sql).toMatch(/conversation_code text NOT NULL/i);
+    expect(sql).toMatch(/expires_at timestamp with time zone NOT NULL/i);
     expect(sql).toContain('get_tool_result_reference');
     expect(sql).toContain('stored.conversation_code = p_conversation_code');
     expect(sql).toContain('stored.expires_at > CURRENT_TIMESTAMP');

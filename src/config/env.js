@@ -170,7 +170,7 @@ const billingProviders = (process.env.BILLING_PROVIDERS || 'stripe')
   .filter(Boolean);
 
 const env = {
-  port: Number(process.env.PORT) || 3000,
+  port: Number(process.env.PORT) || 3001,
   nodeEnv,
   openAiApiKey: process.env.OPENAI_API_KEY,
   aiModelIds: {
@@ -241,6 +241,11 @@ const env = {
   xenoCantoApiBaseUrl: process.env.XENO_CANTO_API_BASE_URL,
   xenoCantoApiKey: process.env.XENO_CANTO_API_KEY,
   wikiApiBaseUrl: process.env.WIKI_API_BASE_URL,
+  geocoding: {
+    baseUrl: (process.env.GEOCODING_PROVIDER_URL || 'https://nominatim.openstreetmap.org')
+      .replace(/\/+$/, ''),
+    userAgent: process.env.GEOCODING_USER_AGENT || 'birdwatching-ai-admin/1.0',
+  },
   cloudFrontBaseUrl: (process.env.CLOUDFRONT_BASE_URL || '').replace(/\/+$/, ''),
   s3: {
     region: process.env.S3_REGION,

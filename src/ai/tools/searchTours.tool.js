@@ -31,7 +31,11 @@ async function searchTours(args = {}, metadata = {}) {
       budget: args.budget,
       difficulty: args.difficulty,
       participants: args.participants,
+      date: args.date,
+      itineraryStartDate: args.itineraryStartDate || metadata.customerContext?.itineraryStartDate,
+      itineraryEndDate: args.itineraryEndDate || metadata.customerContext?.itineraryEndDate,
       limit: args.limit || 3,
+      type: args.type,
     });
   } else {
     result = await tourService.getAvailableTours({
@@ -39,6 +43,7 @@ async function searchTours(args = {}, metadata = {}) {
       difficulty: args.difficulty,
       maxPrice: args.maxPrice,
       participants: args.participants,
+      type: args.type,
     });
   }
 

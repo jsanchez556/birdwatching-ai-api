@@ -39,11 +39,11 @@ function validateMissingFieldConsistency(result) {
   const requiredNullFields = [];
   const hasTourSelector = result.tourId !== null || result.location !== null;
 
-  if (['check_availability', 'calculate_price', 'create_reservation'].includes(result.intent)
+  if (['select_tour', 'check_availability', 'calculate_price', 'create_reservation'].includes(result.intent)
     && !hasTourSelector) {
     requiredNullFields.push('tourId', 'location');
   }
-  if (['check_availability', 'create_reservation'].includes(result.intent) && result.date === null) {
+  if (['select_date', 'check_availability', 'create_reservation'].includes(result.intent) && result.date === null) {
     requiredNullFields.push('date');
   }
   if (['calculate_price', 'create_reservation'].includes(result.intent)

@@ -36,7 +36,12 @@ describe('TourQueries', () => {
         available_slots: 5,
         location: 'Monteverde',
         duration_hours: 4,
+        duration_value: 2,
+        duration_unit: 'days',
+        zone_rank: 3,
         difficulty: 'moderate',
+        image_path: 'tours/11111111-1111-4111-8111-111111111111.png',
+        image_updated_at: '2026-09-03T23:20:00.000Z',
       }],
     });
 
@@ -44,6 +49,12 @@ describe('TourQueries', () => {
       id: 1,
       price: 120,
       availableSlots: 5,
+      durationValue: 2,
+      durationUnit: 'days',
+      durationHours: 48,
+      zoneRank: 3,
+      imagePath: 'tours/11111111-1111-4111-8111-111111111111.png',
+      imageVersion: '1788477600000',
     });
     expect(mockQuery).toHaveBeenCalledWith(
       expect.stringContaining('get_tour_by_id'),
@@ -70,13 +81,18 @@ describe('TourQueries', () => {
     })).resolves.toHaveLength(1);
     expect(mockQuery).toHaveBeenCalledWith(
       expect.stringContaining('get_available_tours'),
-      ['Monteverde', null, null, 2]
+      ['Monteverde', null, null, 2, null]
     );
+    expect(mockQuery.mock.calls[0][0]).toMatch(/created_by_user_id IS NULL OR owner\.suspended_at IS NULL/);
+    expect(mockQuery.mock.calls[0][0]).toContain('tours.image_path');
+    expect(mockQuery.mock.calls[0][0]).toContain('tours.updated_at AS image_updated_at');
+    expect(mockQuery.mock.calls[0][0]).toContain('zone.rank AS zone_rank');
+    expect(mockQuery.mock.calls[0][0]).toContain('ORDER BY zone.rank ASC NULLS LAST');
   });
 
   it('keeps available tour location matching accent-insensitive in SQL', () => {
     const migration = fs.readFileSync(
-      path.resolve(__dirname, '../src/db/migrations/012_accent_insensitive_tour_search.sql'),
+      path.resolve(__dirname, '../src/db/migrations/003_functions.sql'),
       'utf8'
     );
 
@@ -84,12 +100,8 @@ describe('TourQueries', () => {
     expect(migration).toContain('translate(');
     expect(migration).toContain('ÍÌÎÏíìîï');
     expect(migration).toContain('IIIIiiii');
-    expect(migration).toContain('normalized_location TEXT := normalize_search_text(p_location)');
-    expect(migration).toContain('normalize_search_text(tour_node.name)');
-    expect(migration).toContain('normalize_search_text(parent_node.name)');
-    expect(migration).toContain('normalize_search_text(z.name)');
-    expect(migration).toContain('normalize_search_text(t.name)');
-    expect(migration).toContain('LIKE \'%\' || normalized_location || \'%\'');
+    expect(migration).toContain("normalize_search_text(g.name || ' ' || g.location");
+    expect(migration).toContain("LIKE '%' || normalize_search_text(p_location) || '%'");
   });
 
   it('validates tour selection through a PostgreSQL function', async () => {
@@ -121,5 +133,6 @@ describe('TourQueries', () => {
       expect.stringContaining('select_tour'),
       [1, 2]
     );
+    expect(mockQuery.mock.calls[0][0]).toMatch(/owner\.suspended_at IS NULL/);
   });
 });

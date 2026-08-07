@@ -1779,7 +1779,7 @@ describe('multi-tool agent planning and orchestration', () => {
     }));
   });
 
-  it('returns a participant-count action for selected tours without participant count', async () => {
+  it('asks once for every missing reservation detail after tour selection', async () => {
     const executor = new ToolExecutor({
       checkAvailability: jest.fn().mockResolvedValue({
         success: true,
@@ -1807,24 +1807,115 @@ describe('multi-tool agent planning and orchestration', () => {
       steps: [{ tool: 'checkAvailability', args: { tourId: 2 } }],
     }, metadata);
 
-    expect(metadata.uiAction).toEqual({
-      type: 'participant_count',
-      prompt: 'How many participants should I reserve?',
-      min: 1,
-      max: 3,
-      options: [
-        { label: '1', value: 1 },
-        { label: '2', value: 2 },
-        { label: '3', value: 3 },
-      ],
-    });
+    expect(metadata.uiAction).toEqual(expect.objectContaining({
+      type: 'reservation_details',
+      prompt: 'Please provide the remaining reservation details.',
+      fields: expect.arrayContaining([
+        expect.objectContaining({
+          name: 'participants',
+          type: 'select',
+          max: 3,
+        }),
+        expect.objectContaining({
+          name: 'transportationRequired',
+          type: 'select',
+        }),
+        expect.objectContaining({
+          name: 'pickupLocation',
+          requiredWhen: { field: 'transportationRequired', equals: true },
+        }),
+      ]),
+    }));
     expect(metadata.selectedTour).toMatchObject({
       tourId: 2,
       name: 'Sarapiqui Rainforest Tour',
     });
   });
 
-  it('asks for transportation preference when selected tour and customer context are complete but preference is unknown', async () => {
+  it('moves a complete combined details reply to confirmation without re-asking', () => {
+    const planner = new ToolPlanner();
+    const plan = planner.plan({
+      message: 'I want to complete the reservation. Date: 2026-05-24. Participants: 2. Transportation required: no; I have my own transportation.',
+      context: {
+        selectedTourId: 2,
+        reservationIntent: {
+          intent: 'create_reservation',
+          tourId: null,
+          location: null,
+          date: '2026-05-24',
+          participants: 2,
+          transportationRequired: false,
+          pickupLocation: null,
+          discountCode: null,
+        },
+        reservationState: {
+          proposed: {
+            tourId: 2,
+            date: '2026-05-24',
+            participants: 2,
+            transportationRequired: false,
+            customerName: 'Jose Sanchez',
+            customerEmail: 'jose@example.com',
+            itineraryStartDate: '2026-05-23',
+            itineraryEndDate: '2026-05-26',
+          },
+          confirmed: {},
+          status: 'collecting_information',
+        },
+      },
+    });
+
+    expect(plan.status).toBe('transportation_declined');
+    expect(plan.transportationDeclined).toBe(true);
+    expect(plan.steps.map((step) => step.tool)).toEqual(['checkAvailability', 'calculatePricing']);
+    expect(plan.message).toContain('final reservation confirmation');
+  });
+
+  it('returns confirmation after combined details when transportation decline exists only in structured state', async () => {
+    const executor = new ToolExecutor({
+      checkAvailability: jest.fn().mockResolvedValue({
+        success: true,
+        tourId: 2,
+        name: 'Sarapiqui Rainforest Tour',
+        location: 'Sarapiqui',
+        availableSlots: 3,
+        maxParticipants: 3,
+        requiresDateSelection: false,
+      }),
+    });
+    const metadata = {
+      conversationId: 'conversation-123',
+      agentPlan: { status: 'needs_confirmation' },
+      reservationState: {
+        proposed: {
+          date: '2026-05-24',
+          participants: 2,
+          transportationRequired: false,
+        },
+        confirmed: {},
+      },
+      customerContext: {
+        customerName: 'Jose Sanchez',
+        customerEmail: 'jose@example.com',
+        itineraryStartDate: '2026-05-23',
+        itineraryEndDate: '2026-05-26',
+      },
+    };
+
+    await executor.executePlan({
+      steps: [{ tool: 'checkAvailability', args: { tourId: 2 } }],
+    }, metadata);
+
+    expect(metadata.uiAction).toEqual(expect.objectContaining({
+      type: 'reservation_confirmation',
+      prompt: 'Confirm this reservation?',
+      options: expect.arrayContaining([
+        expect.objectContaining({ value: 'confirm_reservation' }),
+      ]),
+    }));
+  });
+
+  it('asks for transportation preference and conditional pickup in one action', async () => {
     const executor = new ToolExecutor({
       checkAvailability: jest.fn().mockResolvedValue({
         success: true,
@@ -1853,11 +1944,13 @@ describe('multi-tool agent planning and orchestration', () => {
     }, metadata);
 
     expect(metadata.uiAction).toEqual(expect.objectContaining({
-      type: 'choice',
-      prompt: 'Would you like transportation for this tour?',
-      options: expect.arrayContaining([
-        expect.objectContaining({ value: 'show_transportation' }),
-        expect.objectContaining({ value: 'decline_transportation' }),
+      type: 'reservation_details',
+      fields: expect.arrayContaining([
+        expect.objectContaining({ name: 'transportationRequired' }),
+        expect.objectContaining({
+          name: 'pickupLocation',
+          requiredWhen: { field: 'transportationRequired', equals: true },
+        }),
       ]),
     }));
   });
@@ -2122,6 +2215,85 @@ describe('multi-tool agent planning and orchestration', () => {
       expect.objectContaining({
         onChunk: expect.any(Function),
       })
+    );
+  });
+
+  it('accepts plain Confirm only after the prior reservation confirmation action', async () => {
+    const executor = {
+      executePlan: jest.fn().mockResolvedValue({ success: true, steps: [], errors: [] }),
+    };
+    const stateService = {
+      processMessage: jest.fn().mockResolvedValue({
+        success: true,
+        state: {
+          version: 4,
+          status: 'ready_for_confirmation',
+          proposed: {},
+          confirmed: {
+            tourId: 3,
+            date: '2026-06-17',
+            participants: 2,
+            transportationRequired: false,
+            customerName: 'Jose Sanchez',
+            customerEmail: 'jose@example.com',
+            itineraryStartDate: '2026-06-15',
+            itineraryEndDate: '2026-06-18',
+          },
+        },
+      }),
+    };
+    const intentExtractor = createValidIntentExtractor('unknown');
+    const aiClient = {
+      streamChatCompletion: jest.fn().mockResolvedValue('Your reservation is confirmed.'),
+    };
+    const orchestrator = new AgentOrchestrator({
+      agent: { planner: new ToolPlanner(), executor },
+      aiClient,
+      intentExtractor,
+      stateService,
+    });
+    const metadata = {
+      conversationId: 'conversation-123',
+      userId: 'user-1',
+      customerContext: {
+        customerName: 'Jose Sanchez',
+        customerEmail: 'jose@example.com',
+        itineraryStartDate: '2026-06-15',
+        itineraryEndDate: '2026-06-18',
+      },
+      conversationContext: {
+        recentAssistantMetadata: {
+          selectedTourId: 3,
+          selectedTour: { tourId: 3, name: 'Arenal Observatory Birdwatching Tour' },
+          participants: 2,
+          transportationDeclined: true,
+          uiAction: {
+            type: 'reservation_confirmation',
+            prompt: 'Confirm this reservation?',
+            options: [
+              { label: 'Confirm reservation', value: 'confirm_reservation' },
+              { label: 'Cancel', value: 'cancel_reservation' },
+            ],
+          },
+        },
+      },
+    };
+
+    await orchestrator.generateResponse([
+      { role: 'system', content: 'System prompt' },
+      { role: 'user', content: 'Confirm' },
+    ], metadata);
+
+    expect(stateService.processMessage).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'Confirm',
+      confirm: true,
+    }));
+    expect(executor.executePlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'ready',
+        steps: expect.arrayContaining([expect.objectContaining({ tool: 'createReservation' })]),
+      }),
+      expect.any(Object)
     );
   });
 
@@ -2476,5 +2648,60 @@ describe('multi-tool agent planning and orchestration', () => {
       'Birdwatching agent final prompt assembled',
       expect.objectContaining({ conversationId: 'conversation-123', hasToolContext: true })
     );
+  });
+});
+
+describe('intent separation', () => {
+  it('answers a new bird question without reusing earlier booking context', () => {
+    const plan = new ToolPlanner().plan({
+      message: 'Tell me about the Resplendent Quetzal habitat and diet.',
+      context: { selectedTourId: 4, reservationState: { status: 'collecting_information', proposed: { tourId: 4 }, confirmed: {} } },
+    });
+
+    expect(plan).toMatchObject({ status: 'bird_information', steps: [] });
+  });
+
+  it('recommends tours before collecting booking details when no exact tour is selected', () => {
+    const plan = new ToolPlanner().plan({
+      message: 'I want to book a tour for 3 people near Guanacaste',
+      context: {},
+    });
+
+    expect(plan.status).toBe('tour_recommendations_before_selection');
+    expect(plan.steps).toEqual([
+      expect.objectContaining({ tool: 'searchTours', args: expect.objectContaining({ participants: 3, limit: 3, recommend: true }) }),
+    ]);
+  });
+
+  it('never searches for alternatives when a featured-tour entry confirms the exact tour', () => {
+    const plan = new ToolPlanner().plan({
+      message: 'I would like to reserve Direct Reserve Tour.',
+      context: {
+        selectedTourId: 16,
+        selectedTour: { tourId: 16, name: 'Direct Reserve Tour', location: 'Monteverde' },
+        recentTours: [{ tourId: 16, name: 'Direct Reserve Tour', location: 'Monteverde' }],
+        recentMetadata: {
+          conversationType: 'reservation_entry',
+          conversationSource: 'featured_tour',
+          selectedTourId: 16,
+        },
+        reservationIntent: {
+          intent: 'tour_recommendation',
+          tourId: null,
+          location: 'Direct Reserve Tour',
+          date: null,
+          participants: null,
+        },
+      },
+    });
+
+    expect(plan).toMatchObject({
+      status: 'select_tour',
+      steps: [expect.objectContaining({
+        tool: 'checkAvailability',
+        args: expect.objectContaining({ tourId: 16, tourName: 'Direct Reserve Tour' }),
+      })],
+    });
+    expect(plan.steps.some((step) => step.tool === 'searchTours')).toBe(false);
   });
 });

@@ -11,13 +11,12 @@ reservation state.
 ## Storage
 Table: `conversations`
 
-Defined in `src/db/migrations/001_create_chat_interactions.sql` and extended
-by later migrations.
+Defined in `src/db/migrations/001_schema.sql`.
 
 Columns:
 - `id`
 - `conversation_id`
-- `user_id`, converted to `BIGINT` in `006_add_user_ownership.sql` and referencing `users(id)` with `ON DELETE SET NULL`
+- `user_id`, referencing `users(id)` with `ON DELETE SET NULL`
 - `title`
 - `last_message_at`
 - `metadata`, JSONB defaulting to `{}` and used for frontend-safe chat-level state
@@ -27,7 +26,7 @@ Columns:
 
 Table: `messages`
 
-Defined in `src/db/migrations/001_create_chat_interactions.sql`.
+Defined in `src/db/migrations/001_schema.sql`.
 
 Columns:
 - `id`
@@ -38,7 +37,7 @@ Columns:
 
 Table: `conversation_summaries`
 
-Added by `026_create_conversation_summaries.sql`. Summary rows are immutable
+Defined in `001_schema.sql`. Summary rows are immutable
 and versioned per conversation. They store the validated structured JSON,
 schema/prompt version, cumulative compacted message-row IDs, source token
 count, previous summary version, and creation time. Original `messages` rows
@@ -49,15 +48,11 @@ Indexes:
 - `idx_messages_created_at`
 - `idx_messages_conversation_created_at`
 
-SQL helper functions are defined in `src/db/migrations/002_create_functions.sql`.
-Query modules call those functions instead of embedding most persistence SQL directly.
-`006_add_user_ownership.sql` replaces the conversation helpers with
-owner-aware signatures, and `007_save_conversation_metadata.sql` replaces
-`save_message(...)` again so chat-level JSONB metadata is merged into
-`conversations.metadata` when an exchange is saved. `015_reservations_refactor.sql`
-adds queryable conversation type/source columns and updates `save_message(...)`
-to copy those values from safe metadata while preserving reservation-entry chat
-state.
+SQL helper functions are defined in `src/db/migrations/003_functions.sql`.
+Query modules call those functions instead of embedding persistence writes.
+The owner-aware `save_message(...)` contract merges chat-level JSONB metadata
+into `conversations.metadata` and copies queryable conversation type/source
+values while preserving reservation-entry chat state.
 
 ## Write Behavior
 `conversation.service.saveExchange(...)` writes one row per user/assistant exchange after OpenAI returns a chat response.
@@ -92,7 +87,7 @@ For client retrieval:
 
 Reservation operational state is stored separately from transcripts and summaries as documented in [Durable Reservation Conversation State](./reservation-state.md). Conversation history may help the model converse naturally, but it is not an operational booking source of truth.
 
-Migration `028_create_user_memories.sql` adds `user_memories`. Each row belongs
+`001_schema.sql` defines `user_memories`. Each row belongs
 to one authenticated user and contains an allowlisted category, concise
 content, confidence, source message ID, creation/optional expiration timestamp,
 and user-editable flag. An active-content fingerprint makes repeated identical
@@ -100,7 +95,7 @@ extraction idempotent. Explicit corrections create a new row and mark only
 identified same-category rows inactive with `superseded_by_id`, preserving the
 old record without injecting it into future prompts.
 
-Migration `029_add_user_memory_conflict_resolution.sql` adds a semantic
+The consolidated schema includes a semantic
 `conflict_key`, resolution reason, and supersession timestamp. A correction is
 promoted only when incompatible memories share a category/axis and the current
 message contains explicit correction language such as "actually", "now",

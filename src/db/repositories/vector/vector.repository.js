@@ -1,13 +1,5 @@
-import { readFile } from 'fs/promises';
-import { fileURLToPath } from 'url';
-import path from 'path';
 import pool from '../../pool.js';
 import logger from '../../../utils/logger.js';
-
-const schemaPath = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  'vector.schema.sql'
-);
 
 const DEFAULT_SEMANTIC_WEIGHT = 0.75;
 const DEFAULT_KEYWORD_WEIGHT = 0.25;
@@ -191,9 +183,17 @@ function buildFilterClause(filters = {}) {
 class VectorRepository {
   async initializeSchema() {
     try {
-      const schemaSql = await readFile(schemaPath, 'utf8');
-      await pool.query(schemaSql);
-      logger.info('Vector knowledge schema initialized');
+      const result = await pool.query(`
+        SELECT
+          to_regclass('public.knowledge_documents') IS NOT NULL AS documents_ready,
+          to_regclass('public.knowledge_chunks') IS NOT NULL AS chunks_ready,
+          EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') AS vector_ready
+      `);
+      const readiness = result.rows[0] || {};
+      if (!readiness.documents_ready || !readiness.chunks_ready || !readiness.vector_ready) {
+        throw new Error('Vector knowledge schema is not initialized; apply database migrations first');
+      }
+      logger.info('Vector knowledge schema verified');
     } catch (error) {
       logger.error('Failed to initialize vector knowledge schema', {
         error: error.message,
@@ -204,35 +204,9 @@ class VectorRepository {
 
   async upsertDocument(document) {
     const query = `
-      INSERT INTO knowledge_documents (
-        external_id,
-        title,
-        content,
-        source,
-        document_type,
-        category,
-        locale,
-        tags,
-        metadata,
-        content_hash,
-        active,
-        updated_at
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::text[], $9::jsonb, $10, $11, CURRENT_TIMESTAMP)
-      ON CONFLICT (external_id) DO UPDATE
-      SET
-        title = EXCLUDED.title,
-        content = EXCLUDED.content,
-        source = EXCLUDED.source,
-        document_type = EXCLUDED.document_type,
-        category = EXCLUDED.category,
-        locale = EXCLUDED.locale,
-        tags = EXCLUDED.tags,
-        metadata = EXCLUDED.metadata,
-        content_hash = EXCLUDED.content_hash,
-        active = EXCLUDED.active,
-        updated_at = CURRENT_TIMESTAMP
-      RETURNING *;
+      SELECT * FROM upsert_knowledge_document(
+        $1, $2, $3, $4, $5, $6, $7, $8::text[], $9::jsonb, $10, $11
+      );
     `;
 
     const result = await pool.query(query, [
@@ -335,41 +309,18 @@ class VectorRepository {
   }
 
   async replaceDocumentChunks(documentId, chunks) {
-    const client = await pool.connect();
+    const normalizedChunks = chunks.map((chunk) => ({
+      chunk_index: chunk.index,
+      content: chunk.content,
+      token_count: chunk.tokenCount || null,
+      metadata: chunk.metadata || {},
+      embedding: toVectorLiteral(chunk.embedding),
+    }));
 
-    try {
-      await client.query('BEGIN');
-      await client.query('DELETE FROM knowledge_chunks WHERE document_id = $1', [documentId]);
-
-      for (const chunk of chunks) {
-        await client.query(`
-          INSERT INTO knowledge_chunks (
-            document_id,
-            chunk_index,
-            content,
-            token_count,
-            metadata,
-            embedding,
-            updated_at
-          )
-          VALUES ($1, $2, $3, $4, $5::jsonb, $6::vector, CURRENT_TIMESTAMP);
-        `, [
-          documentId,
-          chunk.index,
-          chunk.content,
-          chunk.tokenCount || null,
-          JSON.stringify(chunk.metadata || {}),
-          toVectorLiteral(chunk.embedding),
-        ]);
-      }
-
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    await pool.query(
+      'SELECT replace_knowledge_chunks($1, $2::jsonb)',
+      [documentId, JSON.stringify(normalizedChunks)]
+    );
   }
 
   async searchSimilar(embedding, options = {}) {

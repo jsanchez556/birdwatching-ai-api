@@ -1,9 +1,55 @@
 import adminService from '../../services/admin/admin.service.js';
 import adminOperationsService from '../../services/admin/adminOperations.service.js';
 import modelRoutingService from '../../services/admin/modelRouting.service.js';
+import adminMaintenanceService from '../../services/admin/adminMaintenance.service.js';
+import locationSearchService from '../../services/admin/locationSearch.service.js';
+import tourImageService from '../../services/admin/tourImage.service.js';
 import { sendSuccess } from '../../utils/apiResponse.js';
 
 class AdminController {
+  async searchLocations(req, res) {
+    if (req.query.latitude !== undefined || req.query.longitude !== undefined) {
+      const result = await locationSearchService.reverse(req.query);
+      return sendSuccess(res, { items: result ? [result] : [] });
+    }
+    return sendSuccess(res, {
+      items: await locationSearchService.search(req.query),
+    });
+  }
+
+  async listMaintenance(req, res) {
+    const result = await adminMaintenanceService.list(req.params.resource, req.query);
+    return sendSuccess(res, result.data, result.meta);
+  }
+
+  async getMaintenance(req, res) {
+    return sendSuccess(res, await adminMaintenanceService.getById(req.params.resource, req.params.id));
+  }
+
+  async createMaintenance(req, res) {
+    const result = await adminMaintenanceService.create(req.params.resource, req.body, {
+      authUser: req.user,
+    });
+    return sendSuccess(res, result, {}, 201);
+  }
+
+  async updateMaintenance(req, res) {
+    return sendSuccess(res, await adminMaintenanceService.update(
+      req.params.resource, req.params.id, req.body
+    ));
+  }
+
+  async deleteMaintenance(req, res) {
+    return sendSuccess(res, await adminMaintenanceService.remove(req.params.resource, req.params.id));
+  }
+
+  async replaceTourImage(req, res) {
+    return sendSuccess(res, await tourImageService.replace({
+      tourId: req.params.tourId,
+      imageUpload: req.imageUpload,
+    }));
+  }
+
   async getOverview(req, res) {
     return sendSuccess(res, await adminService.getOverview(req.query));
   }
@@ -101,6 +147,14 @@ class AdminController {
     return sendSuccess(res, await adminOperationsService.unsuspendUser({
       adminUserId: Number(req.user.id),
       userId: req.body.userId,
+    }));
+  }
+
+  async changeUserRole(req, res) {
+    return sendSuccess(res, await adminOperationsService.changeUserRole({
+      adminUserId: Number(req.user.id),
+      userId: req.body.userId,
+      role: req.body.role,
     }));
   }
 }

@@ -26,6 +26,14 @@ Back to [Project Context](../CONTEXT.md). See [Memory](./memory.md) for how chat
 
 Prompt modules export both content and a semantic prompt version. Keep version changes intentional and loggable.
 
+Chat prompt version `2.5.0` broadens discovery from birdwatching-only tours to
+the maintained nature-tour categories while retaining database-grounded tool
+behavior. It also requires reservation intake to request every
+currently missing field in one turn. Known values from customer context,
+conversation context, and durable proposed or confirmed reservation state are
+not requested again; follow-up questions are reserved for missing, invalid,
+unavailable, or ambiguous responses.
+
 User memory prompt version `1.1.0` permits only explicit, stable, safe,
 cross-session information in six allowlisted categories. Model output remains
 untrusted: service validation enforces confidence, safety, editability, lexical
@@ -191,12 +199,17 @@ Structured extraction does not validate tour existence, dates, capacity,
 authorization, transportation rules, pricing, or discounts; the existing
 backend services and database remain authoritative for those rules.
 
-Tour discovery should happen before booking: use `searchTours` to list or
-recommend database-backed tours, return tour details through stream `done` event
-metadata, ask the user to select a specific tour by ID or clear/partial name,
-then check availability, estimate transportation when requested, price, and
-create the reservation. When tours are returned, the assistant text should be
-minimal, for example: `I found 2 tours that match your preferences.`
+Tour discovery should happen before booking: use `searchTours` to return three
+ranked eligible tours whenever possible, clearly mark weaker alternatives, and
+ask the user to select a specific tour by ID or exact normalized name. After
+selection, require an explicit backend-validated date, then check availability,
+estimate transportation when requested, price, and create the reservation.
+Bird-information questions are answered directly and never inherit an earlier
+booking intent merely because the conversation already contains a selected tour.
+An authenticated `featured_tour` reservation entry is an explicit structured
+selection: even if message-only extraction labels its initial sentence as a
+recommendation request, planning must use that exact tour, skip `searchTours`,
+and proceed only through missing date/details and authoritative availability.
 
 Recommendation-mode tool results are assembled and Zod-validated at the
 application boundary as `done.meta.tourRecommendation`. Tour identifiers,
@@ -229,7 +242,7 @@ event `meta` object for debugging and prompt experiments:
 ```json
 {
   "promptVersions": {
-    "chat": "2.3.0"
+    "chat": "2.4.0"
   }
 }
 ```

@@ -11,6 +11,7 @@ async function checkAvailability(args = {}, metadata = {}) {
       values: {
         tourId: result.tourId,
         ...(args.participants ? { participants: args.participants } : {}),
+        ...(result.selectedDate ? { date: result.selectedDate } : {}),
       },
       sourceId: metadata.aiTraceId || metadata.parentTraceId,
     });

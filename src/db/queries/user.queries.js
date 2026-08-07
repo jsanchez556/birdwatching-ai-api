@@ -43,13 +43,9 @@ class UserQueries {
   async create({ email, name, passwordHash }) {
     try {
       const query = `
-        WITH inserted AS (
-          INSERT INTO users (email, name, password_hash)
-          VALUES ($1, $2, $3)
-          RETURNING id
-        )
         ${USER_SELECT}
-        INNER JOIN inserted ON inserted.id = users.id
+        INNER JOIN create_user($1, $2, $3) AS inserted
+          ON inserted.id = users.id
       `;
       const result = await pool.query(query, [email, name || null, passwordHash]);
       return mapUser(result.rows[0]);

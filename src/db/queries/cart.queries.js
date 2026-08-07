@@ -1,8 +1,14 @@
 import pool from '../pool.js';
 import logger from '../../utils/logger.js';
+import { normalizeTourDuration } from '../../utils/tourDuration.utils.js';
 
 function mapCartItem(row) {
   if (!row) return null;
+  const duration = normalizeTourDuration({
+    durationValue: row.tour_duration_value,
+    durationUnit: row.tour_duration_unit,
+    durationHours: row.tour_duration_hours,
+  });
 
   return {
     id: Number(row.id),
@@ -25,7 +31,12 @@ function mapCartItem(row) {
       subnode: row.tour_subnode,
       zone: row.tour_zone,
       durationHours: Number(row.tour_duration_hours),
+      durationValue: duration.durationValue,
+      durationUnit: duration.durationUnit,
+      duration: duration.duration,
       difficulty: row.tour_difficulty,
+      type: row.tour_activity_type || 'Birdwatching',
+      tourType: row.tour_type || 'unscheduled',
     },
   };
 }
@@ -48,7 +59,12 @@ export class CartQueries {
   async getCart(userId) {
     try {
       const itemsResult = await pool.query(
-        'SELECT * FROM get_tour_cart_items($1)',
+        `SELECT items.*, tours.type AS tour_activity_type, tours.tour_type,
+           tours.duration_value AS tour_duration_value, tours.duration_unit AS tour_duration_unit
+         FROM get_tour_cart_items($1) items JOIN tours ON tours.id = items.tour_id
+         LEFT JOIN users owner ON owner.id = tours.created_by_user_id
+         WHERE tours.is_active = true
+           AND (tours.created_by_user_id IS NULL OR owner.suspended_at IS NULL)`,
         [userId]
       );
 
@@ -63,7 +79,14 @@ export class CartQueries {
   }
 
   async addItem({ userId, tourId, scheduledDate = null, participants = 1, needsTransportation = null, metadata = {} }) {
-    const result = await pool.query('SELECT * FROM upsert_tour_cart_item($1, $2, $3, $4, $5, $6::jsonb)', [
+    const result = await pool.query(`
+      SELECT item.*, tours.type AS tour_activity_type, tours.tour_type,
+        tours.duration_value AS tour_duration_value, tours.duration_unit AS tour_duration_unit
+      FROM upsert_tour_cart_item($1, $2, $3, $4, $5, $6::jsonb) item
+      JOIN tours ON tours.id = item.tour_id
+      LEFT JOIN users owner ON owner.id = tours.created_by_user_id
+      WHERE tours.is_active = true
+        AND (tours.created_by_user_id IS NULL OR owner.suspended_at IS NULL)`, [
       userId,
       tourId,
       scheduledDate,
@@ -77,7 +100,13 @@ export class CartQueries {
 
   async updateItem({ userId, itemId, scheduledDate, participants, needsTransportation }) {
     const result = await pool.query(
-      'SELECT * FROM update_tour_cart_item($1, $2, $3, $4, $5)',
+      `SELECT item.*, tours.type AS tour_activity_type, tours.tour_type,
+         tours.duration_value AS tour_duration_value, tours.duration_unit AS tour_duration_unit
+       FROM update_tour_cart_item($1, $2, $3, $4, $5) item
+       JOIN tours ON tours.id = item.tour_id
+       LEFT JOIN users owner ON owner.id = tours.created_by_user_id
+       WHERE tours.is_active = true
+         AND (tours.created_by_user_id IS NULL OR owner.suspended_at IS NULL)`,
       [userId, itemId, scheduledDate || null, participants || null, needsTransportation]
     );
 
@@ -108,7 +137,13 @@ export class CartQueries {
   }
 
   async getItemById({ userId, itemId }) {
-    const result = await pool.query('SELECT * FROM get_tour_cart_item_by_id($1, $2)', [userId, itemId]);
+    const result = await pool.query(`
+      SELECT item.*, tours.type AS tour_activity_type, tours.tour_type,
+        tours.duration_value AS tour_duration_value, tours.duration_unit AS tour_duration_unit
+      FROM get_tour_cart_item_by_id($1, $2) item JOIN tours ON tours.id = item.tour_id
+      LEFT JOIN users owner ON owner.id = tours.created_by_user_id
+      WHERE tours.is_active = true
+        AND (tours.created_by_user_id IS NULL OR owner.suspended_at IS NULL)`, [userId, itemId]);
     return mapCartItem(result.rows[0]);
   }
 }

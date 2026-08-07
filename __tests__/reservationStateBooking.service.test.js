@@ -3,6 +3,7 @@ import { jest } from '@jest/globals';
 const mockGetState = jest.fn();
 const mockBook = jest.fn();
 const mockAnalyticsTrack = jest.fn();
+const mockGetTourById = jest.fn();
 
 await jest.unstable_mockModule('../src/db/queries/reservationState.queries.js', () => ({
   default: {
@@ -21,7 +22,7 @@ await jest.unstable_mockModule('../src/db/queries/reservation.queries.js', () =>
 await jest.unstable_mockModule('../src/db/queries/tour.queries.js', () => ({
   default: {
     getAvailableTours: jest.fn(),
-    getTourById: jest.fn(),
+    getTourById: mockGetTourById,
   },
 }));
 
@@ -80,6 +81,7 @@ function bookedResult(overrides = {}) {
 describe('ReservationService structured-state booking', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetTourById.mockResolvedValue({ id: 9, isActive: true });
   });
 
   it('books using the latest confirmed state and expected version only', async () => {

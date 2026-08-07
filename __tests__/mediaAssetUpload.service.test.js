@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
 import {
+  DeleteObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
@@ -154,6 +155,18 @@ describe('S3BucketService', () => {
       key: 'external/xenocanto/images/spectrogram.png',
       error: 'network stopped',
     });
+  });
+
+  it('deletes an object by exact key', async () => {
+    const send = jest.fn().mockResolvedValueOnce({});
+    const service = new S3BucketService({ client: { send }, config: createConfig() });
+    const key = 'tours/11111111-1111-4111-8111-111111111111.png';
+
+    await expect(service.deleteObject(key)).resolves.toEqual({
+      bucket: 'bucket', key, deleted: true,
+    });
+    expect(send.mock.calls[0][0]).toBeInstanceOf(DeleteObjectCommand);
+    expect(send.mock.calls[0][0].input).toEqual({ Bucket: 'bucket', Key: key });
   });
 
 });
@@ -471,10 +484,13 @@ describe('media routes', () => {
     }));
     app.use(errorMiddleware);
 
-    const res = await request(app).get('/files/tours/1.png');
+    const res = await request(app)
+      .get('/files/tours/11111111-1111-4111-8111-111111111111.png');
 
     expect(res.statusCode).toBe(200);
-    expect(res.body.data.url).toBe('https://cdn.example.test/media/tours/1.png');
+    expect(res.body.data.url).toBe(
+      'https://cdn.example.test/media/tours/11111111-1111-4111-8111-111111111111.png'
+    );
   });
 
   it('returns a safe error when CloudFront is not configured', async () => {

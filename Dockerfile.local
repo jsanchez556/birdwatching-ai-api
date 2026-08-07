@@ -1,0 +1,10 @@
+FROM redis:7-alpine
+
+EXPOSE 6379
+
+VOLUME ["/data"]
+
+HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=5 \
+  CMD ["redis-cli", "ping"]
+
+CMD ["redis-server", "--appendonly", "yes"]

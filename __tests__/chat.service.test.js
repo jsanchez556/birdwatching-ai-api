@@ -132,7 +132,7 @@ describe('ChatService streaming orchestration', () => {
       sources: [],
       meta: {
         promptVersions: {
-          chat: '2.3.0',
+          chat: '2.5.0',
         },
       },
     });
@@ -172,7 +172,7 @@ describe('ChatService streaming orchestration', () => {
       unavailableCapabilities: [],
       meta: {
         promptVersions: {
-          chat: '2.3.0',
+          chat: '2.5.0',
         },
       },
     });
@@ -454,7 +454,7 @@ describe('ChatService streaming orchestration', () => {
 
     expect(result.meta).toEqual({
       promptVersions: {
-        chat: '2.3.0',
+        chat: '2.5.0',
       },
       customerContext: {
         customerEmail: 'logged@example.com',
@@ -467,6 +467,7 @@ describe('ChatService streaming orchestration', () => {
         recommendations: [{
           tourId: '1',
           tourName: 'Monteverde Quetzal Tour',
+          type: 'Birdwatching',
           location: 'Monteverde',
           estimatedPrice: {
             amount: 120,

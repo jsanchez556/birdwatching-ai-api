@@ -87,7 +87,7 @@ Implementation evidence:
 [UI API boundary](https://github.com/jsanchez556/birdwatching-ai-ui/tree/main/src/api),
 [API composition](../src/api/app.js),
 [API/worker separation](./architecture.md),
-[PostgreSQL + pgvector migration](../src/db/migrations/004_create_vector_knowledge.sql),
+[PostgreSQL + pgvector migration](../src/db/migrations/001_schema.sql),
 [BullMQ manager](../src/queues/queue.manager.js),
 [worker manager](../src/workers/worker.manager.js),
 [S3-compatible storage](../src/storage/s3Bucket.service.js), and
@@ -195,7 +195,7 @@ Evidence:
 [planner/orchestrator](../src/ai/orchestrators/agent.orchestrator.js),
 [reservation tool](../src/ai/tools/createReservation.tool.js),
 [reservation service](../src/services/reservation.service.js),
-[transaction migration](../src/db/migrations/003_create_tour_reservations.sql),
+[transaction migration](../src/db/migrations/003_functions.sql),
 [planning tests](../__tests__/agentPlanningOrchestration.test.js),
 [reservation tests](../__tests__/reservation.service.test.js), and
 [confirmation UI tests](https://github.com/jsanchez556/birdwatching-ai-ui/blob/main/src/components/__tests__/ChatMessages.test.jsx).
@@ -307,7 +307,7 @@ To reproduce the product locally:
    photo uploads. Run `npm run enrich -- birds` to create the pgvector bird
    index, then `npm run dev` to start the API and worker.
 4. In the UI repository, run `npm install`, set
-   `VITE_API_PROXY_TARGET=http://localhost:3000`, and run `npm run dev`. Open
+   `VITE_API_PROXY_TARGET=http://localhost:3001`, and run `npm run dev`. Open
    `http://localhost:5173`.
 5. Walk through: (a) ask a bird/location question and inspect returned bird
    evidence; (b) sign in, upload a bird photo, and observe queued status through
@@ -325,7 +325,7 @@ retrieval, identification, and booking captures under `docs/images/` or
 |---|---|---|
 | Chat uses pgvector-backed grounding and Redis retrieval caching | [RAG service](../src/services/rag.service.js), [vector repository](../src/db/repositories/vector/vector.repository.js), [tests](../__tests__/rag.service.test.js) | Implemented and tested; quality/latency unmeasured |
 | Identification is asynchronous, multimodal, and uncertainty-aware | [job service](../src/services/birdIdentificationJob.service.js), [worker](../src/workers/birdIdentification.worker.js), [identification tests](../__tests__/birdIdentification.service.test.js) | Implemented and tested with mocked boundaries; no licensed benchmark/demo |
-| Booking requires validated structured state and a DB transaction | [orchestrator](../src/ai/orchestrators/agent.orchestrator.js), [reservation service](../src/services/reservation.service.js), [transaction](../src/db/migrations/003_create_tour_reservations.sql), [tests](../__tests__/reservation.service.test.js) | Implemented and tested; no production success rate |
+| Booking requires validated structured state and a DB transaction | [orchestrator](../src/ai/orchestrators/agent.orchestrator.js), [reservation service](../src/services/reservation.service.js), [transaction](../src/db/migrations/003_functions.sql), [tests](../__tests__/reservation.service.test.js) | Implemented and tested; no production success rate |
 | Conversation state survives reloads without making the browser authoritative | [backend memory](./memory.md), [UI state utility](https://github.com/jsanchez556/birdwatching-ai-ui/blob/main/src/utils/chatConversationState.js), [UI tests](https://github.com/jsanchez556/birdwatching-ai-ui/blob/main/src/hooks/__tests__/useChat.test.jsx) | Implemented and tested |
 | Queue failures, retries, final failure, and stalled jobs have bounded behavior | [job defaults](../src/jobs/jobOptions.js), [job tests](../__tests__/birdIdentificationJob.service.test.js), [worker tests](../__tests__/workers/birdIdentification.worker.test.js) | Implemented and tested; distributed load not benchmarked |
 | AI quality reporting rejects synthetic evidence as portfolio quality | [portfolio runner](../src/evaluations/runners/portfolioRegression.runner.js), [tests](../__tests__/ai/portfolioRegression.test.js), [baseline](../src/evaluations/datasets/ai-eval-baseline.json) | Implemented and tested; real baseline missing |

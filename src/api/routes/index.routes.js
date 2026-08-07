@@ -12,11 +12,13 @@ import jobRoutes from './job.routes.js';
 import mediaRoutes from './media.routes.js';
 import voiceChatRoutes from './voiceChat.routes.js';
 import featureAvailabilityRoutes from './featureAvailability.routes.js';
+import myToursRoutes from './myTours.routes.js';
 
 const router = express.Router();
 
 router.use('/health', healthRoutes);
 router.use('/admin', adminRoutes);
+router.use('/my-tours', myToursRoutes);
 router.use('/auth', authRoutes);
 router.use('/billing', billingRoutes);
 router.use(birdIdentificationRoutes);

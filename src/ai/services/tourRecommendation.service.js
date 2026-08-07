@@ -35,7 +35,7 @@ function matchReasons(tour) {
 
   if (reasons.length > 0) return reasons;
   if (typeof tour.location === 'string' && tour.location.trim()) {
-    return [`Birdwatching experience in ${tour.location.trim()}`];
+    return [`${tour.type || 'Nature'} experience in ${tour.location.trim()}`];
   }
   return [];
 }
@@ -73,6 +73,7 @@ function buildTourRecommendation({
         ? String(tour.tourId)
         : undefined,
       tourName: tour.name,
+      type: tour.type || 'Birdwatching',
       location: tour.location,
       estimatedPrice: estimatedPrice(tour),
       matchReasons: matchReasons(tour),

@@ -33,7 +33,7 @@ class AdminQueries {
     return result.rows[0] || null;
   }
 
-  async getUsers({ limit, offset }) {
+  async getUsers({ limit, offset, search = '' }) {
     const [result, countResult] = await Promise.all([
       pool.query(`
       SELECT
@@ -49,10 +49,14 @@ class AdminQueries {
       FROM users
       LEFT JOIN user_subscriptions ON user_subscriptions.user_id = users.id
       LEFT JOIN plans ON plans.id = user_subscriptions.plan_id
+      WHERE ($3 = '' OR users.email ILIKE '%' || $3 || '%'
+        OR users.name ILIKE '%' || $3 || '%' OR users.role ILIKE '%' || $3 || '%')
       ORDER BY users.created_at DESC, users.id DESC
       LIMIT $1 OFFSET $2
-      `, [limit, offset]),
-      pool.query('SELECT COUNT(*)::BIGINT AS total_count FROM users'),
+      `, [limit, offset, search]),
+      pool.query(`SELECT COUNT(*)::BIGINT AS total_count FROM users
+        WHERE ($1 = '' OR email ILIKE '%' || $1 || '%'
+          OR name ILIKE '%' || $1 || '%' OR role ILIKE '%' || $1 || '%')`, [search]),
     ]);
 
     return {

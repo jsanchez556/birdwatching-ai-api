@@ -62,6 +62,13 @@ function hasSelectedTour(context = {}) {
   );
 }
 
+function hasConfirmedFeaturedTourEntry(context = {}) {
+  const metadata = context.recentMetadata || {};
+  return hasSelectedTour(context)
+    && metadata.conversationType === 'reservation_entry'
+    && (metadata.conversationSource === 'featured_tour' || metadata.entrySource === 'featured_tour');
+}
+
 function hasTourSelector(args = {}) {
   return Boolean(args.tourId || args.tourName || args.location);
 }
@@ -105,6 +112,7 @@ function buildBaseArgs(context = {}, extracted = {}) {
     origin: extracted.pickupLocation ?? structuredPickup ?? (!hasStructuredState ? context.origin : undefined),
     participants: extracted.participants ?? structuredParticipants ?? (!hasStructuredState ? contextParticipants : undefined),
     discountCode: extracted.discountCode || structuredValues.discountCode || (!hasStructuredState ? context.discountCode : undefined),
+    date: extracted.date || structuredValues.date,
     customerName: structuredValues.customerName || (!hasStructuredState ? customerContext.customerName : undefined),
     customerEmail: structuredValues.customerEmail || (!hasStructuredState ? customerContext.customerEmail : undefined),
     itineraryStartDate: structuredValues.itineraryStartDate || (!hasStructuredState ? customerContext.itineraryStartDate : undefined),
@@ -149,6 +157,9 @@ function buildReservationPreviewArgs(args = {}) {
     tourId: args.tourId,
     participants: args.participants,
     discountCode: args.discountCode,
+    date: args.date,
+    itineraryStartDate: args.itineraryStartDate,
+    itineraryEndDate: args.itineraryEndDate,
   });
 }
 
@@ -255,6 +266,7 @@ export class ToolPlanner {
       customerEmail: extractEmail(planningMessage),
       location: structuredIntent?.location ?? extractLocation(planningMessage),
       pickupLocation: structuredIntent?.pickupLocation,
+      date: structuredIntent?.date,
       budget: extractBudget(planningMessage),
       difficulty: extractDifficulty(planningMessage),
       discountCode: extractDiscountCode(planningMessage),
@@ -281,6 +293,8 @@ export class ToolPlanner {
       || context.recentMetadata?.selectedTransportation;
     const transportationDeclined = guidedIntent?.intent === 'decline_transportation'
       || structuredIntent?.transportationRequired === false
+      || context.reservationState?.proposed?.transportationRequired === false
+      || context.reservationState?.confirmed?.transportationRequired === false
       || context.transportationDeclined
       || context.recentMetadata?.transportationDeclined
       || extractTransportationDecline(originalMessage)
@@ -294,17 +308,17 @@ export class ToolPlanner {
       ? structuredIntent.intent === 'calculate_price'
       : /\b(price|pricing|cost|total|how much|quote|discount)\b/i.test(planningMessage);
     const asksForAvailability = structuredIntent
-      ? structuredIntent.intent === 'check_availability'
+      ? ['select_tour', 'select_date', 'check_availability'].includes(structuredIntent.intent)
       : /\b(available|availability|slots?|space)\b/i.test(planningMessage);
     const asksForTransportation = structuredIntent
       ? structuredIntent.transportationRequired === true
       : /\b(transport|transportation|transfer|shuttle|pickup|drive|travel time|full cost)\b/i.test(planningMessage);
     const asksForTour = structuredIntent
-      ? structuredIntent.intent === 'search'
+      ? ['search', 'tour_recommendation'].includes(structuredIntent.intent)
       : /\b(tour|birdwatching|bird watching)\b/i.test(planningMessage)
         || includesAny(text, TOUR_KEYWORDS);
     const asksForRecommendation = structuredIntent
-      ? structuredIntent.intent === 'search'
+      ? ['search', 'tour_recommendation'].includes(structuredIntent.intent)
       : /\b(recommend|suggest|best|options?|available tours?|show me|find)\b/i.test(planningMessage)
         || includesAny(text, TOUR_KEYWORDS);
     const needsTourDiscovery = !hasSelectedTour(context) && !selectedArgs.tourId && !selectedArgs.tourName;
@@ -313,6 +327,7 @@ export class ToolPlanner {
       && structuredIntent.pickupLocation === null;
     const selectedParticipantCount = extractParticipantActionSelection(originalMessage, context);
     const transportationPreferenceKnown = context.reservationState?.confirmed?.transportationRequired !== undefined
+      || context.reservationState?.proposed?.transportationRequired !== undefined
       || hasTransportationPreference({
       ...context,
       selectedTransportation,
@@ -321,12 +336,58 @@ export class ToolPlanner {
     const transportationRequested = hasTransportationRequest(context) || asksForTransportation;
     const confirmedReservationArgs = buildConfirmedReservationArgs(context);
     const usesStructuredReservationState = Boolean(context.reservationState);
+    const explicitTourOrBookingLanguage = /\b(tour|book|booking|reserve|reservation|availability|available slots?)\b/i.test(originalMessage);
+    const birdInformationRequest = /\b(what is|what are|tell me|information|facts?|identify|identification|habitat|diet|plumage|call|song|behavior|behaviour|look like|about)\b/i.test(originalMessage)
+      && /\b(bird|species|quetzal|toucan|macaw|hummingbird|motmot|tanager|heron|eagle|hawk|owl|parrot)\b/i.test(originalMessage);
+
+    if (birdInformationRequest && !explicitTourOrBookingLanguage) {
+      return {
+        status: 'bird_information',
+        steps: [],
+        message: 'Answer the latest bird-information question directly. Ignore earlier booking context for this turn and do not ask for reservation details or redirect to tours.',
+      };
+    }
+
+    if (hasConfirmedFeaturedTourEntry(context) && (asksForBooking || asksForRecommendation)) {
+      return {
+        status: 'select_tour',
+        message: 'The exact featured tour is already selected and confirmed through application state. Do not search for, recommend, or display alternatives. Show the selected tour, then ask once for all missing reservation details, including an explicit valid date when needed.',
+        steps: [
+          { tool: 'checkAvailability', args: selectedArgs, stopOnFailure: false },
+          ...(selectedArgs.participants
+            ? [{ tool: 'calculatePricing', args: selectedArgs, stopOnFailure: false }]
+            : []),
+        ],
+      };
+    }
+
+    if (asksForBooking && needsTourDiscovery && !asksForTransportation) {
+      return {
+        status: 'tour_recommendations_before_selection',
+        message: 'The user wants to book but has not selected an exact tour. Show exactly three eligible ranked recommendations when possible, label alternatives, and ask the user to select one. Do not collect reservation details yet.',
+        steps: [{
+          tool: 'searchTours',
+          args: compactArgs({
+            location: extracted.location || context.location,
+            budget: extracted.budget || context.budget,
+            difficulty: extracted.difficulty || context.difficulty,
+            participants: extracted.participants || context.participants,
+            date: structuredIntent?.date,
+            itineraryStartDate: baseArgs.itineraryStartDate,
+            itineraryEndDate: baseArgs.itineraryEndDate,
+            query: planningMessage,
+            recommend: true,
+            limit: 3,
+          }),
+        }],
+      };
+    }
 
     if (selectedParticipantCount && hasSelectedTour(context)) {
       if (!hasRequiredReservationDetails(selectedArgs)) {
         return {
           status: 'needs_clarification',
-          message: 'Use the selected participant count and ask only for any missing booking details before creating the reservation.',
+          message: 'Use the selected participant count and ask once for all remaining missing booking details before creating the reservation.',
           steps: [{ tool: 'checkAvailability', args: selectedArgs, stopOnFailure: false }],
         };
       }
@@ -367,7 +428,7 @@ export class ToolPlanner {
         transportationDeclined: true,
         message: hasRequiredReservationDetails(selectedArgs)
           ? 'The user declined transportation. Preserve that preference and ask for final reservation confirmation.'
-          : 'The user declined transportation. Preserve that preference and ask only for missing booking details.',
+          : 'The user declined transportation. Preserve that preference and ask once for all remaining missing booking details.',
         steps: hasTourSelector(selectedArgs)
           ? [
             { tool: 'checkAvailability', args: selectedArgs, stopOnFailure: false },
@@ -390,7 +451,7 @@ export class ToolPlanner {
         selectedTransportation,
         message: selectedArgs.participants
           ? 'The user selected a transportation option. Persist selectedTransportation, do not show the transportation selection action again, use customerContext for customer details and itinerary dates, and ask only for final reservation confirmation if tour availability and pricing are available.'
-          : 'The user selected a transportation option. Persist selectedTransportation, do not show the transportation selection action again, use customerContext for customer details and itinerary dates, and ask only for missing booking details.',
+          : 'The user selected a transportation option. Persist selectedTransportation, do not show the transportation selection action again, use customerContext for customer details and itinerary dates, and ask once for all remaining missing booking details.',
         steps,
       };
     }
@@ -496,7 +557,7 @@ export class ToolPlanner {
         status: guidedIntent.intent,
         message: actionArgs.participants
           ? 'The user selected a tour and provided participant count. Use customerContext for name, email, and itinerary dates. Ask only for final confirmation if pricing and availability are available.'
-          : 'The user selected a tour. Customer name, email, and itinerary dates are already available from customerContext when present. Ask only for the missing participant count.',
+          : 'The user selected a tour. Customer name, email, and itinerary dates are already available from customerContext when present. Ask once for every remaining missing reservation detail, including participant count and transportation preference.',
         steps: [
           { tool: 'checkAvailability', args: actionArgs, stopOnFailure: false },
           ...(actionArgs.participants ? [{ tool: 'calculatePricing', args: actionArgs, stopOnFailure: false }] : []),
@@ -511,7 +572,7 @@ export class ToolPlanner {
       if (!finalReservationArgs || !hasRequiredReservationDetails(finalReservationArgs)) {
         return {
           status: 'needs_clarification',
-          message: 'Ask only for the missing booking details. Do not ask again for customer name, email, or itinerary dates if they exist in customerContext.',
+          message: 'Ask once for all missing booking details. Do not ask again for customer name, email, itinerary dates, date, participant count, or transportation preference when already provided.',
           steps: selectedArgs.tourId
             ? [{ tool: 'checkAvailability', args: selectedArgs, stopOnFailure: false }]
             : [],
@@ -549,7 +610,7 @@ export class ToolPlanner {
       if (!finalReservationArgs || !hasRequiredReservationDetails(finalReservationArgs)) {
         return {
           status: 'needs_clarification',
-          message: 'Ask only for missing booking details before creating the reservation. Use customerContext for customer name, customer email, and itinerary dates when available, and use the conversation history for participant count when the user already provided it.',
+          message: 'Ask once for all missing booking details before creating the reservation. Use customerContext for customer name, customer email, and itinerary dates when available, and use structured state or conversation history for values the user already provided.',
           steps: [],
         };
       }
@@ -581,7 +642,8 @@ export class ToolPlanner {
     if (asksForBooking) {
       return {
         status: 'needs_confirmation',
-        message: 'I can help book that. Ask only for missing booking details, then ask for final booking confirmation. Use customerContext for customer name, customer email, and itinerary dates when available, and do not ask again for participant count when it was already provided earlier in the conversation.',
+        transportationDeclined,
+        message: 'I can help book that. Ask once for every missing booking detail, then ask for final booking confirmation. Use customerContext and structured reservation state, and never ask again for values already provided.',
         steps: hasSelectedTour(context) || args.tourId || args.tourName || args.location
           ? [
             { tool: 'checkAvailability', args, stopOnFailure: false },

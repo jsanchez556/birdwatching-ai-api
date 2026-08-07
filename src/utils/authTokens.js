@@ -1,13 +1,14 @@
 import jwt from 'jsonwebtoken';
 import env from '../config/env.js';
 import HttpError from './httpError.js';
+import { normalizeUserRole, USER_ROLES } from '../constants/userRoles.js';
 
 export function signAuthToken(user) {
   return jwt.sign(
     {
       email: user.email,
       ...(user.name ? { name: user.name } : {}),
-      role: user.role || 'customer',
+      role: normalizeUserRole(user.role) || USER_ROLES.CUSTOMER,
       ...(user.plan ? { plan: user.plan } : {}),
     },
     env.jwtSecret,
@@ -40,7 +41,7 @@ export function verifyAuthToken(token) {
       id: payload.sub,
       email: payload.email,
       name: typeof payload.name === 'string' ? payload.name : null,
-      role: payload.role === 'admin' ? 'admin' : 'customer',
+      role: normalizeUserRole(payload.role) || USER_ROLES.CUSTOMER,
       plan: typeof payload.plan === 'string' ? payload.plan : undefined,
     };
   } catch {

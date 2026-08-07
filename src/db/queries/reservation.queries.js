@@ -1,5 +1,20 @@
 import pool from '../pool.js';
 import logger from '../../utils/logger.js';
+import { normalizeTourDuration } from '../../utils/tourDuration.utils.js';
+
+function durationFields(row) {
+  const duration = normalizeTourDuration({
+    durationValue: row.tour_duration_value,
+    durationUnit: row.tour_duration_unit,
+    durationHours: row.tour_duration_hours,
+  });
+  return {
+    durationValue: duration.durationValue,
+    durationUnit: duration.durationUnit,
+    durationHours: duration.durationHours,
+    duration: duration.duration,
+  };
+}
 
 function mapReservation(row) {
   if (!row) {
@@ -17,6 +32,7 @@ function mapReservation(row) {
     confirmationCode: row.confirmation_code,
     createdAt: row.created_at,
     totalPrice: Number(row.total_price),
+    ...(row.tour_date !== undefined ? { tourDate: row.tour_date ?? null } : {}),
   };
 }
 
@@ -33,8 +49,10 @@ function mapReservationWithTour(row) {
       price: Number(row.tour_price),
       availableSlots: Number(row.tour_available_slots),
       location: row.tour_location,
-      durationHours: Number(row.tour_duration_hours),
+      ...durationFields(row),
       difficulty: row.tour_difficulty,
+      type: row.tour_activity_type || 'Birdwatching',
+      tourType: row.tour_type || 'unscheduled',
     },
   };
 }
@@ -56,8 +74,10 @@ function mapReservationFunctionResult(row) {
           price: Number(row.tour_price),
           availableSlots: Number(row.tour_available_slots),
           location: row.tour_location,
-          durationHours: Number(row.tour_duration_hours),
+          ...durationFields(row),
           difficulty: row.tour_difficulty,
+          type: row.tour_activity_type || 'Birdwatching',
+          tourType: row.tour_type || 'unscheduled',
         },
         requestedParticipants: Number(row.participants),
         availableSlots: Number(row.tour_available_slots),
@@ -74,8 +94,10 @@ function mapReservationFunctionResult(row) {
       price: Number(row.tour_price),
       availableSlots: Number(row.tour_available_slots),
       location: row.tour_location,
-      durationHours: Number(row.tour_duration_hours),
+      ...durationFields(row),
       difficulty: row.tour_difficulty,
+      type: row.tour_activity_type || 'Birdwatching',
+      tourType: row.tour_type || 'unscheduled',
     },
   };
 }
@@ -83,6 +105,7 @@ function mapReservationFunctionResult(row) {
 export class ReservationQueries {
   async createReservation({
     tourId,
+    tourDate,
     participants,
     customerName,
     customerEmail,
@@ -93,24 +116,13 @@ export class ReservationQueries {
   }) {
     try {
       const query = `
-        WITH conversation_row AS (
-          SELECT id
-          FROM ensure_conversation($5, $8)
-        )
-        SELECT *
-        FROM create_tour_reservation(
-          $1,
-          $2,
-          $3,
-          $4,
-          (SELECT id FROM conversation_row),
-          $6,
-          $7,
-          $8
-        )
+        SELECT create_tour_reservation_for_conversation(
+          $1, $2, $3, $4, $5, $6, $7, $8, $9
+        ) AS result
       `;
-      const result = await pool.query(query, [
+      const parameters = [
         tourId,
+        tourDate || null,
         participants,
         customerName,
         customerEmail || null,
@@ -118,9 +130,10 @@ export class ReservationQueries {
         confirmationCode,
         discountRate,
         userId || null,
-      ]);
+      ];
+      const result = await pool.query(query, parameters);
 
-      const reservationResult = mapReservationFunctionResult(result.rows[0]);
+      const reservationResult = mapReservationFunctionResult(result.rows[0]?.result || result.rows[0]);
 
       if (reservationResult?.success) {
         logger.info('Reservation persisted', {
@@ -152,19 +165,25 @@ export class ReservationQueries {
           r.customer_email,
           c.conversation_code AS conversation_id,
           r.tour_id,
+          r.tour_date,
           r.participants,
           r.confirmation_code,
           r.created_at,
           r.total_price,
           t.name AS tour_name,
-          t.price AS tour_price,
-          t.available_slots AS tour_available_slots,
+          GREATEST(t.minimum_price, t.price) AS tour_price,
+          COALESCE(o.remaining_spaces, t.max_participants, t.available_slots) AS tour_available_slots,
+          t.tour_type,
+          t.type AS tour_activity_type,
           COALESCE(parent_node.name || ' / ' || tour_node.name, tour_node.name, z.name) AS tour_location,
           t.duration_hours AS tour_duration_hours,
+          t.duration_value AS tour_duration_value,
+          t.duration_unit AS tour_duration_unit,
           t.difficulty AS tour_difficulty
         FROM reservations AS r
         INNER JOIN tours AS t ON t.id = r.tour_id
         INNER JOIN conversations AS c ON c.id = r.conversation_id
+        LEFT JOIN tour_occurrences AS o ON o.id = r.occurrence_id
         INNER JOIN node AS tour_node ON tour_node.id = t.node_id
         INNER JOIN zone AS z ON z.id = tour_node.zone_id
         LEFT JOIN node AS parent_node ON parent_node.id = tour_node.parent_id
@@ -200,10 +219,13 @@ export class ReservationQueries {
           r.created_at,
           r.total_price,
           t.name AS tour_name,
+          t.type AS tour_activity_type,
           t.price AS tour_price,
           t.available_slots AS tour_available_slots,
           COALESCE(parent_node.name || ' / ' || tour_node.name, tour_node.name, z.name) AS tour_location,
           t.duration_hours AS tour_duration_hours,
+          t.duration_value AS tour_duration_value,
+          t.duration_unit AS tour_duration_unit,
           t.difficulty AS tour_difficulty
         FROM reservations AS r
         INNER JOIN tours AS t ON t.id = r.tour_id

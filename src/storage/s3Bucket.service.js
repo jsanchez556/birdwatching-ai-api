@@ -1,4 +1,5 @@
 import {
+  DeleteObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
   S3Client,
@@ -73,6 +74,7 @@ class S3BucketService {
     const {
       key,
       body,
+      cacheControl,
       contentType,
       metadata,
       skipIfExists = true,
@@ -105,6 +107,7 @@ class S3BucketService {
         Bucket: this.config.bucketName,
         Key: key,
         Body: body,
+        ...(cacheControl ? { CacheControl: cacheControl } : {}),
         ...(contentType ? { ContentType: contentType } : {}),
         ...(metadata ? { Metadata: metadata } : {}),
       }));
@@ -121,6 +124,25 @@ class S3BucketService {
         error: error.message,
       });
 
+      throw error;
+    }
+  }
+
+  async deleteObject(key) {
+    if (!key) throw new Error('S3 object key is required');
+
+    try {
+      await this.client.send(new DeleteObjectCommand({
+        Bucket: this.config.bucketName,
+        Key: key,
+      }));
+      return { bucket: this.config.bucketName, key, deleted: true };
+    } catch (error) {
+      logger.error('S3 asset deletion failed', {
+        bucket: this.config.bucketName,
+        key,
+        error: error.message,
+      });
       throw error;
     }
   }

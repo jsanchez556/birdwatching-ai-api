@@ -504,7 +504,8 @@ class AdminService {
 
   async getUsers(query) {
     const pagination = normalizePagination(query);
-    const rows = await this.repository.getUsers(pagination);
+    const search = typeof query?.search === 'string' ? query.search.trim().slice(0, 200) : '';
+    const rows = await this.repository.getUsers({ ...pagination, search });
     return paginated(rows, pagination, mapUser);
   }
 

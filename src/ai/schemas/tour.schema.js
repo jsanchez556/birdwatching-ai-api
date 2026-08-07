@@ -3,7 +3,7 @@ export const tourSchema = [
     type: 'function',
     function: {
       name: 'searchTours',
-      description: 'Find or recommend Costa Rica birdwatching tours based on location, budget, difficulty, price, or group size.',
+      description: 'Find or recommend Costa Rica nature and outdoor tours based on activity type, location, budget, difficulty, price, or group size.',
       parameters: {
         type: 'object',
         properties: {
@@ -19,6 +19,11 @@ export const tourSchema = [
             type: 'string',
             enum: ['easy', 'moderate', 'challenging'],
             description: 'Optional preferred tour difficulty.',
+          },
+          type: {
+            type: 'string',
+            enum: ['Birdwatching', 'Day walk', 'Night walk', 'Parks', 'Other'],
+            description: 'Optional nature-tour activity category.',
           },
           maxPrice: {
             type: 'number',
@@ -41,6 +46,9 @@ export const tourSchema = [
             type: 'integer',
             description: 'Maximum number of recommendations to return. Prefer 2 or 3.',
           },
+          date: { type: 'string', description: 'Optional requested YYYY-MM-DD date.' },
+          itineraryStartDate: { type: 'string', description: 'Optional itinerary start date.' },
+          itineraryEndDate: { type: 'string', description: 'Optional itinerary end date.' },
         },
       },
     },
@@ -101,6 +109,9 @@ export const tourSchema = [
             type: 'integer',
             description: 'Optional group size to validate slot availability.',
           },
+          date: { type: 'string', description: 'Explicit selected YYYY-MM-DD tour date.' },
+          itineraryStartDate: { type: 'string', description: 'Customer itinerary start date.' },
+          itineraryEndDate: { type: 'string', description: 'Customer itinerary end date.' },
         },
       },
     },
