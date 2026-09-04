@@ -551,7 +551,7 @@ BEGIN
   IF state_row.status <> 'ready_for_confirmation' OR state_row.proposed_values <> '{}'::jsonb
     THEN RAISE EXCEPTION 'reservation state is not ready for booking' USING ERRCODE = '22023'; END IF;
   confirmed := state_row.confirmed_values;
-  IF NOT (jsonb_strip_nulls(confirmed) ?& ARRAY['tourId','date','participants','transportationRequired','customerName','customerEmail','itineraryStartDate','itineraryEndDate'])
+  IF NOT (jsonb_strip_nulls(confirmed) ?& ARRAY['tourId','date','participants','transferRequired','customerName','customerEmail','itineraryStartDate','itineraryEndDate'])
     THEN RAISE EXCEPTION 'reservation state is missing required confirmed values' USING ERRCODE = '22023'; END IF;
   IF (confirmed->>'date')::date < (confirmed->>'itineraryStartDate')::date
     OR (confirmed->>'date')::date > (confirmed->>'itineraryEndDate')::date THEN
@@ -1982,7 +1982,7 @@ $$;
 -- Name: get_tour_cart_item_by_id(integer, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.get_tour_cart_item_by_id(p_user_id integer, p_item_id integer) RETURNS TABLE(id integer, user_id integer, tour_id integer, scheduled_date date, participants integer, needs_transportation boolean, metadata jsonb, created_at timestamp with time zone, updated_at timestamp with time zone, tour_name text, tour_description text, tour_price numeric, tour_available_slots integer, tour_location text, tour_node text, tour_subnode text, tour_zone text, tour_duration_hours integer, tour_difficulty text)
+CREATE FUNCTION public.get_tour_cart_item_by_id(p_user_id integer, p_item_id integer) RETURNS TABLE(id integer, user_id integer, tour_id integer, scheduled_date date, participants integer, needs_transfer boolean, metadata jsonb, created_at timestamp with time zone, updated_at timestamp with time zone, tour_name text, tour_description text, tour_price numeric, tour_available_slots integer, tour_location text, tour_node text, tour_subnode text, tour_zone text, tour_duration_hours integer, tour_difficulty text)
     LANGUAGE sql
     AS $$
   SELECT *
@@ -1995,7 +1995,7 @@ $$;
 -- Name: get_tour_cart_items(integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.get_tour_cart_items(p_user_id integer) RETURNS TABLE(id integer, user_id integer, tour_id integer, scheduled_date date, participants integer, needs_transportation boolean, metadata jsonb, created_at timestamp with time zone, updated_at timestamp with time zone, tour_name text, tour_description text, tour_price numeric, tour_available_slots integer, tour_location text, tour_node text, tour_subnode text, tour_zone text, tour_duration_hours integer, tour_difficulty text)
+CREATE FUNCTION public.get_tour_cart_items(p_user_id integer) RETURNS TABLE(id integer, user_id integer, tour_id integer, scheduled_date date, participants integer, needs_transfer boolean, metadata jsonb, created_at timestamp with time zone, updated_at timestamp with time zone, tour_name text, tour_description text, tour_price numeric, tour_available_slots integer, tour_location text, tour_node text, tour_subnode text, tour_zone text, tour_duration_hours integer, tour_difficulty text)
     LANGUAGE sql
     AS $$
   SELECT
@@ -2004,7 +2004,7 @@ CREATE FUNCTION public.get_tour_cart_items(p_user_id integer) RETURNS TABLE(id i
     i.tour_id,
     i.scheduled_date,
     i.participants,
-    i.needs_transportation,
+    i.needs_transfer,
     i.metadata,
     i.created_at,
     i.updated_at,
@@ -2224,13 +2224,13 @@ BEGIN
   IF p_status = 'ready_for_confirmation' AND (
     COALESCE(p_proposed_values, '{}'::jsonb) <> '{}'::jsonb
     OR NOT (jsonb_strip_nulls(COALESCE(p_confirmed_values, '{}'::jsonb)) ?& ARRAY[
-      'tourId', 'date', 'participants', 'transportationRequired',
+      'tourId', 'date', 'participants', 'transferRequired',
       'customerName', 'customerEmail', 'itineraryStartDate', 'itineraryEndDate'
     ])
     OR (p_confirmed_values->>'tourId')::INTEGER <= 0
     OR (p_confirmed_values->>'participants')::INTEGER <= 0
-    OR (p_confirmed_values->>'transportationRequired')::BOOLEAN IS NULL
-    OR ((p_confirmed_values->>'transportationRequired')::BOOLEAN = TRUE
+    OR (p_confirmed_values->>'transferRequired')::BOOLEAN IS NULL
+    OR ((p_confirmed_values->>'transferRequired')::BOOLEAN = TRUE
       AND NULLIF(BTRIM(p_confirmed_values->>'pickupLocation'), '') IS NULL)
   ) THEN
     RAISE EXCEPTION 'reservation state is not ready for confirmation' USING ERRCODE = '22023';
@@ -3009,7 +3009,7 @@ $$;
 -- Name: update_tour_cart_item(integer, integer, date, integer, boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.update_tour_cart_item(p_user_id integer, p_item_id integer, p_scheduled_date date DEFAULT NULL::date, p_participants integer DEFAULT NULL::integer, p_needs_transportation boolean DEFAULT NULL::boolean) RETURNS TABLE(id integer, user_id integer, tour_id integer, scheduled_date date, participants integer, needs_transportation boolean, metadata jsonb, created_at timestamp with time zone, updated_at timestamp with time zone, tour_name text, tour_description text, tour_price numeric, tour_available_slots integer, tour_location text, tour_node text, tour_subnode text, tour_zone text, tour_duration_hours integer, tour_difficulty text)
+CREATE FUNCTION public.update_tour_cart_item(p_user_id integer, p_item_id integer, p_scheduled_date date DEFAULT NULL::date, p_participants integer DEFAULT NULL::integer, p_needs_transfer boolean DEFAULT NULL::boolean) RETURNS TABLE(id integer, user_id integer, tour_id integer, scheduled_date date, participants integer, needs_transfer boolean, metadata jsonb, created_at timestamp with time zone, updated_at timestamp with time zone, tour_name text, tour_description text, tour_price numeric, tour_available_slots integer, tour_location text, tour_node text, tour_subnode text, tour_zone text, tour_duration_hours integer, tour_difficulty text)
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -3019,7 +3019,7 @@ BEGIN
   SET
     scheduled_date = COALESCE(p_scheduled_date, cart_item.scheduled_date),
     participants = COALESCE(p_participants, cart_item.participants),
-    needs_transportation = COALESCE(p_needs_transportation, cart_item.needs_transportation),
+    needs_transfer = COALESCE(p_needs_transfer, cart_item.needs_transfer),
     updated_at = NOW()
   WHERE cart_item.user_id = p_user_id AND cart_item.id = p_item_id
   RETURNING cart_item.id INTO v_item_id;
@@ -3491,7 +3491,7 @@ CREATE FUNCTION public.upsert_tour_cart_item(
     p_tour_id integer,
     p_scheduled_date date DEFAULT NULL::date,
     p_participants integer DEFAULT 1,
-    p_needs_transportation boolean DEFAULT NULL::boolean,
+    p_needs_transfer boolean DEFAULT NULL::boolean,
     p_metadata jsonb DEFAULT '{}'::jsonb
 ) RETURNS TABLE(
     id integer,
@@ -3499,7 +3499,7 @@ CREATE FUNCTION public.upsert_tour_cart_item(
     tour_id integer,
     scheduled_date date,
     participants integer,
-    needs_transportation boolean,
+    needs_transfer boolean,
     metadata jsonb,
     created_at timestamp with time zone,
     updated_at timestamp with time zone,
@@ -3524,7 +3524,7 @@ BEGIN
     tour_id,
     scheduled_date,
     participants,
-    needs_transportation,
+    needs_transfer,
     metadata,
     updated_at
   ) VALUES (
@@ -3532,7 +3532,7 @@ BEGIN
     p_tour_id,
     p_scheduled_date,
     p_participants,
-    p_needs_transportation,
+    p_needs_transfer,
     COALESCE(p_metadata, '{}'::jsonb),
     NOW()
   )
@@ -3540,7 +3540,7 @@ BEGIN
   DO UPDATE SET
     scheduled_date = COALESCE(EXCLUDED.scheduled_date, cart.scheduled_date),
     participants = EXCLUDED.participants,
-    needs_transportation = COALESCE(EXCLUDED.needs_transportation, cart.needs_transportation),
+    needs_transfer = COALESCE(EXCLUDED.needs_transfer, cart.needs_transfer),
     metadata = cart.metadata || EXCLUDED.metadata,
     updated_at = NOW()
   RETURNING cart.id INTO v_item_id;

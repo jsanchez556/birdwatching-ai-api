@@ -34,7 +34,7 @@ function queryTokens(value) {
       'with',
       'from',
       'transport',
-      'transportation',
+      'transfer',
       'transfer',
       'shuttle',
       'pickup',

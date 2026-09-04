@@ -121,7 +121,7 @@ Resolve by name/location:
 
 8. For name/location selection, perform case-insensitive exact matching first; if no exact match exists, do not guess.
 9. If a booking transaction fails due to insufficient availability, return a structured conflict-style error with available inventory and suggested alternatives when possible.
-10. Reservation tools may accept optional customer email, itinerary dates, selected transportation, and discount code. They must require `participant_count` and `customer_name`, and should resolve selected tours by ID or a name/location string that matches exactly one tour after normalization before creation.
+10. Reservation tools may accept optional customer email, itinerary dates, selected transfer, and discount code. They must require `participant_count` and `customer_name`, and should resolve selected tours by ID or a name/location string that matches exactly one tour after normalization before creation.
 11. Validate inputs before calling services: ensure `participant_count` is a positive integer, `customer_name` is non-empty, `itinerary_dates` is a valid date range, and `discount_code` is alphanumeric if present. Return `422` with `{ error: 'validation_error', details: [...] }` on any invalid input and do not call the reservation service.
 12. If a reservation transaction fails with deadlock, serialization failure, or lock timeout, return `409` with `{ error: 'reservation_conflict' }` and do not retry automatically. If the database error code indicates connection failure, admin shutdown, or network disconnect (for example, connection refused or SQLSTATE `08006`), return `503` with `{ error: 'database_unavailable' }`.
 

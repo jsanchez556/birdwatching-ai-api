@@ -27,7 +27,7 @@ const RESERVATION_KEYS = new Set([
   'currency',
   'customerName',
   'itineraryDates',
-  'transportation',
+  'transfer',
 ]);
 
 function sanitizeToolValue(value, { reservationResult = false } = {}) {

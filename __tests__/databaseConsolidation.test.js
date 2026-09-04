@@ -22,6 +22,8 @@ describe('consolidated database migrations', () => {
       '002_seed.sql',
       '003_functions.sql',
       '004_tour_image_path.sql',
+      '005_transfer_domain_rename.sql',
+      '006_transportation_service.sql',
     ]);
   });
 

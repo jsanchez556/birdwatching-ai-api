@@ -16,7 +16,7 @@ function mapCartItem(row) {
     tourId: Number(row.tour_id),
     scheduledDate: formatDate(row.scheduled_date),
     participants: Number(row.participants),
-    needsTransportation: row.needs_transportation,
+    needsTransfer: row.needs_transfer,
     metadata: row.metadata || {},
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -78,7 +78,7 @@ export class CartQueries {
     }
   }
 
-  async addItem({ userId, tourId, scheduledDate = null, participants = 1, needsTransportation = null, metadata = {} }) {
+  async addItem({ userId, tourId, scheduledDate = null, participants = 1, needsTransfer = null, metadata = {} }) {
     const result = await pool.query(`
       SELECT item.*, tours.type AS tour_activity_type, tours.tour_type,
         tours.duration_value AS tour_duration_value, tours.duration_unit AS tour_duration_unit
@@ -91,14 +91,14 @@ export class CartQueries {
       tourId,
       scheduledDate,
       participants,
-      needsTransportation,
+      needsTransfer,
       JSON.stringify(metadata || {}),
     ]);
 
     return mapCartItem(result.rows[0]);
   }
 
-  async updateItem({ userId, itemId, scheduledDate, participants, needsTransportation }) {
+  async updateItem({ userId, itemId, scheduledDate, participants, needsTransfer }) {
     const result = await pool.query(
       `SELECT item.*, tours.type AS tour_activity_type, tours.tour_type,
          tours.duration_value AS tour_duration_value, tours.duration_unit AS tour_duration_unit
@@ -107,7 +107,7 @@ export class CartQueries {
        LEFT JOIN users owner ON owner.id = tours.created_by_user_id
        WHERE tours.is_active = true
          AND (tours.created_by_user_id IS NULL OR owner.suspended_at IS NULL)`,
-      [userId, itemId, scheduledDate || null, participants || null, needsTransportation]
+      [userId, itemId, scheduledDate || null, participants || null, needsTransfer]
     );
 
     if (!result.rows[0]) return null;

@@ -498,9 +498,9 @@ describe('AI tracing middleware', () => {
       stepCount: 1,
       tools: ['searchTours'],
       hasPlannerMessage: true,
-      selectedTransportation: false,
-      transportationDeclined: false,
-      requestedTransportation: false,
+      selectedTransfer: false,
+      transferDeclined: false,
+      requestedTransfer: false,
     });
     expect(mockTrace.mock.calls[1][0]).toMatchObject({
       type: 'tool_sequence',

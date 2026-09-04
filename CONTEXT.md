@@ -8,14 +8,14 @@ This repository is a Node.js backend for Costa Rica nature-tour and birdwatching
 - PostgreSQL-backed RAG over ingested `src/ingestion/data` documents using pgvector
 - reusable external bird data clients for eBird, iNaturalist, and Xeno-canto ingestion jobs
 - media file lookup for relative bird media keys through CloudFront or `GET /files/:folderName/:filename`
-- public homepage content for hero media, featured tours, bird highlights, and transportation add-ons
+- public homepage content for hero media, featured tours, bird highlights, and transfer add-ons
 - required activity categories alongside the scheduled/unscheduled tour model
 - admin maintenance for countries, zones, nodes, birds, bird assignments, and tours, with node-owned tour coordinates and protected forward/reverse location lookup
 - countries expose nullable initial-map `latitude`, `longitude`, and `zoom`; maps consume the center/zoom triplet only as an initial view and never as a constraint
 - owner-scoped My Tours management, audited administrator role changes, and public suppression of suspended-owner tours
 - authenticated bird identification through `POST /birds/identify`, accepting image URLs or validated image uploads before running rich visual evidence extraction, direct-image-aware candidate generation, bird-profile RAG verification/reranking, and final response assembly
 - voice chat through `POST /voice-chat`, combining speech-to-text, chat orchestration, text-to-speech, S3 storage, and CloudFront-relative audio URLs
-- OpenAI/agent tool calling for tour search, availability, transportation, pricing, discounts, and durable reservations
+- OpenAI/agent tool calling for tour search, availability, transfer, pricing, discounts, and durable reservations
 - Redis-backed caches for AI responses, semantic response reuse, RAG retrieval results, and embedding generation
 - BullMQ-backed document ingestion, embedding, and bird-identification jobs with retry/backoff and dead-letter handling
 - AI evaluation datasets, scorers, runners, prompt regression comparison, LangSmith-compatible evaluation reporting, and dashboard summaries
@@ -24,12 +24,14 @@ This repository is a Node.js backend for Costa Rica nature-tour and birdwatching
 - authenticated display-name updates and S3-backed user profile image uploads
 - provider-agnostic subscription billing with Stripe as the first hosted checkout, webhook, and billing management adapter for testing/development
 - Railway-oriented deployment with environment-driven configuration for separate API and worker services
+- database-backed standalone transportation quotes and bookings through `/transport/*`, with Google-verified Costa Rica routes, signed quote tokens, and pay-on-arrival payment status
 
 ## Source Of Truth Map
 - Human overview and setup: [README.md](./README.md)
 - Agent rules and coding conventions: [AGENTS.md](./AGENTS.md)
 - Architecture and flow diagrams: [docs/architecture.md](./docs/architecture.md)
 - Endpoint contracts: [docs/api.md](./docs/api.md)
+- Standalone transportation domain: [docs/transportation.md](./docs/transportation.md)
 - Prompt assets and versioning: [docs/prompting.md](./docs/prompting.md)
 - Conversation memory behavior: [docs/memory.md](./docs/memory.md)
 - Durable reservation conversation state: [docs/reservation-state.md](./docs/reservation-state.md)
@@ -212,7 +214,7 @@ GET /chat/latest
   portfolio artifacts, with honest unavailable/null/sample-size semantics.
   Synthetic scorer self-tests are explicitly excluded. It does not execute
   evaluations or contact OpenAI/LangSmith.
-- Tour data, activity categories, explicit hour/day durations, occurrence-level scheduled availability, flexible-date participant capacity, explicit date selection, and reservations are defined in `src/db/migrations/001_schema.sql`; functions and triggers in `src/db/migrations/003_functions.sql` derive tour coordinates from the selected node and propagate node marker changes while retaining compatibility columns for reads. `004_tour_image_path.sql` installs the image-path write contract, backfills duration units, and creates bookable occurrences for valid legacy scheduled inventory.
+- Tour data, activity categories, explicit hour/day durations, occurrence-level scheduled availability, flexible-date participant capacity, explicit date selection, and reservations are defined in `src/db/migrations/001_schema.sql`; functions and triggers in `src/db/migrations/003_functions.sql` derive tour coordinates from the selected node and propagate node marker changes while retaining compatibility columns for reads. `004_tour_image_path.sql` installs the image-path write contract, backfills duration units, and creates bookable occurrences for valid legacy scheduled inventory. `005_transfer_domain_rename.sql` upgrades deployed transfer tables, cart fields, SQL functions, and structured booking metadata to the canonical terminology.
 - Safe admin mutations use `POST /admin/jobs/:jobId/retry`,
   `POST /admin/users/:userId/suspend`, and
   `POST /admin/ai-features/:feature/disable`. They require current admin
@@ -225,9 +227,9 @@ GET /chat/latest
 - Suspensions revoke active refresh tokens immediately. Production auth
   middleware also reads the current user access state so a previously issued
   access token cannot bypass a later suspension or role change.
-- Tour listing, recommendation, guided action, pricing, transportation, and reservation details are returned in the `/chat` stream `done.meta` object for frontend rendering; recommendation-mode search results additionally expose the all-or-nothing Zod-validated `meta.tourRecommendation` card contract, while assistant text stays short.
+- Tour listing, recommendation, guided action, pricing, transfer, and reservation details are returned in the `/chat` stream `done.meta` object for frontend rendering; recommendation-mode search results additionally expose the all-or-nothing Zod-validated `meta.tourRecommendation` card contract, while assistant text stays short.
 - Tour selection accepts a tour ID or an exact normalized tour name. Recommendations return three eligible deterministic choices when possible, filling weak matches as labeled alternatives. A structured `featured_tour` reservation entry is already an exact confirmed selection and bypasses recommendation search.
-- `GET /chat/latest` loads the most recent conversation for `req.user.id` before the frontend creates a new conversation ID. If that conversation has a reservation, the response includes frontend-safe `meta.reservation` details plus chat-level booking state such as `meta.participants` and `meta.selectedTransportation`. Chat requests can include `customerContext` with name, email, and itinerary dates plus `conversationContext.recentAssistantMetadata` for continuing guided booking flows. For authenticated requests, the JWT user email is authoritative and the JWT user name is preferred when available.
+- `GET /chat/latest` loads the most recent conversation for `req.user.id` before the frontend creates a new conversation ID. If that conversation has a reservation, the response includes frontend-safe `meta.reservation` details plus chat-level booking state such as `meta.participants` and `meta.selectedTransfer`. Chat requests can include `customerContext` with name, email, and itinerary dates plus `conversationContext.recentAssistantMetadata` for continuing guided booking flows. For authenticated requests, the JWT user email is authoritative and the JWT user name is preferred when available.
 - Reservation creation requires an explicit valid `tourDate` within the itinerary. Scheduled occurrence capacity is decremented under a row lock, unscheduled participant limits/minimum pricing are enforced, and the database prevents more than one tour per customer calendar day.
 - `createReservation` is non-retryable at the agent tool executor. An ambiguous
   thrown failure returns an indeterminate result that requires reservation
@@ -251,7 +253,7 @@ GET /chat/latest
 - Voice chat creates one LangSmith-compatible parent trace with child spans for transcription, conversation context/RAG retrieval, agent execution/tool work, final chat response, and speech generation when tracing is enabled.
 - Cache lookups and writes are traced as LangSmith-compatible cache/tool spans with hit, miss, skipped, avoided-LLM-call, hit-rate, and savings metadata when tracing is enabled.
 - User authentication uses `users`, DB-backed refresh sessions use `refresh_tokens`, authenticated token/cost accounting uses `usage_logs`, and subscriptions use provider-neutral `user_subscriptions` plus optional `plan_provider_mappings`.
-- Reservation persistence uses `tours` and `reservations` plus PostgreSQL functions from `003_functions.sql`; transaction, row locking, derived tour location metadata, and authenticated `user_id` persistence live in database functions. Chat-level booking metadata such as transportation selections is stored in `conversations.metadata`.
+- Reservation persistence uses `tours` and `reservations` plus PostgreSQL functions from `003_functions.sql`; transaction, row locking, derived tour location metadata, and authenticated `user_id` persistence live in database functions. Chat-level booking metadata such as transfer selections is stored in `conversations.metadata`.
 - Reservation workflow inputs are separately persisted in versioned `reservation_conversation_states` with append-only audit events. `003_functions.sql` owns optimistic mutations and the atomic, idempotent booking wrapper. Booking tools use only latest confirmed state plus an expected version; messages and chat metadata are never reconstructed into booking arguments.
 
 ## Testing

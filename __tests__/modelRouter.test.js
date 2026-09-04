@@ -311,7 +311,7 @@ describe('task classifier', () => {
       plan: { steps: [{ tool: 'searchTours', args: { recommend: true } }] },
     })).toBe('tour_recommendation');
     expect(classifyTask({
-      plan: { steps: [{ tool: 'calculateTransportation' }] },
+      plan: { steps: [{ tool: 'calculateTransfer' }] },
     })).toBe('tool_selection');
     expect(classifyTask({ hasRagContext: true })).toBe('rag_answer');
     expect(classifyTask()).toBe('general_chat');

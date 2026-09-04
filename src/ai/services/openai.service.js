@@ -104,9 +104,9 @@ function hasCacheUnsafeMetadata(metadata = {}) {
     || metadata.reservation
     || metadata.selectedTour
     || metadata.selectedTourId
-    || metadata.selectedTransportation
-    || metadata.transportationDeclined
-    || metadata.requestedTransportation
+    || metadata.selectedTransfer
+    || metadata.transferDeclined
+    || metadata.requestedTransfer
     || metadata.pricing
     || metadata.uiAction
     || metadata.participants

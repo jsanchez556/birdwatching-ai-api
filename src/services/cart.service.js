@@ -127,7 +127,7 @@ class CartService {
         tourId,
         scheduledDate: body.scheduledDate || null,
         participants,
-        needsTransportation: body.needsTransportation,
+        needsTransfer: body.needsTransfer,
         metadata: body.metadata,
       });
     } catch (error) {
@@ -164,7 +164,7 @@ class CartService {
         itemId: normalizedItemId,
         scheduledDate: body.scheduledDate,
         participants: body.participants === undefined ? undefined : participants,
-        needsTransportation: body.needsTransportation,
+        needsTransfer: body.needsTransfer,
       });
     } catch (error) {
       if (isOneTourPerDayConflict(error)) {
@@ -254,7 +254,7 @@ class CartService {
       }, {
         userId: user.id,
         conversationId,
-        selectedTransportation: item.needsTransportation ? item.metadata?.selectedTransportation : null,
+        selectedTransfer: item.needsTransfer ? item.metadata?.selectedTransfer : null,
         customerContext: {
           customerName: normalizeText(user.name || user.email),
           customerEmail: user.email,

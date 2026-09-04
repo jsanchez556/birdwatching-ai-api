@@ -76,12 +76,12 @@ describe('ReservationStateService', () => {
     const result = await service.processMessage({
       conversationId: 'conversation-1',
       userId: 7,
-      message: 'Tour 9 on August 12 for three, without transportation.',
+      message: 'Tour 9 on August 12 for three, without transfer.',
       extraction: {
         tourId: '9',
         date: '2026-08-12',
         participants: 3,
-        transportationRequired: false,
+        transferRequired: false,
         clearedFields: [],
       },
       customerContext,
@@ -95,7 +95,7 @@ describe('ReservationStateService', () => {
         tourId: 9,
         date: '2026-08-12',
         participants: 3,
-        transportationRequired: false,
+        transferRequired: false,
         customerName: 'Ana Gomez',
         customerEmail: 'ana@example.com',
       },
@@ -217,7 +217,7 @@ describe('ReservationStateService', () => {
         tourId: 9,
         date: '2026-08-12',
         participants: 4,
-        transportationRequired: false,
+        transferRequired: false,
         customerName: 'Ana Gomez',
         customerEmail: 'ana@example.com',
         itineraryStartDate: '2026-08-12',
@@ -242,7 +242,7 @@ describe('ReservationStateService', () => {
       tourId: 9,
       date: '2026-08-12',
       participants: 4,
-      transportationRequired: false,
+      transferRequired: false,
       customerName: 'Ana Gomez',
       customerEmail: 'ana@example.com',
       itineraryStartDate: '2026-08-12',
@@ -250,7 +250,7 @@ describe('ReservationStateService', () => {
     };
     expect(deriveStatus({ confirmed, proposed: {} })).toBe('ready_for_confirmation');
     expect(deriveStatus({ confirmed, proposed: { participants: 5 } })).toBe('collecting_information');
-    expect(deriveStatus({ confirmed: { ...confirmed, transportationRequired: true }, proposed: {} }))
+    expect(deriveStatus({ confirmed: { ...confirmed, transferRequired: true }, proposed: {} }))
       .toBe('collecting_information');
   });
 

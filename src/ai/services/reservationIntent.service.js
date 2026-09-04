@@ -50,10 +50,10 @@ function validateMissingFieldConsistency(result) {
     && result.participants === null) {
     requiredNullFields.push('participants');
   }
-  if (result.intent === 'create_reservation' && result.transportationRequired === null) {
-    requiredNullFields.push('transportationRequired');
+  if (result.intent === 'create_reservation' && result.transferRequired === null) {
+    requiredNullFields.push('transferRequired');
   }
-  if (result.transportationRequired === true && result.pickupLocation === null) {
+  if (result.transferRequired === true && result.pickupLocation === null) {
     requiredNullFields.push('pickupLocation');
   }
 

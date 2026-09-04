@@ -13,7 +13,7 @@ const CONCEPT_GROUPS = Object.freeze({
   tour: ['excursion', 'tour', 'trip', 'visita'],
   meal: ['breakfast', 'dinner', 'food', 'lunch', 'meal', 'comida', 'almuerzo', 'cena'],
   dietary: ['allergic', 'allergy', 'allergies', 'dietary', 'gluten', 'peanut', 'allergia', 'alergia'],
-  transport: ['pickup', 'shuttle', 'transport', 'transportation', 'recogida', 'transporte'],
+  transfer: ['pickup', 'shuttle', 'transport', 'transfer', 'recogida', 'transporte'],
   schedule: ['date', 'day', 'itinerary', 'schedule', 'time', 'fecha', 'horario', 'itinerario'],
   participants: ['guest', 'participant', 'people', 'person', 'persona', 'participante'],
   accessibility: ['accessible', 'accessibility', 'mobility', 'wheelchair', 'accesible', 'movilidad'],

@@ -18,7 +18,7 @@ function structuredSummary(overrides = {}) {
       fact: 'The corrected participant count is three.',
       sourceMessageIds: ['12:user'],
     }],
-    preferences: ['Shared shuttle transportation'],
+    preferences: ['Shared shuttle transfer'],
     decisions: ['Use the corrected participant count of three, not two.'],
     unresolvedQuestions: ['Which pickup location should be used?'],
     pendingActions: [{
@@ -79,7 +79,7 @@ describe('conversation summary Structured Outputs', () => {
         schema: expect.any(Object),
         metadata: expect.objectContaining({
           operation: 'conversation_compaction',
-          promptVersion: '1.0.0',
+          promptVersion: '1.1.0',
         }),
       })
     );

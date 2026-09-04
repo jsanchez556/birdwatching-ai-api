@@ -48,6 +48,8 @@ const numericEnvKeys = [
   'CONVERSATION_COMPACTION_TOKEN_THRESHOLD',
   'CONVERSATION_COMPACTION_RECENT_EXCHANGES',
   'CONVERSATION_COMPACTION_CANDIDATE_LIMIT',
+  'TRANSPORT_ROUTE_TOKEN_TTL_SECONDS',
+  'TRANSPORT_QUOTE_TOKEN_TTL_SECONDS',
 ];
 
 for (const key of numericEnvKeys) {
@@ -116,6 +118,18 @@ if (nodeEnv !== 'test') {
     if (!process.env[key]) {
       throw new Error(`Missing required environment variable: ${key}`);
     }
+  }
+}
+
+if (process.env.TRANSPORT_COUNTRY_CODE && !/^[A-Za-z]{2}$/.test(process.env.TRANSPORT_COUNTRY_CODE.trim())) {
+  throw new Error('TRANSPORT_COUNTRY_CODE must be an ISO 3166-1 alpha-2 code');
+}
+
+if (process.env.TRANSPORT_TIME_ZONE) {
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: process.env.TRANSPORT_TIME_ZONE }).format();
+  } catch {
+    throw new Error('TRANSPORT_TIME_ZONE must be a valid IANA time zone');
   }
 }
 
@@ -245,6 +259,14 @@ const env = {
     baseUrl: (process.env.GEOCODING_PROVIDER_URL || 'https://nominatim.openstreetmap.org')
       .replace(/\/+$/, ''),
     userAgent: process.env.GEOCODING_USER_AGENT || 'birdwatching-ai-admin/1.0',
+  },
+  transport: {
+    countryCode: (process.env.TRANSPORT_COUNTRY_CODE || 'CR').trim().toUpperCase(),
+    timeZone: process.env.TRANSPORT_TIME_ZONE || 'America/Costa_Rica',
+    googleMapsApiKey: process.env.GOOGLE_MAPS_SERVER_API_KEY,
+    tokenSecret: process.env.TRANSPORT_ROUTE_TOKEN_SECRET || (nodeEnv === 'test' ? 'test-transport-secret' : process.env.JWT_SECRET),
+    routeTokenTtlSeconds: parsePositiveInteger(process.env.TRANSPORT_ROUTE_TOKEN_TTL_SECONDS, 15 * 60),
+    quoteTokenTtlSeconds: parsePositiveInteger(process.env.TRANSPORT_QUOTE_TOKEN_TTL_SECONDS, 10 * 60),
   },
   cloudFrontBaseUrl: (process.env.CLOUDFRONT_BASE_URL || '').replace(/\/+$/, ''),
   s3: {

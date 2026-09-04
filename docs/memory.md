@@ -171,7 +171,7 @@ history assembly. The summary schema preserves:
 - the previous summary version.
 
 The summarization prompt explicitly preserves user corrections, reservation
-state, selected tours, participants, itinerary and transportation choices,
+state, selected tours, participants, itinerary and transfer choices,
 durable confirmations, indeterminate reservation outcomes, and pending tool
 operations. Structured conversation/application state is supplied separately
 from message text. A new summary must cite only current source message IDs or

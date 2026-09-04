@@ -3,7 +3,7 @@ import request from 'supertest';
 
 const mockGetFeaturedTours = jest.fn();
 const mockGetBirdHighlights = jest.fn();
-const mockGetTransportationAddOns = jest.fn();
+const mockGetTransferAddOns = jest.fn();
 const mockGetHeroContent = jest.fn();
 const mockGetBirdProfile = jest.fn();
 
@@ -21,7 +21,7 @@ await jest.unstable_mockModule('../src/services/homepage.service.js', () => ({
     getFeaturedTours: mockGetFeaturedTours,
     getBirdHighlights: mockGetBirdHighlights,
     getBirdProfile: mockGetBirdProfile,
-    getTransportationAddOns: mockGetTransportationAddOns,
+    getTransferAddOns: mockGetTransferAddOns,
   },
 }));
 
@@ -70,7 +70,16 @@ describe('homepage endpoints', () => {
     expect(res.body).toEqual({
       success: true,
       data: {
-        tourTypes: ['Birdwatching', 'Day walk', 'Night walk', 'Parks', 'Other'],
+        tourTypes: [
+          'Birdwatching',
+          'Day walk',
+          'Night walk',
+          'Day & Night Walk',
+          'Adventure',
+          'Excursion',
+          'Transfer',
+          'Other',
+        ],
         tours: [
           {
             id: 1,
@@ -170,23 +179,8 @@ describe('homepage endpoints', () => {
     });
   });
 
-  it('returns transportation add-ons', async () => {
-    mockGetTransportationAddOns.mockReturnValue([
-      {
-        id: 'shared-shuttle',
-        title: 'Shared birding shuttle',
-        description: 'Scheduled transfers.',
-        coverage: 'San Jose, Monteverde',
-        startingPrice: 'From $55 per person',
-      },
-    ]);
-
-    const res = await request(app).get('/addons/transportation');
-
-    expect(res.statusCode).toBe(200);
-    expect(res.body.data.transportation[0]).toMatchObject({
-      id: 'shared-shuttle',
-      startingPrice: 'From $55 per person',
-    });
+  it('retires the legacy transfer add-ons endpoint', async () => {
+    const res = await request(app).get('/addons/transfers');
+    expect(res.statusCode).toBe(404);
   });
 });

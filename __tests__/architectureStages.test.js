@@ -30,7 +30,7 @@ import {
 import {
   compactPlanningArgs,
   extractParticipants,
-  extractTransportationDecline,
+  extractTransferDecline,
 } from '../src/ai/planners/planningInput.js';
 import {
   isRetryableToolError,
@@ -168,7 +168,7 @@ describe('extracted architecture stages', () => {
 
   test('planning input parsing keeps normalized, explicit arguments', () => {
     expect(extractParticipants('Reserve for 4 people')).toBe(4);
-    expect(extractTransportationDecline('I have my own transportation')).toBe(true);
+    expect(extractTransferDecline('I have my own transfer')).toBe(true);
     expect(compactPlanningArgs({ tourId: 2, location: '', participants: undefined }))
       .toEqual({ tourId: 2 });
   });

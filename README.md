@@ -141,7 +141,7 @@ RAG context is a separate message assembled from retrieved chunks and source met
 
 ### Transactional boundary
 
-Tour discovery, availability, transportation, and price calculation may inform model text, but `createReservation` succeeds only after argument validation and the PostgreSQL reservation function completes. The final prompt explicitly forbids a confirmation when the durable write failed.
+Tour discovery, availability, transfer, and price calculation may inform model text, but `createReservation` succeeds only after argument validation and the PostgreSQL reservation function completes. The final prompt explicitly forbids a confirmation when the durable write failed.
 
 ## 7. Frontend architecture
 
@@ -156,7 +156,7 @@ The API never trusts frontend roles, quota state, feature availability, reservat
 | Area | Representative routes | Access |
 |---|---|---|
 | Health | `GET /health`, `/health/live`, `/health/ready` | Public |
-| Homepage/media | `GET /homepage/hero`, `/tours`, `/birds/highlights`, `/birds/profile`, `/addons/transportation`, `/files/:folder/:filename` | Public |
+| Homepage/media | `GET /homepage/hero`, `/tours`, `/birds/highlights`, `/birds/profile`, `/addons/transfers`, `/files/:folder/:filename` | Public |
 | Auth/profile | `POST /auth/signup`, `/login`, `/refresh`, `/logout`; `PATCH /auth/profile`; `POST /auth/profile-image` | Profile mutations require auth |
 | Chat | `POST /chat`; `GET /chat/latest`, `/chat/:conversationId` | Stream optional auth; history requires auth |
 | Voice | `POST /voice-chat` | Optional auth, feature flag, AI limit/quota |
@@ -255,8 +255,8 @@ The current runtime is a single domain agent with deterministic multi-tool plann
 |---|---|---|
 | `searchTours` | Search or recommend tours by location, budget, difficulty, group, or price | Parameterized PostgreSQL reads; empty matches remain structured. |
 | `checkAvailability` | Resolve tour and availability for dates/group | Does not reserve inventory. |
-| `calculateTransportation` | Calculate selected transportation details | Requires normalized location/selection context. |
-| `calculatePricing` | Calculate base, group/code discount, and transportation totals | Server calculation is authoritative; still not a booking. |
+| `calculateTransfer` | Calculate selected transfer details | Requires normalized location/selection context. |
+| `calculatePricing` | Calculate base, group/code discount, and transfer totals | Server calculation is authoritative; still not a booking. |
 | `createReservation` | Commit the validated selection/customer/dates/pricing path | Transactional PostgreSQL function, row locking/constraints, confirmation only on success. |
 
 Schemas and handlers are registered together so a missing handler or duplicate tool fails registration. The planner constructs dependent steps; the executor stores intermediate results, validates arguments, records trace events, retries transient results/errors twice by default with exponential delay, and marks remaining steps skipped after a blocking failure.
@@ -586,7 +586,7 @@ These are illustrative placeholders, not repository credentials.
 
 ### Apply database migrations
 
-There is no migration runner script. Apply every file in [`src/db/migrations/`](./src/db/migrations) in numeric order with `psql` or the deployment platform’s database tooling. The current sequence is `001` through `029`; `011` contains seed data. For example, from a shell that has `DATABASE_URL`:
+There is no migration runner script. Apply every file in [`src/db/migrations/`](./src/db/migrations) in numeric order with `psql` or the deployment platform’s database tooling. The current sequence is `001` through `005`; `002` contains seed data. For example, from a shell that has `DATABASE_URL`:
 
 ```bash
 for migration in src/db/migrations/*.sql; do
@@ -825,7 +825,7 @@ Health behavior:
 Deployment checklist:
 
 1. Install and build with Node 22.
-2. Apply migrations `001`–`029` in order before starting the new artifact.
+2. Apply migrations `001`–`005` in order before starting the new artifact.
 3. Configure verified PostgreSQL TLS and Redis connectivity.
 4. Start API and worker separately.
 5. Point liveness/readiness probes at the documented API endpoints.

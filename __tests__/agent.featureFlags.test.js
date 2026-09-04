@@ -12,7 +12,7 @@ function createValidIntentExtractor(intent) {
         location: null,
         date: null,
         participants: null,
-        transportationRequired: null,
+        transferRequired: null,
         pickupLocation: null,
         missingFields: [],
         confidence: 1,

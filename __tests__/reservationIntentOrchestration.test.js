@@ -98,7 +98,7 @@ describe('reservation intent orchestration boundary', () => {
           location: null,
           date: 'tomorrow',
           participants: null,
-          transportationRequired: null,
+          transferRequired: null,
           pickupLocation: null,
           missingFields: [],
           confidence: 0.15,
@@ -132,9 +132,9 @@ describe('reservation intent orchestration boundary', () => {
           location: null,
           date: 'yesterday',
           participants: 500,
-          transportationRequired: null,
+          transferRequired: null,
           pickupLocation: null,
-          missingFields: ['tourId', 'location', 'transportationRequired'],
+          missingFields: ['tourId', 'location', 'transferRequired'],
           confidence: 0.99,
         },
       },
@@ -165,9 +165,9 @@ describe('reservation intent orchestration boundary', () => {
     });
   });
 
-  it('does not calculate transportation without an extracted pickup location', () => {
+  it('does not calculate transfer without an extracted pickup location', () => {
     const plan = new ToolPlanner().plan({
-      message: 'Book the Monteverde tour for three people with transportation.',
+      message: 'Book the Monteverde tour for three people with transfer.',
       context: {
         reservationIntent: {
           intent: 'create_reservation',
@@ -175,7 +175,7 @@ describe('reservation intent orchestration boundary', () => {
           location: 'Monteverde',
           date: null,
           participants: 3,
-          transportationRequired: true,
+          transferRequired: true,
           pickupLocation: null,
           missingFields: ['date', 'pickupLocation'],
           confidence: 0.95,
@@ -185,6 +185,6 @@ describe('reservation intent orchestration boundary', () => {
 
     expect(plan.status).toBe('needs_clarification');
     expect(plan.message).toContain('pickup location');
-    expect(plan.steps.map((step) => step.tool)).not.toContain('calculateTransportation');
+    expect(plan.steps.map((step) => step.tool)).not.toContain('calculateTransfer');
   });
 });

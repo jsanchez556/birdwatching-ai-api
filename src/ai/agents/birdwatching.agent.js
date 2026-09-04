@@ -1,6 +1,6 @@
 import { ToolExecutor } from '../tools/tool.executor.js';
 import searchTours from '../tools/searchTours.tool.js';
-import calculateTransportation from '../tools/transportation.tool.js';
+import calculateTransfer from '../tools/transfer.tool.js';
 import calculatePricing from '../tools/calculatePricing.tool.js';
 import checkAvailability from '../tools/checkAvailability.tool.js';
 import createReservation from '../tools/createReservation.tool.js';
@@ -8,7 +8,7 @@ import toolPlanner from '../planners/tool.planner.js';
 
 const birdwatchingToolHandlers = {
   searchTours,
-  calculateTransportation,
+  calculateTransfer,
   calculatePricing,
   checkAvailability,
   createReservation,

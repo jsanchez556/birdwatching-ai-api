@@ -65,13 +65,13 @@ function summarizeIntermediateState(toolName, result = {}) {
   }
   if (result?.tourId) summary.selectedTourId = result.tourId;
   setNumber('availableSlots', result?.availableSlots);
-  if (toolName === 'calculateTransportation') {
+  if (toolName === 'calculateTransfer') {
     const options = Array.isArray(result.options) ? result.options : [];
     const recommended = options.find((option) => option.type === result.recommendedOption) || options[0];
-    const cost = Number.isFinite(Number(result.transportationCost))
-      ? Number(result.transportationCost) : Number(recommended?.totalPrice);
-    if (Number.isFinite(cost)) summary.transportationCost = cost;
-    if (result?.recommendedOption) summary.recommendedTransportationOption = result.recommendedOption;
+    const cost = Number.isFinite(Number(result.transferCost))
+      ? Number(result.transferCost) : Number(recommended?.totalPrice);
+    if (Number.isFinite(cost)) summary.transferCost = cost;
+    if (result?.recommendedOption) summary.recommendedTransferOption = result.recommendedOption;
   }
   setNumber('totalPrice', result?.totalPrice);
   setNumber('finalTotal', result?.finalTotal);

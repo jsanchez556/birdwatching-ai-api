@@ -6,7 +6,7 @@ const RESERVATION_FIELDS = new Set([
   'date',
   'participants',
   'pickupLocation',
-  'transportationRequired',
+  'transferRequired',
   'customerName',
   'customerEmail',
   'itineraryStartDate',
@@ -18,7 +18,7 @@ const REQUIRED_CONFIRMED_FIELDS = [
   'tourId',
   'date',
   'participants',
-  'transportationRequired',
+  'transferRequired',
   'customerName',
   'customerEmail',
   'itineraryStartDate',
@@ -56,7 +56,7 @@ function normalizeFieldValue(field, value) {
       : { valid: false };
   }
 
-  if (field === 'transportationRequired') {
+  if (field === 'transferRequired') {
     return typeof value === 'boolean'
       ? { valid: true, value }
       : { valid: false };
@@ -85,7 +85,7 @@ function buildExtractedUpdates(extraction = {}, customerContext = {}) {
     date: extraction.date,
     participants: extraction.participants,
     pickupLocation: extraction.pickupLocation,
-    transportationRequired: extraction.transportationRequired,
+    transferRequired: extraction.transferRequired,
     discountCode: extraction.discountCode,
     customerName: customerContext.customerName,
     customerEmail: customerContext.customerEmail,
@@ -144,7 +144,7 @@ function hasRequiredConfirmedFields(confirmed = {}) {
     Object.hasOwn(confirmed, field) && confirmed[field] !== null
   ))) return false;
 
-  return confirmed.transportationRequired !== true
+  return confirmed.transferRequired !== true
     || (typeof confirmed.pickupLocation === 'string' && confirmed.pickupLocation.length > 0);
 }
 

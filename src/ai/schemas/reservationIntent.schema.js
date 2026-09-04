@@ -5,7 +5,7 @@ const ReservationFieldSchema = z.enum([
   'location',
   'date',
   'participants',
-  'transportationRequired',
+  'transferRequired',
   'pickupLocation',
   'discountCode',
 ]);
@@ -26,7 +26,7 @@ const ReservationIntentSchema = z.object({
   location: z.string().min(1).nullable(),
   date: z.string().min(1).nullable(),
   participants: z.number().int().positive().nullable(),
-  transportationRequired: z.boolean().nullable(),
+  transferRequired: z.boolean().nullable(),
   pickupLocation: z.string().min(1).nullable(),
   discountCode: z.string().min(1).nullable(),
   clearedFields: z.array(ReservationFieldSchema),

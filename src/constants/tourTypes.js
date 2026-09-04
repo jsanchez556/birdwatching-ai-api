@@ -2,7 +2,10 @@ export const TOUR_TYPES = Object.freeze([
   'Birdwatching',
   'Day walk',
   'Night walk',
-  'Parks',
+  'Day & Night Walk',
+  'Adventure',
+  'Excursion',
+  'Transfer',
   'Other',
 ]);
 

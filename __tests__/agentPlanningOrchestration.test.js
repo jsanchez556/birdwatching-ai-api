@@ -12,7 +12,7 @@ await jest.unstable_mockModule('../src/utils/logger.js', () => ({
 
 const { ToolPlanner } = await import('../src/ai/planners/tool.planner.js');
 const { ToolExecutor } = await import('../src/ai/tools/tool.executor.js');
-const { calculateTransportation } = await import('../src/ai/tools/transportation.tool.js');
+const { calculateTransfer } = await import('../src/ai/tools/transfer.tool.js');
 const { AgentOrchestrator } = await import('../src/ai/orchestrators/agent.orchestrator.js');
 const { validateChatBody } = await import('../src/api/validators/chat.validator.js');
 
@@ -26,7 +26,7 @@ function createValidIntentExtractor(intent = 'create_reservation') {
         location: null,
         date: null,
         participants: null,
-        transportationRequired: null,
+        transferRequired: null,
         pickupLocation: null,
         missingFields: [],
         confidence: 1,
@@ -57,7 +57,7 @@ describe('multi-tool agent planning and orchestration', () => {
     });
   });
 
-  it('plans sequential transportation and pricing tools for full cost requests', () => {
+  it('plans sequential transfer and pricing tools for full cost requests', () => {
     const planner = new ToolPlanner();
 
     const plan = planner.plan({
@@ -66,7 +66,7 @@ describe('multi-tool agent planning and orchestration', () => {
 
     expect(plan.status).toBe('ready');
     expect(plan.steps.map((step) => step.tool)).toEqual([
-      'calculateTransportation',
+      'calculateTransfer',
       'calculatePricing',
     ]);
     expect(plan.steps[1].args).toMatchObject({
@@ -75,17 +75,17 @@ describe('multi-tool agent planning and orchestration', () => {
     });
   });
 
-  it('plans tour search plus transportation when a tour request includes transportation', () => {
+  it('plans tour search plus transfer when a tour request includes transfer', () => {
     const planner = new ToolPlanner();
 
     const plan = planner.plan({
-      message: 'I want a birdwatching tour in Monteverde for 3 people with transportation from San Jose.',
+      message: 'I want a birdwatching tour in Monteverde for 3 people with transfer from San Jose.',
     });
 
     expect(plan.status).toBe('ready');
     expect(plan.steps.map((step) => step.tool)).toEqual([
       'searchTours',
-      'calculateTransportation',
+      'calculateTransfer',
     ]);
     expect(plan.steps[0].args).toMatchObject({
       location: 'Monteverde',
@@ -102,13 +102,13 @@ describe('multi-tool agent planning and orchestration', () => {
     const planner = new ToolPlanner();
 
     const plan = planner.plan({
-      message: 'I want a birdwatching tour in bijagua of upala for 3 people with transportation from San Jose.',
+      message: 'I want a birdwatching tour in bijagua of upala for 3 people with transfer from San Jose.',
     });
 
     expect(plan.status).toBe('ready');
     expect(plan.steps.map((step) => step.tool)).toEqual([
       'searchTours',
-      'calculateTransportation',
+      'calculateTransfer',
     ]);
     expect(plan.steps[0].args).toMatchObject({
       location: 'Tenorio-Bijagua and Rio Celeste',
@@ -121,8 +121,8 @@ describe('multi-tool agent planning and orchestration', () => {
     });
   });
 
-  it('calculates transportation options for Tenorio-Bijagua tours', async () => {
-    await expect(calculateTransportation({
+  it('calculates transfer options for Tenorio-Bijagua tours', async () => {
+    await expect(calculateTransfer({
       location: 'Tenorio-Bijagua and Río Celeste / Tapir Valley Nature Reserve',
       participants: 3,
       origin: 'San Jose',
@@ -144,7 +144,7 @@ describe('multi-tool agent planning and orchestration', () => {
     });
   });
 
-  it('shows transportation options after a tour is selected when transportation was requested earlier', () => {
+  it('shows transfer options after a tour is selected when transfer was requested earlier', () => {
     const planner = new ToolPlanner();
 
     const plan = planner.plan({
@@ -173,7 +173,7 @@ describe('multi-tool agent planning and orchestration', () => {
         messages: [
           {
             role: 'user',
-            content: 'I want a birdwatching tour in bijagua of upala for 3 people with transportation from San Jose.',
+            content: 'I want a birdwatching tour in bijagua of upala for 3 people with transfer from San Jose.',
           },
           {
             role: 'assistant',
@@ -187,11 +187,11 @@ describe('multi-tool agent planning and orchestration', () => {
       },
     });
 
-    expect(plan.status).toBe('transportation_requested');
-    expect(plan.requestedTransportation).toBe(true);
+    expect(plan.status).toBe('transfer_requested');
+    expect(plan.requestedTransfer).toBe(true);
     expect(plan.steps.map((step) => step.tool)).toEqual([
       'checkAvailability',
-      'calculateTransportation',
+      'calculateTransfer',
     ]);
     expect(plan.steps.map((step) => step.tool)).not.toContain('calculatePricing');
     expect(plan.steps.map((step) => step.tool)).not.toContain('createReservation');
@@ -203,11 +203,11 @@ describe('multi-tool agent planning and orchestration', () => {
     });
   });
 
-  it('plans transportation before reservation confirmation for combined transportation reservation intent', () => {
+  it('plans transfer before reservation confirmation for combined transfer reservation intent', () => {
     const planner = new ToolPlanner();
 
     const plan = planner.plan({
-      message: 'I need transportation and a reservation for tour 1 for 3 people',
+      message: 'I need a transfer and a reservation for tour 1 for 3 people',
       context: {
         customerContext: {
           customerName: 'Ana Gomez',
@@ -220,23 +220,23 @@ describe('multi-tool agent planning and orchestration', () => {
 
     expect(plan.status).toBe('needs_clarification');
     expect(plan.steps.map((step) => step.tool)).toEqual([
-      'calculateTransportation',
+      'calculateTransfer',
       'checkAvailability',
     ]);
     expect(plan.steps.map((step) => step.tool)).not.toContain('createReservation');
   });
 
-  it('plans search before transportation when combined reservation intent has no selected tour', () => {
+  it('plans search before transfer when combined reservation intent has no selected tour', () => {
     const planner = new ToolPlanner();
 
     const plan = planner.plan({
-      message: 'I need transportation and a reservation',
+      message: 'I need a transfer and a reservation',
     });
 
     expect(plan.status).toBe('needs_clarification');
     expect(plan.steps.map((step) => step.tool)).toEqual([
       'searchTours',
-      'calculateTransportation',
+      'calculateTransfer',
     ]);
     expect(plan.steps[0].args).toMatchObject({
       recommend: true,
@@ -258,11 +258,11 @@ describe('multi-tool agent planning and orchestration', () => {
             availableSlots: 5,
           },
         ],
-        recentToolsCalled: ['searchTours', 'calculateTransportation'],
+        recentToolsCalled: ['searchTours', 'calculateTransfer'],
         messages: [
           {
             role: 'user',
-            content: 'I want a birdwatching tour in Monteverde for 3 people with transportation from San Jose.',
+            content: 'I want a birdwatching tour in Monteverde for 3 people with transfer from San Jose.',
           },
           {
             role: 'assistant',
@@ -280,7 +280,7 @@ describe('multi-tool agent planning and orchestration', () => {
     expect(plan.message).toContain('Monteverde Quetzal Tour');
     expect(plan.steps.map((step) => step.tool)).toEqual([
       'checkAvailability',
-      'calculateTransportation',
+      'calculateTransfer',
     ]);
     expect(plan.steps[0].args).toMatchObject({
       tourId: 1,
@@ -312,7 +312,7 @@ describe('multi-tool agent planning and orchestration', () => {
         messages: [
           {
             role: 'user',
-            content: 'I want a birdwatching tour in Monteverde for 3 people with transportation from San Jose.',
+            content: 'I want a birdwatching tour in Monteverde for 3 people with transfer from San Jose.',
           },
           {
             role: 'assistant',
@@ -323,10 +323,10 @@ describe('multi-tool agent planning and orchestration', () => {
       },
     });
 
-    expect(plan.status).toBe('transportation_requested');
+    expect(plan.status).toBe('transfer_requested');
     expect(plan.steps.map((step) => step.tool)).toEqual([
       'checkAvailability',
-      'calculateTransportation',
+      'calculateTransfer',
     ]);
     expect(plan.steps[0].args).toMatchObject({
       tourId: 1,
@@ -337,7 +337,7 @@ describe('multi-tool agent planning and orchestration', () => {
     expect(plan.steps.map((step) => step.tool)).not.toContain('createReservation');
   });
 
-  it('persists transportation selection without recalculating transportation', () => {
+  it('persists transfer selection without recalculating transfer', () => {
     const planner = new ToolPlanner();
 
     const plan = planner.plan({
@@ -345,12 +345,12 @@ describe('multi-tool agent planning and orchestration', () => {
       context: {
         recentMetadata: {
           uiAction: {
-            type: 'transportation_selection',
+            type: 'transfer_selection',
             options: [
               {
                 label: 'Shared shuttle',
                 value: {
-                  transportationOption: 'shared_shuttle',
+                  transferOption: 'shared_shuttle',
                   origin: 'San Jose',
                   destination: 'Monteverde',
                 },
@@ -358,7 +358,7 @@ describe('multi-tool agent planning and orchestration', () => {
               {
                 label: 'Private transfer',
                 value: {
-                  transportationOption: 'private_transfer',
+                  transferOption: 'private_transfer',
                   origin: 'San Jose',
                   destination: 'Monteverde',
                 },
@@ -383,11 +383,11 @@ describe('multi-tool agent planning and orchestration', () => {
         messages: [
           {
             role: 'user',
-            content: 'I want a birdwatching tour in Monteverde for 3 people with transportation from San Jose.',
+            content: 'I want a birdwatching tour in Monteverde for 3 people with transfer from San Jose.',
           },
           {
             role: 'assistant',
-            content: 'Which transportation option would you prefer?',
+            content: 'Which transfer option would you prefer?',
           },
           {
             role: 'user',
@@ -397,9 +397,9 @@ describe('multi-tool agent planning and orchestration', () => {
       },
     });
 
-    expect(plan.status).toBe('transportation_selected');
-    expect(plan.selectedTransportation).toMatchObject({
-      transportationOption: 'shared_shuttle',
+    expect(plan.status).toBe('transfer_selected');
+    expect(plan.selectedTransfer).toMatchObject({
+      transferOption: 'shared_shuttle',
       label: 'Shared shuttle',
       origin: 'San Jose',
       destination: 'Monteverde',
@@ -408,7 +408,7 @@ describe('multi-tool agent planning and orchestration', () => {
       'checkAvailability',
       'calculatePricing',
     ]);
-    expect(plan.steps.map((step) => step.tool)).not.toContain('calculateTransportation');
+    expect(plan.steps.map((step) => step.tool)).not.toContain('calculateTransfer');
     expect(plan.steps[0].args).toMatchObject({
       tourId: 1,
       participants: 3,
@@ -417,7 +417,7 @@ describe('multi-tool agent planning and orchestration', () => {
     });
   });
 
-  it('carries participant count from recent metadata after transportation selection', () => {
+  it('carries participant count from recent metadata after transfer selection', () => {
     const planner = new ToolPlanner();
 
     const plan = planner.plan({
@@ -432,12 +432,12 @@ describe('multi-tool agent planning and orchestration', () => {
             location: 'Sarapiqui',
           },
           uiAction: {
-            type: 'transportation_selection',
+            type: 'transfer_selection',
             options: [
               {
                 label: 'Shared shuttle',
                 value: {
-                  transportationOption: 'shared_shuttle',
+                  transferOption: 'shared_shuttle',
                   origin: 'San Jose',
                   destination: 'Sarapiqui',
                   totalPrice: 110,
@@ -454,13 +454,13 @@ describe('multi-tool agent planning and orchestration', () => {
         },
         messages: [
           { role: 'user', content: '2' },
-          { role: 'assistant', content: 'Which transportation option would you prefer?' },
+          { role: 'assistant', content: 'Which transfer option would you prefer?' },
           { role: 'user', content: 'I choose shared shuttle from San Jose to Sarapiqui' },
         ],
       },
     });
 
-    expect(plan.status).toBe('transportation_selected');
+    expect(plan.status).toBe('transfer_selected');
     expect(plan.steps.map((step) => step.tool)).toEqual([
       'checkAvailability',
       'calculatePricing',
@@ -490,18 +490,18 @@ describe('multi-tool agent planning and orchestration', () => {
               difficulty: 'moderate',
             },
             participants: 3,
-            selectedTransportation: {
-              transportationOption: 'private_transfer',
+            selectedTransfer: {
+              transferOption: 'private_transfer',
               origin: 'San Jose',
               destination: 'Monteverde',
               label: 'Private transfer',
               totalPrice: 220,
               currency: 'USD',
             },
-            requestedTransportation: true,
-            transportationDeclined: true,
+            requestedTransfer: true,
+            transferDeclined: true,
             uiAction: {
-              type: 'transportation_selection',
+              type: 'transfer_selection',
               options: [],
             },
           },
@@ -517,12 +517,12 @@ describe('multi-tool agent planning and orchestration', () => {
         name: 'Monteverde Quetzal Tour',
       },
       participants: 3,
-      selectedTransportation: {
-        transportationOption: 'private_transfer',
+      selectedTransfer: {
+        transferOption: 'private_transfer',
         totalPrice: 220,
       },
-      requestedTransportation: true,
-      transportationDeclined: true,
+      requestedTransfer: true,
+      transferDeclined: true,
     });
   });
 
@@ -549,7 +549,7 @@ describe('multi-tool agent planning and orchestration', () => {
                   pricePerPerson: 120,
                   scheduledDate: '2026-07-10',
                   participants: 2,
-                  needsTransportation: true,
+                  needsTransfer: true,
                 },
                 {
                   tourId: 2,
@@ -583,7 +583,7 @@ describe('multi-tool agent planning and orchestration', () => {
             name: 'Monteverde Quetzal Tour',
             scheduledDate: '2026-07-10',
             participants: 2,
-            needsTransportation: true,
+            needsTransfer: true,
           },
           {
             tourId: 2,
@@ -705,14 +705,14 @@ describe('multi-tool agent planning and orchestration', () => {
     });
   });
 
-  it('asks for a destination before calculating standalone transportation', () => {
+  it('asks for a destination before calculating standalone transfer', () => {
     const planner = new ToolPlanner();
 
     expect(planner.plan({
-      message: 'Can you calculate transportation for 2 people?',
+      message: 'Can you calculate transfer for 2 people?',
     })).toEqual({
       status: 'needs_clarification',
-      message: 'Ask which tour or destination they need transportation for before calculating transportation.',
+      message: 'Ask which tour or destination they need transfer for before calculating transfer.',
       steps: [],
     });
   });
@@ -724,7 +724,7 @@ describe('multi-tool agent planning and orchestration', () => {
       message: 'What is the full cost with shuttle for 2 people?',
     })).toEqual({
       status: 'needs_clarification',
-      message: 'Ask which tour or destination they want a full cost for before calculating transportation and pricing.',
+      message: 'Ask which tour or destination they want a full cost for before calculating transfer and pricing.',
       steps: [],
     });
   });
@@ -740,7 +740,7 @@ describe('multi-tool agent planning and orchestration', () => {
     expect(plan.steps.map((step) => step.tool)).not.toContain('createReservation');
   });
 
-  it('asks for transportation preference before confirmed booking when it is unknown', () => {
+  it('asks for transfer preference before confirmed booking when it is unknown', () => {
     const planner = new ToolPlanner();
 
     const plan = planner.plan({
@@ -755,7 +755,7 @@ describe('multi-tool agent planning and orchestration', () => {
       },
     });
 
-    expect(plan.status).toBe('needs_transportation_preference');
+    expect(plan.status).toBe('needs_transfer_preference');
     expect(plan.steps.map((step) => step.tool)).toEqual([
       'checkAvailability',
       'calculatePricing',
@@ -769,7 +769,7 @@ describe('multi-tool agent planning and orchestration', () => {
     });
   });
 
-  it('uses customer context and asks about transportation when confirming a guided booking without preference', () => {
+  it('uses customer context and asks about transfer when confirming a guided booking without preference', () => {
     const planner = new ToolPlanner();
 
     const plan = planner.plan({
@@ -790,7 +790,7 @@ describe('multi-tool agent planning and orchestration', () => {
         messages: [
           {
             role: 'user',
-            content: 'I want a birdwatching tour in Monteverde for 3 people with transportation from San Jose.',
+            content: 'I want a birdwatching tour in Monteverde for 3 people with transfer from San Jose.',
           },
           {
             role: 'assistant',
@@ -804,7 +804,7 @@ describe('multi-tool agent planning and orchestration', () => {
       },
     });
 
-    expect(plan.status).toBe('needs_transportation_preference');
+    expect(plan.status).toBe('needs_transfer_preference');
     expect(plan.steps.map((step) => step.tool)).toEqual([
       'checkAvailability',
       'calculatePricing',
@@ -820,7 +820,7 @@ describe('multi-tool agent planning and orchestration', () => {
     });
   });
 
-  it('asks for transportation preference when the user selects participant count from the UI action', () => {
+  it('asks for transfer preference when the user selects participant count from the UI action', () => {
     const planner = new ToolPlanner();
 
     const plan = planner.plan({
@@ -854,7 +854,7 @@ describe('multi-tool agent planning and orchestration', () => {
       },
     });
 
-    expect(plan.status).toBe('needs_transportation_preference');
+    expect(plan.status).toBe('needs_transfer_preference');
     expect(plan.steps.map((step) => step.tool)).toEqual([
       'checkAvailability',
       'calculatePricing',
@@ -868,11 +868,11 @@ describe('multi-tool agent planning and orchestration', () => {
     });
   });
 
-  it('calculates transportation when the user chooses to see transportation options', () => {
+  it('calculates transfer when the user chooses to see transfer options', () => {
     const planner = new ToolPlanner();
 
     const plan = planner.plan({
-      message: 'Show transportation',
+      message: 'Show transfer options',
       context: {
         selectedTourId: 2,
         selectedTour: {
@@ -889,16 +889,16 @@ describe('multi-tool agent planning and orchestration', () => {
         },
         messages: [
           { role: 'user', content: '3' },
-          { role: 'assistant', content: 'Would you like transportation for this tour?' },
-          { role: 'user', content: 'Show transportation' },
+          { role: 'assistant', content: 'Would you like a transfer for this tour?' },
+          { role: 'user', content: 'Show transfer options' },
         ],
       },
     });
 
-    expect(plan.status).toBe('transportation_requested');
+    expect(plan.status).toBe('transfer_requested');
     expect(plan.steps).toEqual([
       {
-        tool: 'calculateTransportation',
+        tool: 'calculateTransfer',
         args: expect.objectContaining({
           tourId: 2,
           tourName: 'Sarapiqui Rainforest Tour',
@@ -910,11 +910,11 @@ describe('multi-tool agent planning and orchestration', () => {
     ]);
   });
 
-  it('marks transportation declined and prepares final confirmation', () => {
+  it('marks transfer declined and prepares final confirmation', () => {
     const planner = new ToolPlanner();
 
     const plan = planner.plan({
-      message: 'No, I have my own transportation',
+      message: 'No, I do not need a transfer',
       context: {
         selectedTourId: 2,
         selectedTour: {
@@ -931,21 +931,21 @@ describe('multi-tool agent planning and orchestration', () => {
         },
         messages: [
           { role: 'user', content: '3' },
-          { role: 'assistant', content: 'Would you like transportation for this tour?' },
-          { role: 'user', content: 'No, I have my own transportation' },
+          { role: 'assistant', content: 'Would you like a transfer for this tour?' },
+          { role: 'user', content: 'No, I do not need a transfer' },
         ],
       },
     });
 
-    expect(plan.status).toBe('transportation_declined');
-    expect(plan.transportationDeclined).toBe(true);
+    expect(plan.status).toBe('transfer_declined');
+    expect(plan.transferDeclined).toBe(true);
     expect(plan.steps.map((step) => step.tool)).toEqual([
       'checkAvailability',
       'calculatePricing',
     ]);
   });
 
-  it('creates the reservation after final confirmation when transportation was declined', () => {
+  it('creates the reservation after final confirmation when transfer was declined', () => {
     const planner = new ToolPlanner();
 
     const plan = planner.plan({
@@ -957,7 +957,7 @@ describe('multi-tool agent planning and orchestration', () => {
           name: 'Sarapiqui Rainforest Tour',
           location: 'Sarapiqui',
         },
-        transportationDeclined: true,
+        transferDeclined: true,
         participants: 3,
         customerContext: {
           customerName: 'Jose Sanchez',
@@ -967,14 +967,14 @@ describe('multi-tool agent planning and orchestration', () => {
         },
         messages: [
           { role: 'user', content: '3' },
-          { role: 'user', content: 'No, I have my own transportation' },
+          { role: 'user', content: 'No, I do not need a transfer' },
           { role: 'user', content: 'Confirm reservation' },
         ],
       },
     });
 
     expect(plan.status).toBe('ready');
-    expect(plan.transportationDeclined).toBe(true);
+    expect(plan.transferDeclined).toBe(true);
     expect(plan.steps.map((step) => step.tool)).toEqual([
       'checkAvailability',
       'calculatePricing',
@@ -996,8 +996,8 @@ describe('multi-tool agent planning and orchestration', () => {
             name: 'Sarapiqui Rainforest Tour',
             location: 'Sarapiqui',
           },
-          selectedTransportation: {
-            transportationOption: 'shared_shuttle',
+          selectedTransfer: {
+            transferOption: 'shared_shuttle',
             origin: 'San Jose',
             destination: 'Sarapiqui',
             totalPrice: 110,
@@ -1143,7 +1143,7 @@ describe('multi-tool agent planning and orchestration', () => {
 
   it('stores a sanitized debug trace with tool inputs, results, and intermediate state', async () => {
     const executor = new ToolExecutor({
-      calculateTransportation: jest.fn().mockResolvedValue({
+      calculateTransfer: jest.fn().mockResolvedValue({
         success: true,
         origin: 'San Jose',
         destination: 'Monteverde',
@@ -1169,8 +1169,8 @@ describe('multi-tool agent planning and orchestration', () => {
       status: 'ready',
       steps: [
         {
-          id: 'transportation',
-          tool: 'calculateTransportation',
+          id: 'transfer',
+          tool: 'calculateTransfer',
           args: { location: 'Monteverde', participants: 2 },
         },
         {
@@ -1189,17 +1189,17 @@ describe('multi-tool agent planning and orchestration', () => {
     expect(result.debugTrace).toEqual(expect.objectContaining({
       plan: expect.objectContaining({
         status: 'ready',
-        tools: ['calculateTransportation', 'createReservation'],
+        tools: ['calculateTransfer', 'createReservation'],
       }),
       executions: [
         expect.objectContaining({
-          id: 'transportation',
-          tool: 'calculateTransportation',
+          id: 'transfer',
+          tool: 'calculateTransfer',
           status: 'succeeded',
           input: { location: 'Monteverde', participants: 2 },
           intermediateState: expect.objectContaining({
-            transportationCost: 120,
-            recommendedTransportationOption: 'shared_shuttle',
+            transferCost: 120,
+            recommendedTransferOption: 'shared_shuttle',
           }),
         }),
         expect.objectContaining({
@@ -1218,7 +1218,7 @@ describe('multi-tool agent planning and orchestration', () => {
         }),
       ],
       intermediateState: expect.objectContaining({
-        transportation: expect.objectContaining({ transportationCost: 120 }),
+        transfer: expect.objectContaining({ transferCost: 120 }),
         reservation: { reservationId: 22 },
       }),
       errors: [],
@@ -1235,7 +1235,7 @@ describe('multi-tool agent planning and orchestration', () => {
         code: 'SEARCH_FAILED',
         message: 'Search failed.',
       }),
-      calculateTransportation: jest.fn(),
+      calculateTransfer: jest.fn(),
     });
     const metadata = { conversationId: 'conversation-123' };
 
@@ -1243,7 +1243,7 @@ describe('multi-tool agent planning and orchestration', () => {
       status: 'ready',
       steps: [
         { id: 'search', tool: 'searchTours', args: { location: 'Monteverde' } },
-        { id: 'transportation', tool: 'calculateTransportation', args: { location: 'Monteverde' } },
+        { id: 'transfer', tool: 'calculateTransfer', args: { location: 'Monteverde' } },
       ],
     }, metadata);
 
@@ -1256,12 +1256,12 @@ describe('multi-tool agent planning and orchestration', () => {
     ]);
     expect(result.debugTrace.skippedSteps).toEqual([
       expect.objectContaining({
-        id: 'transportation',
-        tool: 'calculateTransportation',
+        id: 'transfer',
+        tool: 'calculateTransfer',
         reason: expect.stringContaining('previous tool failed'),
       }),
     ]);
-    expect(executor.handlers.get('calculateTransportation')).not.toHaveBeenCalled();
+    expect(executor.handlers.get('calculateTransfer')).not.toHaveBeenCalled();
   });
 
   it('logs and traces each tool plan execution step', async () => {
@@ -1409,27 +1409,27 @@ describe('multi-tool agent planning and orchestration', () => {
   });
 
   it('does not retry permanent user-correctable tool failures', async () => {
-    const calculateTransportation = jest.fn().mockResolvedValue({
+    const calculateTransfer = jest.fn().mockResolvedValue({
       success: false,
-      code: 'TRANSPORTATION_LOCATION_REQUIRED',
-      message: 'Please provide the tour location so I can estimate transportation.',
+      code: 'TRANSFER_LOCATION_REQUIRED',
+      message: 'Please provide the tour location so I can estimate transfer options.',
     });
-    const executor = new ToolExecutor({ calculateTransportation }, {
+    const executor = new ToolExecutor({ calculateTransfer }, {
       retry: { retries: 3, baseDelayMs: 0 },
     });
 
     const result = await executor.executePlan({
       status: 'ready',
-      steps: [{ id: 'transportation', tool: 'calculateTransportation', args: { participants: 2 } }],
+      steps: [{ id: 'transfer', tool: 'calculateTransfer', args: { participants: 2 } }],
     }, { conversationId: 'conversation-123' });
 
-    expect(calculateTransportation).toHaveBeenCalledTimes(1);
+    expect(calculateTransfer).toHaveBeenCalledTimes(1);
     expect(result.debugTrace.executions[0].attempts).toEqual([
       expect.objectContaining({
         attempt: 1,
         status: 'failed',
         retryable: false,
-        result: expect.objectContaining({ code: 'TRANSPORTATION_LOCATION_REQUIRED' }),
+        result: expect.objectContaining({ code: 'TRANSFER_LOCATION_REQUIRED' }),
       }),
     ]);
   });
@@ -1580,9 +1580,9 @@ describe('multi-tool agent planning and orchestration', () => {
     }));
   });
 
-  it('adds a transportation selection action after transportation options are calculated', async () => {
+  it('adds a transfer selection action after transfer options are calculated', async () => {
     const executor = new ToolExecutor({
-      calculateTransportation: jest.fn().mockResolvedValue({
+      calculateTransfer: jest.fn().mockResolvedValue({
         success: true,
         origin: 'San Jose',
         destination: 'Monteverde',
@@ -1606,17 +1606,17 @@ describe('multi-tool agent planning and orchestration', () => {
     const metadata = { conversationId: 'conversation-123' };
 
     await executor.executePlan({
-      steps: [{ tool: 'calculateTransportation', args: { location: 'Monteverde', participants: 3 } }],
+      steps: [{ tool: 'calculateTransfer', args: { location: 'Monteverde', participants: 3 } }],
     }, metadata);
 
     expect(metadata.uiAction).toEqual({
-      type: 'transportation_selection',
-      prompt: 'Which transportation option would you prefer for San Jose to Monteverde?',
+      type: 'transfer_selection',
+      prompt: 'Which transfer option would you prefer for San Jose to Monteverde?',
       options: [
         expect.objectContaining({
           label: 'Shared shuttle',
           value: expect.objectContaining({
-            transportationOption: 'shared_shuttle',
+            transferOption: 'shared_shuttle',
             origin: 'San Jose',
             destination: 'Monteverde',
             totalPrice: 195,
@@ -1627,7 +1627,7 @@ describe('multi-tool agent planning and orchestration', () => {
         expect.objectContaining({
           label: 'Private transfer',
           value: expect.objectContaining({
-            transportationOption: 'private_transfer',
+            transferOption: 'private_transfer',
             origin: 'San Jose',
             destination: 'Monteverde',
             totalPrice: 220,
@@ -1639,7 +1639,7 @@ describe('multi-tool agent planning and orchestration', () => {
     });
   });
 
-  it('keeps selected-tour metadata and returns transportation selection before confirmation', async () => {
+  it('keeps selected-tour metadata and returns transfer selection before confirmation', async () => {
     const executor = new ToolExecutor({
       checkAvailability: jest.fn().mockResolvedValue({
         success: true,
@@ -1651,7 +1651,7 @@ describe('multi-tool agent planning and orchestration', () => {
         durationHours: 4,
         difficulty: 'Easy',
       }),
-      calculateTransportation: jest.fn().mockResolvedValue({
+      calculateTransfer: jest.fn().mockResolvedValue({
         success: true,
         origin: 'San Jose',
         destination: 'Tenorio-Bijagua and Rio Celeste',
@@ -1674,8 +1674,8 @@ describe('multi-tool agent planning and orchestration', () => {
     });
     const metadata = {
       conversationId: 'conversation-123',
-      agentPlan: { status: 'transportation_requested' },
-      requestedTransportation: true,
+      agentPlan: { status: 'transfer_requested' },
+      requestedTransfer: true,
       customerContext: {
         customerName: 'Jose Sanchez',
         customerEmail: 'jose@example.com',
@@ -1688,7 +1688,7 @@ describe('multi-tool agent planning and orchestration', () => {
       steps: [
         { tool: 'checkAvailability', args: { tourId: 1, participants: 3 } },
         {
-          tool: 'calculateTransportation',
+          tool: 'calculateTransfer',
           args: {
             tourId: 1,
             tourName: 'Tapir Valley Birding Tour',
@@ -1703,13 +1703,13 @@ describe('multi-tool agent planning and orchestration', () => {
       tourId: 1,
       name: 'Tapir Valley Birding Tour',
     });
-    expect(metadata.requestedTransportation).toBe(true);
+    expect(metadata.requestedTransfer).toBe(true);
     expect(metadata.uiAction).toEqual(expect.objectContaining({
-      type: 'transportation_selection',
+      type: 'transfer_selection',
       options: expect.arrayContaining([
         expect.objectContaining({
           value: expect.objectContaining({
-            transportationOption: 'shared_shuttle',
+            transferOption: 'shared_shuttle',
             totalPrice: 225,
           }),
         }),
@@ -1718,9 +1718,9 @@ describe('multi-tool agent planning and orchestration', () => {
     expect(metadata.uiAction.type).not.toBe('reservation_confirmation');
   });
 
-  it('keeps transportation selection when availability follows transportation with complete booking context', async () => {
+  it('keeps transfer selection when availability follows transfer with complete booking context', async () => {
     const executor = new ToolExecutor({
-      calculateTransportation: jest.fn().mockResolvedValue({
+      calculateTransfer: jest.fn().mockResolvedValue({
         success: true,
         origin: 'San Jose',
         destination: 'Monteverde',
@@ -1753,7 +1753,7 @@ describe('multi-tool agent planning and orchestration', () => {
     });
     const metadata = {
       conversationId: 'conversation-123',
-      agentPlan: { status: 'transportation_selected' },
+      agentPlan: { status: 'transfer_selected' },
       customerContext: {
         customerName: 'Jose Sanchez',
         customerEmail: 'jose@example.com',
@@ -1764,16 +1764,16 @@ describe('multi-tool agent planning and orchestration', () => {
 
     await executor.executePlan({
       steps: [
-        { tool: 'calculateTransportation', args: { location: 'Monteverde', participants: 3 } },
+        { tool: 'calculateTransfer', args: { location: 'Monteverde', participants: 3 } },
         { tool: 'checkAvailability', args: { tourId: 1, participants: 3 } },
       ],
     }, metadata);
 
     expect(metadata.uiAction).toEqual(expect.objectContaining({
-      type: 'transportation_selection',
+      type: 'transfer_selection',
       options: expect.arrayContaining([
         expect.objectContaining({
-          value: expect.objectContaining({ transportationOption: 'shared_shuttle' }),
+          value: expect.objectContaining({ transferOption: 'shared_shuttle' }),
         }),
       ]),
     }));
@@ -1817,12 +1817,12 @@ describe('multi-tool agent planning and orchestration', () => {
           max: 3,
         }),
         expect.objectContaining({
-          name: 'transportationRequired',
+          name: 'transferRequired',
           type: 'select',
         }),
         expect.objectContaining({
           name: 'pickupLocation',
-          requiredWhen: { field: 'transportationRequired', equals: true },
+          requiredWhen: { field: 'transferRequired', equals: true },
         }),
       ]),
     }));
@@ -1835,7 +1835,7 @@ describe('multi-tool agent planning and orchestration', () => {
   it('moves a complete combined details reply to confirmation without re-asking', () => {
     const planner = new ToolPlanner();
     const plan = planner.plan({
-      message: 'I want to complete the reservation. Date: 2026-05-24. Participants: 2. Transportation required: no; I have my own transportation.',
+      message: 'I want to complete the reservation. Date: 2026-05-24. Participants: 2. Transfer required: no; I have my own transfer.',
       context: {
         selectedTourId: 2,
         reservationIntent: {
@@ -1844,7 +1844,7 @@ describe('multi-tool agent planning and orchestration', () => {
           location: null,
           date: '2026-05-24',
           participants: 2,
-          transportationRequired: false,
+          transferRequired: false,
           pickupLocation: null,
           discountCode: null,
         },
@@ -1853,7 +1853,7 @@ describe('multi-tool agent planning and orchestration', () => {
             tourId: 2,
             date: '2026-05-24',
             participants: 2,
-            transportationRequired: false,
+            transferRequired: false,
             customerName: 'Jose Sanchez',
             customerEmail: 'jose@example.com',
             itineraryStartDate: '2026-05-23',
@@ -1865,13 +1865,13 @@ describe('multi-tool agent planning and orchestration', () => {
       },
     });
 
-    expect(plan.status).toBe('transportation_declined');
-    expect(plan.transportationDeclined).toBe(true);
+    expect(plan.status).toBe('transfer_declined');
+    expect(plan.transferDeclined).toBe(true);
     expect(plan.steps.map((step) => step.tool)).toEqual(['checkAvailability', 'calculatePricing']);
     expect(plan.message).toContain('final reservation confirmation');
   });
 
-  it('returns confirmation after combined details when transportation decline exists only in structured state', async () => {
+  it('returns confirmation after combined details when transfer decline exists only in structured state', async () => {
     const executor = new ToolExecutor({
       checkAvailability: jest.fn().mockResolvedValue({
         success: true,
@@ -1890,7 +1890,7 @@ describe('multi-tool agent planning and orchestration', () => {
         proposed: {
           date: '2026-05-24',
           participants: 2,
-          transportationRequired: false,
+          transferRequired: false,
         },
         confirmed: {},
       },
@@ -1915,7 +1915,7 @@ describe('multi-tool agent planning and orchestration', () => {
     }));
   });
 
-  it('asks for transportation preference and conditional pickup in one action', async () => {
+  it('asks for transfer preference and conditional pickup in one action', async () => {
     const executor = new ToolExecutor({
       checkAvailability: jest.fn().mockResolvedValue({
         success: true,
@@ -1930,7 +1930,7 @@ describe('multi-tool agent planning and orchestration', () => {
     });
     const metadata = {
       conversationId: 'conversation-123',
-      agentPlan: { status: 'needs_transportation_preference' },
+      agentPlan: { status: 'needs_transfer_preference' },
       customerContext: {
         customerName: 'Jose Sanchez',
         customerEmail: 'jose@example.com',
@@ -1946,16 +1946,16 @@ describe('multi-tool agent planning and orchestration', () => {
     expect(metadata.uiAction).toEqual(expect.objectContaining({
       type: 'reservation_details',
       fields: expect.arrayContaining([
-        expect.objectContaining({ name: 'transportationRequired' }),
+        expect.objectContaining({ name: 'transferRequired' }),
         expect.objectContaining({
           name: 'pickupLocation',
-          requiredWhen: { field: 'transportationRequired', equals: true },
+          requiredWhen: { field: 'transferRequired', equals: true },
         }),
       ]),
     }));
   });
 
-  it('returns a final confirmation action after transportation is declined', async () => {
+  it('returns a final confirmation action after transfer is declined', async () => {
     const executor = new ToolExecutor({
       checkAvailability: jest.fn().mockResolvedValue({
         success: true,
@@ -1970,8 +1970,8 @@ describe('multi-tool agent planning and orchestration', () => {
     });
     const metadata = {
       conversationId: 'conversation-123',
-      agentPlan: { status: 'transportation_declined' },
-      transportationDeclined: true,
+      agentPlan: { status: 'transfer_declined' },
+      transferDeclined: true,
       customerContext: {
         customerName: 'Jose Sanchez',
         customerEmail: 'jose@example.com',
@@ -1994,7 +1994,7 @@ describe('multi-tool agent planning and orchestration', () => {
     }));
   });
 
-  it('returns a final confirmation action with pricing after transportation selection when booking context is complete', async () => {
+  it('returns a final confirmation action with pricing after transfer selection when booking context is complete', async () => {
     const executor = new ToolExecutor({
       checkAvailability: jest.fn().mockResolvedValue({
         success: true,
@@ -2017,9 +2017,9 @@ describe('multi-tool agent planning and orchestration', () => {
     });
     const metadata = {
       conversationId: 'conversation-123',
-      agentPlan: { status: 'transportation_selected' },
-      selectedTransportation: {
-        transportationOption: 'shared_shuttle',
+      agentPlan: { status: 'transfer_selected' },
+      selectedTransfer: {
+        transferOption: 'shared_shuttle',
         origin: 'San Jose',
         destination: 'Monteverde',
         totalPrice: 195,
@@ -2043,7 +2043,7 @@ describe('multi-tool agent planning and orchestration', () => {
     expect(metadata.participants).toBe(3);
     expect(metadata.pricing).toEqual({
       tourSubtotal: 360,
-      transportationTotal: 195,
+      transferTotal: 195,
       total: 555,
       currency: 'USD',
     });
@@ -2057,7 +2057,7 @@ describe('multi-tool agent planning and orchestration', () => {
     }));
   });
 
-  it('stores transportation-aware reservation results in response metadata', async () => {
+  it('stores transfer-aware reservation results in response metadata', async () => {
     const executor = new ToolExecutor({
       createReservation: jest.fn().mockResolvedValue({
         success: true,
@@ -2070,8 +2070,8 @@ describe('multi-tool agent planning and orchestration', () => {
         participants: 3,
         totalPrice: 360,
         tourTotalPrice: 360,
-        transportation: {
-          transportationOption: 'shared_shuttle',
+        transfer: {
+          transferOption: 'shared_shuttle',
           label: 'Shared shuttle',
           origin: 'San Jose',
           destination: 'Monteverde',
@@ -2079,7 +2079,7 @@ describe('multi-tool agent planning and orchestration', () => {
           totalPrice: 195,
           currency: 'USD',
         },
-        transportationPrice: 195,
+        transferPrice: 195,
         grandTotalPrice: 555,
         currency: 'USD',
       }),
@@ -2094,10 +2094,10 @@ describe('multi-tool agent planning and orchestration', () => {
       reservationId: 12,
       totalPrice: 360,
       tourTotalPrice: 360,
-      transportationPrice: 195,
+      transferPrice: 195,
       grandTotalPrice: 555,
-      transportation: {
-        transportationOption: 'shared_shuttle',
+      transfer: {
+        transferOption: 'shared_shuttle',
         label: 'Shared shuttle',
         origin: 'San Jose',
         destination: 'Monteverde',
@@ -2106,16 +2106,16 @@ describe('multi-tool agent planning and orchestration', () => {
     });
   });
 
-  it('adds selected transportation from planner output to response metadata', async () => {
-    const selectedTransportation = {
-      transportationOption: 'shared_shuttle',
+  it('adds selected transfer from planner output to response metadata', async () => {
+    const selectedTransfer = {
+      transferOption: 'shared_shuttle',
       origin: 'San Jose',
       destination: 'Monteverde',
     };
     const planner = {
       plan: jest.fn().mockReturnValue({
-        status: 'transportation_selected',
-        selectedTransportation,
+        status: 'transfer_selected',
+        selectedTransfer,
         steps: [],
       }),
     };
@@ -2137,16 +2137,16 @@ describe('multi-tool agent planning and orchestration', () => {
       { role: 'user', content: 'I choose shared shuttle from San Jose to Monteverde' },
     ], metadata);
 
-    expect(metadata.selectedTransportation).toEqual(selectedTransportation);
+    expect(metadata.selectedTransfer).toEqual(selectedTransfer);
     expect(executor.executePlan).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'transportation_selected' }),
-      expect.objectContaining({ selectedTransportation })
+      expect.objectContaining({ status: 'transfer_selected' }),
+      expect.objectContaining({ selectedTransfer })
     );
     expect(aiClient.streamChatCompletion).toHaveBeenCalledWith(
       expect.arrayContaining([
         expect.objectContaining({
           role: 'system',
-          content: expect.stringContaining('"selectedTransportation"'),
+          content: expect.stringContaining('"selectedTransfer"'),
         }),
       ]),
       expect.objectContaining({
@@ -2155,9 +2155,9 @@ describe('multi-tool agent planning and orchestration', () => {
     );
   });
 
-  it('carries selected transportation from recent metadata into confirmation tools', async () => {
-    const selectedTransportation = {
-      transportationOption: 'shared_shuttle',
+  it('carries selected transfer from recent metadata into confirmation tools', async () => {
+    const selectedTransfer = {
+      transferOption: 'shared_shuttle',
       label: 'Shared shuttle',
       origin: 'San Jose',
       destination: 'Monteverde',
@@ -2190,7 +2190,7 @@ describe('multi-tool agent planning and orchestration', () => {
       conversationId: 'conversation-123',
       conversationContext: {
         recentAssistantMetadata: {
-          selectedTransportation,
+          selectedTransfer,
         },
       },
     };
@@ -2200,16 +2200,16 @@ describe('multi-tool agent planning and orchestration', () => {
       { role: 'user', content: 'Confirm reservation' },
     ], metadata);
 
-    expect(metadata.selectedTransportation).toEqual(selectedTransportation);
+    expect(metadata.selectedTransfer).toEqual(selectedTransfer);
     expect(executor.executePlan).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'ready' }),
-      expect.objectContaining({ selectedTransportation })
+      expect.objectContaining({ selectedTransfer })
     );
     expect(aiClient.streamChatCompletion).toHaveBeenCalledWith(
       expect.arrayContaining([
         expect.objectContaining({
           role: 'system',
-          content: expect.stringContaining('"selectedTransportation"'),
+          content: expect.stringContaining('"selectedTransfer"'),
         }),
       ]),
       expect.objectContaining({
@@ -2233,7 +2233,7 @@ describe('multi-tool agent planning and orchestration', () => {
             tourId: 3,
             date: '2026-06-17',
             participants: 2,
-            transportationRequired: false,
+            transferRequired: false,
             customerName: 'Jose Sanchez',
             customerEmail: 'jose@example.com',
             itineraryStartDate: '2026-06-15',
@@ -2266,7 +2266,7 @@ describe('multi-tool agent planning and orchestration', () => {
           selectedTourId: 3,
           selectedTour: { tourId: 3, name: 'Arenal Observatory Birdwatching Tour' },
           participants: 2,
-          transportationDeclined: true,
+          transferDeclined: true,
           uiAction: {
             type: 'reservation_confirmation',
             prompt: 'Confirm this reservation?',

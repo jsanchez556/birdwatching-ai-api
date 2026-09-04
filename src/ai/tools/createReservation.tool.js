@@ -1,21 +1,21 @@
 import reservationService from '../../services/reservation.service.js';
 
-function addTransportationTotals(result = {}, metadata = {}) {
-  const selectedTransportation = metadata.selectedTransportation;
-  const transportationPrice = Number(selectedTransportation?.totalPrice);
+function addTransferTotals(result = {}, metadata = {}) {
+  const selectedTransfer = metadata.selectedTransfer;
+  const transferPrice = Number(selectedTransfer?.totalPrice);
   const pickupMatches = !result.pickupLocation
-    || (typeof selectedTransportation?.origin === 'string'
-      && selectedTransportation.origin.trim().toLowerCase() === result.pickupLocation.trim().toLowerCase());
+    || (typeof selectedTransfer?.origin === 'string'
+      && selectedTransfer.origin.trim().toLowerCase() === result.pickupLocation.trim().toLowerCase());
 
-  if (result.transportationRequired !== true || !pickupMatches || !Number.isFinite(transportationPrice)) {
+  if (result.transferRequired !== true || !pickupMatches || !Number.isFinite(transferPrice)) {
     return result;
   }
 
   return {
     ...result,
     tourTotalPrice: result.tourTotalPrice ?? result.totalPrice,
-    transportationPrice,
-    grandTotalPrice: result.totalPrice + transportationPrice,
+    transferPrice,
+    grandTotalPrice: result.totalPrice + transferPrice,
   };
 }
 
@@ -28,18 +28,18 @@ export async function createReservation(args = {}, metadata = {}) {
     return result;
   }
 
-  const withTransportationTotals = addTransportationTotals({
+  const withTransferTotals = addTransferTotals({
     ...result,
     itineraryStartDate: result.itineraryStartDate,
     itineraryEndDate: result.itineraryEndDate,
   }, metadata);
   const {
-    transportationRequired: _transportationRequired,
+    transferRequired: _transferRequired,
     pickupLocation: _pickupLocation,
     stateVersion: _stateVersion,
     idempotent: _idempotent,
     ...publicResult
-  } = withTransportationTotals;
+  } = withTransferTotals;
   return publicResult;
 }
 

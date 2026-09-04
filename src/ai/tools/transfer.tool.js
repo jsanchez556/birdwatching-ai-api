@@ -1,8 +1,8 @@
-import { DEFAULT_CURRENCY, TRANSPORTATION_OPTIONS } from '../../constants/business.js';
+import { DEFAULT_CURRENCY, TRANSFER_OPTIONS } from '../../constants/business.js';
 import { normalizeText } from '../../utils/normalizer.utils.js';
 import { invalidArguments, toPositiveInteger } from '../../utils/toolResponses.js';
 
-const transportationProfiles = [
+const transferProfiles = [
   {
     matcher: /monteverde/i,
     destination: 'Monteverde',
@@ -46,10 +46,10 @@ function resolveProfile({ destination, location, tourName } = {}) {
     .filter(Boolean)
     .join(' ');
 
-  return transportationProfiles.find((profile) => profile.matcher.test(selector)) || null;
+  return transferProfiles.find((profile) => profile.matcher.test(selector)) || null;
 }
 
-export async function calculateTransportation(args = {}) {
+export async function calculateTransfer(args = {}) {
   let participants;
 
   try {
@@ -65,8 +65,8 @@ export async function calculateTransportation(args = {}) {
   if (!profile) {
     return {
       success: false,
-      code: 'TRANSPORTATION_LOCATION_REQUIRED',
-      message: 'Please provide the tour location so I can estimate transportation.',
+      code: 'TRANSFER_LOCATION_REQUIRED',
+      message: 'Please provide the tour location so I can estimate transfer options.',
     };
   }
 
@@ -79,21 +79,21 @@ export async function calculateTransportation(args = {}) {
     estimatedTravelTime: profile.estimatedTravelTime,
     options: [
       {
-        type: TRANSPORTATION_OPTIONS.SHARED_SHUTTLE,
+        type: TRANSFER_OPTIONS.SHARED_SHUTTLE,
         pricePerPerson: profile.sharedShuttleUsd,
         totalPrice: sharedTotal,
         currency: DEFAULT_CURRENCY,
       },
       {
-        type: TRANSPORTATION_OPTIONS.PRIVATE_TRANSFER,
+        type: TRANSFER_OPTIONS.PRIVATE_TRANSFER,
         totalPrice: profile.privateTransferUsd,
         currency: DEFAULT_CURRENCY,
       },
     ],
     recommendedOption: participants >= 4
-      ? TRANSPORTATION_OPTIONS.PRIVATE_TRANSFER
-      : TRANSPORTATION_OPTIONS.SHARED_SHUTTLE,
+      ? TRANSFER_OPTIONS.PRIVATE_TRANSFER
+      : TRANSFER_OPTIONS.SHARED_SHUTTLE,
   };
 }
 
-export default calculateTransportation;
+export default calculateTransfer;

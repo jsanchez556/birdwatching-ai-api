@@ -1,7 +1,7 @@
 import { tourSchema } from '../schemas/tour.schema.js';
 import logger from '../../utils/logger.js';
 import searchTours from './searchTours.tool.js';
-import calculateTransportation from './transportation.tool.js';
+import calculateTransfer from './transfer.tool.js';
 import calculatePricing from './calculatePricing.tool.js';
 import checkAvailability from './checkAvailability.tool.js';
 import createReservation from './createReservation.tool.js';
@@ -11,7 +11,7 @@ import aiTelemetry from '../../monitoring/aiTelemetry.js';
 
 const tourToolHandlers = {
   searchTours,
-  calculateTransportation,
+  calculateTransfer,
   calculatePricing,
   checkAvailability,
   createReservation,

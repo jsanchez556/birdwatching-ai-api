@@ -33,7 +33,15 @@ Required outside tests:
 - `DATABASE_URL`
 - `JWT_SECRET`
 
+Required for live transportation routing:
+- `GOOGLE_MAPS_SERVER_API_KEY`: server-restricted key with Places API (New) and Routes API
+- `TRANSPORT_ROUTE_TOKEN_SECRET`: independent high-entropy signing secret
+
 Optional:
+- `TRANSPORT_COUNTRY_CODE`, ISO alpha-2 code; defaults to `CR`
+- `TRANSPORT_TIME_ZONE`, IANA zone; defaults to `America/Costa_Rica`
+- `TRANSPORT_ROUTE_TOKEN_TTL_SECONDS`, defaults to `900`
+- `TRANSPORT_QUOTE_TOKEN_TTL_SECONDS`, defaults to `600`
 - `PORT`, defaults to `3001`
 - `NODE_ENV`, defaults to `development`; allowed values are `development`, `test`, `production`
 - `OPENAI_MODEL`, backward-compatible balanced-generation alias; defaults to `gpt-4o`
@@ -182,6 +190,7 @@ src/db/migrations/001_schema.sql
 src/db/migrations/002_seed.sql
 src/db/migrations/003_functions.sql
 src/db/migrations/004_tour_image_path.sql
+src/db/migrations/005_transfer_domain_rename.sql
 ```
 
 Run all migration scripts in numeric order with `psql`, Railway shell, or your deployment platform's database tooling. `001_schema.sql` owns the complete empty-database structure, `002_seed.sql` installs deterministic Costa Rica reference data, plans, and sanitized development users, `003_functions.sql` installs executable database logic and its dependent triggers, and later migrations preserve deployed upgrade history.
@@ -264,6 +273,7 @@ exit code `0`; resource failure or hard timeout returns `1`.
 - Voice-chat generated speech responses are stored as MP3 objects under the S3 `voice-chat/` prefix. `POST /voice-chat` returns a relative `/files/voice-chat/...` URL, and `GET /files/:folderName/:filename` turns that relative key into a CloudFront URL using `CLOUDFRONT_BASE_URL`.
 - User profile images are stored as JPEG, PNG, or WebP objects under the S3 `user-profile-images/` prefix. Uploads are capped at 5 MB and the API persists only the object key.
 - `004_tour_image_path.sql` installs the image-path write contract, backfills hour-based durations, adds explicit hour/day units, clears flexible-only legacy schedule values, and backfills one occurrence for otherwise occurrence-less future scheduled tours.
+- `005_transfer_domain_rename.sql` upgrades deployed transfer-domain tables, constraints, cart fields, SQL function contracts, and active structured booking metadata.
 - Administrator-managed PNG images use immutable `tours/{uuid}.png` keys, a one-year immutable object cache policy, and a 5 MB cap. No CloudFront invalidation or query-string cache policy is required for replacements because every successful upload has a new path. The API also returns a stable database-update timestamp version for clients that preserve it.
 
 ## AI Observability

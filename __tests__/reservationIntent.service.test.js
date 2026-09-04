@@ -22,11 +22,11 @@ function structuredIntent(overrides = {}) {
     location: 'Monteverde',
     date: 'next Saturday',
     participants: 3,
-    transportationRequired: null,
+    transferRequired: null,
     pickupLocation: null,
     discountCode: null,
     clearedFields: [],
-    missingFields: ['transportationRequired'],
+    missingFields: ['transferRequired'],
     confidence: 0.96,
     ...overrides,
   };
@@ -80,7 +80,7 @@ describe('reservation intent structured extraction', () => {
         'location',
         'date',
         'participants',
-        'transportationRequired',
+        'transferRequired',
       ],
       confidence: 0.88,
     });
@@ -102,7 +102,7 @@ describe('reservation intent structured extraction', () => {
       location: null,
       date: 'tomorrow',
       participants: null,
-      transportationRequired: null,
+      transferRequired: null,
       missingFields: [],
       confidence: 0.18,
     }));
@@ -119,14 +119,14 @@ describe('reservation intent structured extraction', () => {
     });
   });
 
-  it('preserves an explicit false transportation choice', () => {
+  it('preserves an explicit false transfer choice', () => {
     expect(validateParsedIntent(structuredIntent({
-      transportationRequired: false,
+      transferRequired: false,
       missingFields: [],
     }))).toEqual({
       success: true,
       data: expect.objectContaining({
-        transportationRequired: false,
+        transferRequired: false,
         pickupLocation: null,
       }),
     });
@@ -201,7 +201,7 @@ describe('reservation intent structured extraction', () => {
 
   it('rejects missingFields entries that contradict supplied values', () => {
     expect(validateParsedIntent(structuredIntent({
-      missingFields: ['participants', 'transportationRequired'],
+      missingFields: ['participants', 'transferRequired'],
     }))).toMatchObject({
       success: false,
       code: 'RESERVATION_INTENT_INVALID_OUTPUT',

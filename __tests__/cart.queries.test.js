@@ -23,8 +23,8 @@ function cartItemRow(overrides = {}) {
     tour_id: 3,
     scheduled_date: '2026-06-12',
     participants: 2,
-    needs_transportation: true,
-    metadata: { selectedTransportation: 'shared_shuttle' },
+    needs_transfer: true,
+    metadata: { selectedTransfer: 'shared_shuttle' },
     created_at: new Date('2026-05-01T10:00:00.000Z'),
     updated_at: new Date('2026-05-01T10:05:00.000Z'),
     tour_name: 'Monteverde Quetzal Tour',
@@ -84,8 +84,8 @@ describe('CartQueries', () => {
       tourId: 3,
       scheduledDate: '2026-06-12',
       participants: 2,
-      needsTransportation: true,
-      metadata: { selectedTransportation: 'shared_shuttle' },
+      needsTransfer: true,
+      metadata: { selectedTransfer: 'shared_shuttle' },
     })).resolves.toMatchObject({
       id: 12,
       userId: 7,
@@ -94,7 +94,7 @@ describe('CartQueries', () => {
 
     expect(mockQuery).toHaveBeenCalledWith(
       expect.stringContaining('upsert_tour_cart_item($1, $2, $3, $4, $5, $6::jsonb)'),
-      [7, 3, '2026-06-12', 2, true, JSON.stringify({ selectedTransportation: 'shared_shuttle' })]
+      [7, 3, '2026-06-12', 2, true, JSON.stringify({ selectedTransfer: 'shared_shuttle' })]
     );
   });
 

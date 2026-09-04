@@ -38,7 +38,7 @@ const VISITOR_ROLE = 'visitor';
 const VISITOR_BLOCKED_RESPONSE = 'Visitor mode is limited to bird questions. Please log in to plan tours or make reservations.';
 const VISITOR_NON_BIRD_RESPONSE = 'Visitor mode can only answer bird questions. Please ask about birds, habitats, behavior, or where birds can be seen.';
 const VISITOR_BLOCKED_PATTERNS = [
-  /\b(book|booking|reserve|reservation|confirm|availability|available slots?|participants?|guests?|price|pricing|cost|discount|transport|transportation|shuttle|transfer|pickup|tour|tours)\b/i,
+  /\b(book|booking|reserve|reservation|confirm|availability|available slots?|participants?|guests?|price|pricing|cost|discount|transport|transfer|shuttle|pickup|tour|tours)\b/i,
 ];
 const VISITOR_BIRD_PATTERNS = [
   /\b(bird|birds|birding|birdwatching|bird watching|species|habitats?|migration|nests?|nesting|feathers?|plumage|songs?|calls?|beaks?|raptors?|hummingbirds?|toucans?|quetzals?|macaws?|parrots?|motmots?|tanagers?|warblers?|flycatchers?|woodpeckers?|owls?|hawks?|falcons?|herons?|egrets?|kingfishers?|orioles?|guans?|curassows?|jacamars?|manakins?|antbirds?|wrens?|thrushes|finches|seedeaters?|euphonias?)\b/i,
@@ -50,14 +50,14 @@ const BOOKING_UI_ACTION_TYPES = new Set([
   'tour_selection',
   'participant_count',
   'choice',
-  'transportation_selection',
+  'transfer_selection',
   'reservation_confirmation',
 ]);
 const BOOKING_TOOL_NAMES = new Set([
   'searchTours',
   'checkAvailability',
   'calculatePricing',
-  'calculateTransportation',
+  'calculateTransfer',
   'createReservation',
 ]);
 
@@ -148,9 +148,9 @@ function isBookingMetadata(metadata = {}) {
   if (
     metadata.selectedTour
     || metadata.selectedTourId
-    || metadata.selectedTransportation
-    || metadata.transportationDeclined
-    || metadata.requestedTransportation
+    || metadata.selectedTransfer
+    || metadata.transferDeclined
+    || metadata.requestedTransfer
     || metadata.participants
   ) {
     return true;
@@ -189,8 +189,8 @@ function buildToolMeta(metadata = {}) {
       ? { toolResultReferences: metadata.toolResultReferences } : {}),
     ...(metadata.tours ? { tours: metadata.tours } : {}),
     ...(metadata.tourRecommendation ? { tourRecommendation: metadata.tourRecommendation } : {}),
-    ...(metadata.requestedTransportation ? { requestedTransportation: metadata.requestedTransportation } : {}),
-    ...(metadata.transportationDeclined ? { transportationDeclined: metadata.transportationDeclined } : {}),
+    ...(metadata.requestedTransfer ? { requestedTransfer: metadata.requestedTransfer } : {}),
+    ...(metadata.transferDeclined ? { transferDeclined: metadata.transferDeclined } : {}),
     ...(metadata.pricing ? { pricing: metadata.pricing } : {}),
     ...(metadata.uiAction ? { uiAction: metadata.uiAction } : {}),
     ...(metadata.experimentAssignments ? { experimentAssignments: metadata.experimentAssignments } : {}),
@@ -251,8 +251,8 @@ function buildConversationMeta(metadata = {}) {
     ...(metadata.reservation ? { reservation: metadata.reservation } : {}),
     ...(metadata.selectedTour ? { selectedTour: metadata.selectedTour } : {}),
     ...(metadata.selectedTourId ? { selectedTourId: metadata.selectedTourId } : {}),
-    ...(metadata.requestedTransportation ? { requestedTransportation: metadata.requestedTransportation } : {}),
-    ...(metadata.selectedTransportation ? { selectedTransportation: metadata.selectedTransportation } : {}),
+    ...(metadata.requestedTransfer ? { requestedTransfer: metadata.requestedTransfer } : {}),
+    ...(metadata.selectedTransfer ? { selectedTransfer: metadata.selectedTransfer } : {}),
     ...(metadata.participants ? { participants: metadata.participants } : {}),
     ...(metadata.experimentAssignments ? { experimentAssignments: metadata.experimentAssignments } : {}),
     ...(toolResultReferences?.length ? { toolResultReferences } : {}),

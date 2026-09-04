@@ -12,13 +12,13 @@ import {
   extractParticipants,
   extractTourId,
   extractTourSelectionText,
-  extractTransportationDecline,
-  extractTransportationSelection,
+  extractTransferDecline,
+  extractTransferSelection,
   getLastAssistantMessage,
   getPriorUserMessage,
   getRecentUserMessages,
-  hasTransportationPreference,
-  hasTransportationRequest,
+  hasTransferPreference,
+  hasTransferRequest,
   includesAny,
   isAffirmativeConfirmation,
   normalizeForMatch,
@@ -73,7 +73,7 @@ function hasTourSelector(args = {}) {
   return Boolean(args.tourId || args.tourName || args.location);
 }
 
-function hasTransportationSelector(args = {}) {
+function hasTransferSelector(args = {}) {
   return Boolean(args.destination || args.location || args.tourName);
 }
 
@@ -146,7 +146,7 @@ function buildConfirmedReservationArgs(context = {}) {
     itineraryEndDate: confirmed.itineraryEndDate,
     date: confirmed.date,
     pickupLocation: confirmed.pickupLocation,
-    transportationRequired: confirmed.transportationRequired,
+    transferRequired: confirmed.transferRequired,
     discountCode: confirmed.discountCode,
     expectedStateVersion: state.version,
   });
@@ -166,16 +166,16 @@ function buildReservationPreviewArgs(args = {}) {
 function parseGuidedIntent(message, context = {}) {
   const normalized = normalizeTextOrEmpty(message).toLowerCase();
 
-  if (/^show_transportation$|^show transportation$|^yes,? show transportation$|^yes transportation$|^i need transportation$|^i need a shuttle$/.test(normalized)) {
-    return { intent: 'show_transportation' };
+  if (/^show_transfer$|^show transfer(?: options)?$|^yes,? show transfer(?: options)?$|^yes,? i need a transfer$|^i need a shuttle$/.test(normalized)) {
+    return { intent: 'show_transfer' };
   }
 
-  if (/^decline_transportation$|^decline transportation$|^no,? i have my own transportation$/.test(normalized) || extractTransportationDecline(message)) {
-    return { intent: 'decline_transportation' };
+  if (/^decline_transfer$|^decline transfer$|^no,? i do not need a transfer$/.test(normalized) || extractTransferDecline(message)) {
+    return { intent: 'decline_transfer' };
   }
 
   if (/^i choose .*(shared shuttle|private transfer)/i.test(normalizeTextOrEmpty(message))) {
-    return { intent: 'select_transportation' };
+    return { intent: 'select_transfer' };
   }
 
   if (/^show me details$|^show details$|^details$|^more details$/.test(normalized)) {
@@ -288,17 +288,17 @@ export class ToolPlanner {
       tourName: recentTour?.name || guidedIntent?.tourName || args.tourName,
       location: recentTour?.location || args.location,
     });
-    const selectedTransportation = extractTransportationSelection(originalMessage, context)
-      || context.selectedTransportation
-      || context.recentMetadata?.selectedTransportation;
-    const transportationDeclined = guidedIntent?.intent === 'decline_transportation'
-      || structuredIntent?.transportationRequired === false
-      || context.reservationState?.proposed?.transportationRequired === false
-      || context.reservationState?.confirmed?.transportationRequired === false
-      || context.transportationDeclined
-      || context.recentMetadata?.transportationDeclined
-      || extractTransportationDecline(originalMessage)
-      || extractFromRecentUserMessages(context.messages, extractTransportationDecline);
+    const selectedTransfer = extractTransferSelection(originalMessage, context)
+      || context.selectedTransfer
+      || context.recentMetadata?.selectedTransfer;
+    const transferDeclined = guidedIntent?.intent === 'decline_transfer'
+      || structuredIntent?.transferRequired === false
+      || context.reservationState?.proposed?.transferRequired === false
+      || context.reservationState?.confirmed?.transferRequired === false
+      || context.transferDeclined
+      || context.recentMetadata?.transferDeclined
+      || extractTransferDecline(originalMessage)
+      || extractFromRecentUserMessages(context.messages, extractTransferDecline);
 
     const asksForBooking = structuredIntent
       ? structuredIntent.intent === 'create_reservation'
@@ -310,9 +310,9 @@ export class ToolPlanner {
     const asksForAvailability = structuredIntent
       ? ['select_tour', 'select_date', 'check_availability'].includes(structuredIntent.intent)
       : /\b(available|availability|slots?|space)\b/i.test(planningMessage);
-    const asksForTransportation = structuredIntent
-      ? structuredIntent.transportationRequired === true
-      : /\b(transport|transportation|transfer|shuttle|pickup|drive|travel time|full cost)\b/i.test(planningMessage);
+    const asksForTransfer = structuredIntent
+      ? structuredIntent.transferRequired === true
+      : /\b(transport|transfer|shuttle|pickup|drive|travel time|full cost)\b/i.test(planningMessage);
     const asksForTour = structuredIntent
       ? ['search', 'tour_recommendation'].includes(structuredIntent.intent)
       : /\b(tour|birdwatching|bird watching)\b/i.test(planningMessage)
@@ -322,18 +322,18 @@ export class ToolPlanner {
       : /\b(recommend|suggest|best|options?|available tours?|show me|find)\b/i.test(planningMessage)
         || includesAny(text, TOUR_KEYWORDS);
     const needsTourDiscovery = !hasSelectedTour(context) && !selectedArgs.tourId && !selectedArgs.tourName;
-    const asksForTransportationAndBooking = asksForTransportation && asksForBooking;
-    const needsPickupLocation = structuredIntent?.transportationRequired === true
+    const asksForTransferAndBooking = asksForTransfer && asksForBooking;
+    const needsPickupLocation = structuredIntent?.transferRequired === true
       && structuredIntent.pickupLocation === null;
     const selectedParticipantCount = extractParticipantActionSelection(originalMessage, context);
-    const transportationPreferenceKnown = context.reservationState?.confirmed?.transportationRequired !== undefined
-      || context.reservationState?.proposed?.transportationRequired !== undefined
-      || hasTransportationPreference({
+    const transferPreferenceKnown = context.reservationState?.confirmed?.transferRequired !== undefined
+      || context.reservationState?.proposed?.transferRequired !== undefined
+      || hasTransferPreference({
       ...context,
-      selectedTransportation,
-      transportationDeclined,
+      selectedTransfer,
+      transferDeclined,
       });
-    const transportationRequested = hasTransportationRequest(context) || asksForTransportation;
+    const transferRequested = hasTransferRequest(context) || asksForTransfer;
     const confirmedReservationArgs = buildConfirmedReservationArgs(context);
     const usesStructuredReservationState = Boolean(context.reservationState);
     const explicitTourOrBookingLanguage = /\b(tour|book|booking|reserve|reservation|availability|available slots?)\b/i.test(originalMessage);
@@ -361,7 +361,7 @@ export class ToolPlanner {
       };
     }
 
-    if (asksForBooking && needsTourDiscovery && !asksForTransportation) {
+    if (asksForBooking && needsTourDiscovery && !asksForTransfer) {
       return {
         status: 'tour_recommendations_before_selection',
         message: 'The user wants to book but has not selected an exact tour. Show exactly three eligible ranked recommendations when possible, label alternatives, and ask the user to select one. Do not collect reservation details yet.',
@@ -392,10 +392,10 @@ export class ToolPlanner {
         };
       }
 
-      if (!transportationPreferenceKnown) {
+      if (!transferPreferenceKnown) {
         return {
-          status: 'needs_transportation_preference',
-          message: 'The user selected the participant count. Ask whether they would like transportation before final reservation confirmation.',
+          status: 'needs_transfer_preference',
+          message: 'The user selected the participant count. Ask whether they would like transfer before final reservation confirmation.',
           steps: [
             { tool: 'checkAvailability', args: selectedArgs, stopOnFailure: false },
             { tool: 'calculatePricing', args: selectedArgs, stopOnFailure: false },
@@ -405,8 +405,8 @@ export class ToolPlanner {
 
       return {
         status: 'needs_confirmation',
-        transportationDeclined,
-        message: 'The user selected the participant count and transportation preference is known. Ask for final reservation confirmation before creating the reservation.',
+        transferDeclined,
+        message: 'The user selected the participant count and transfer preference is known. Ask for final reservation confirmation before creating the reservation.',
         steps: [
           { tool: 'checkAvailability', args: selectedArgs, stopOnFailure: false },
           { tool: 'calculatePricing', args: selectedArgs, stopOnFailure: false },
@@ -414,21 +414,21 @@ export class ToolPlanner {
       };
     }
 
-    if (guidedIntent?.intent === 'show_transportation') {
+    if (guidedIntent?.intent === 'show_transfer') {
       return {
-        status: 'transportation_requested',
-        message: 'The user wants transportation options. Calculate transportation and show the transportation selection action while preserving the selected tour and booking details.',
-        steps: [{ tool: 'calculateTransportation', args: selectedArgs, stopOnFailure: false }],
+        status: 'transfer_requested',
+        message: 'The user wants transfer options. Calculate transfer and show the transfer selection action while preserving the selected tour and booking details.',
+        steps: [{ tool: 'calculateTransfer', args: selectedArgs, stopOnFailure: false }],
       };
     }
 
-    if (guidedIntent?.intent === 'decline_transportation') {
+    if (guidedIntent?.intent === 'decline_transfer') {
       return {
-        status: 'transportation_declined',
-        transportationDeclined: true,
+        status: 'transfer_declined',
+        transferDeclined: true,
         message: hasRequiredReservationDetails(selectedArgs)
-          ? 'The user declined transportation. Preserve that preference and ask for final reservation confirmation.'
-          : 'The user declined transportation. Preserve that preference and ask once for all remaining missing booking details.',
+          ? 'The user declined transfer. Preserve that preference and ask for final reservation confirmation.'
+          : 'The user declined transfer. Preserve that preference and ask once for all remaining missing booking details.',
         steps: hasTourSelector(selectedArgs)
           ? [
             { tool: 'checkAvailability', args: selectedArgs, stopOnFailure: false },
@@ -438,7 +438,7 @@ export class ToolPlanner {
       };
     }
 
-    if (guidedIntent?.intent === 'select_transportation' && selectedTransportation) {
+    if (guidedIntent?.intent === 'select_transfer' && selectedTransfer) {
       const steps = hasTourSelector(selectedArgs)
         ? [
           { tool: 'checkAvailability', args: selectedArgs, stopOnFailure: false },
@@ -447,16 +447,16 @@ export class ToolPlanner {
         : [];
 
       return {
-        status: 'transportation_selected',
-        selectedTransportation,
+        status: 'transfer_selected',
+        selectedTransfer,
         message: selectedArgs.participants
-          ? 'The user selected a transportation option. Persist selectedTransportation, do not show the transportation selection action again, use customerContext for customer details and itinerary dates, and ask only for final reservation confirmation if tour availability and pricing are available.'
-          : 'The user selected a transportation option. Persist selectedTransportation, do not show the transportation selection action again, use customerContext for customer details and itinerary dates, and ask once for all remaining missing booking details.',
+          ? 'The user selected a transfer option. Persist selectedTransfer, do not show the transfer selection action again, use customerContext for customer details and itinerary dates, and ask only for final reservation confirmation if tour availability and pricing are available.'
+          : 'The user selected a transfer option. Persist selectedTransfer, do not show the transfer selection action again, use customerContext for customer details and itinerary dates, and ask once for all remaining missing booking details.',
         steps,
       };
     }
 
-    if (asksForTransportationAndBooking) {
+    if (asksForTransferAndBooking) {
       const steps = [];
 
       if (needsTourDiscovery) {
@@ -477,7 +477,7 @@ export class ToolPlanner {
 
       if (!needsPickupLocation) {
         steps.push({
-          tool: 'calculateTransportation',
+          tool: 'calculateTransfer',
           args: selectedArgs,
           stopOnFailure: false,
         });
@@ -494,8 +494,8 @@ export class ToolPlanner {
       return {
         status: 'needs_clarification',
         message: needsPickupLocation
-          ? 'Ask for the pickup location before calculating transportation. Do not assume a pickup origin.'
-          : 'The user needs transportation and a reservation. Execute available discovery/logistics steps, then let them choose a transportation option before reservation confirmation.',
+          ? 'Ask for the pickup location before calculating transfer. Do not assume a pickup origin.'
+          : 'The user needs transfer and a reservation. Execute available discovery/logistics steps, then let them choose a transfer option before reservation confirmation.',
         steps,
       };
     }
@@ -515,9 +515,9 @@ export class ToolPlanner {
         stopOnFailure: false,
       }];
 
-      if (asksForTransportation) {
+      if (asksForTransfer) {
         steps.push({
-          tool: 'calculateTransportation',
+          tool: 'calculateTransfer',
           args: selectedArgs,
           stopOnFailure: false,
         });
@@ -541,14 +541,14 @@ export class ToolPlanner {
     if (guidedIntent?.intent === 'select_tour' || guidedIntent?.intent === 'proceed_booking') {
       const actionArgs = selectedArgs;
 
-      if (actionArgs.participants && transportationRequested && !transportationPreferenceKnown) {
+      if (actionArgs.participants && transferRequested && !transferPreferenceKnown) {
         return {
-          status: 'transportation_requested',
-          requestedTransportation: true,
-          message: 'The user selected a tour after requesting transportation. Check availability and show transportation options before pricing or final reservation confirmation.',
+          status: 'transfer_requested',
+          requestedTransfer: true,
+          message: 'The user selected a tour after requesting transfer. Check availability and show transfer options before pricing or final reservation confirmation.',
           steps: [
             { tool: 'checkAvailability', args: actionArgs, stopOnFailure: false },
-            { tool: 'calculateTransportation', args: actionArgs, stopOnFailure: false },
+            { tool: 'calculateTransfer', args: actionArgs, stopOnFailure: false },
           ],
         };
       }
@@ -557,7 +557,7 @@ export class ToolPlanner {
         status: guidedIntent.intent,
         message: actionArgs.participants
           ? 'The user selected a tour and provided participant count. Use customerContext for name, email, and itinerary dates. Ask only for final confirmation if pricing and availability are available.'
-          : 'The user selected a tour. Customer name, email, and itinerary dates are already available from customerContext when present. Ask once for every remaining missing reservation detail, including participant count and transportation preference.',
+          : 'The user selected a tour. Customer name, email, and itinerary dates are already available from customerContext when present. Ask once for every remaining missing reservation detail, including participant count and transfer preference.',
         steps: [
           { tool: 'checkAvailability', args: actionArgs, stopOnFailure: false },
           ...(actionArgs.participants ? [{ tool: 'calculatePricing', args: actionArgs, stopOnFailure: false }] : []),
@@ -572,17 +572,17 @@ export class ToolPlanner {
       if (!finalReservationArgs || !hasRequiredReservationDetails(finalReservationArgs)) {
         return {
           status: 'needs_clarification',
-          message: 'Ask once for all missing booking details. Do not ask again for customer name, email, itinerary dates, date, participant count, or transportation preference when already provided.',
+          message: 'Ask once for all missing booking details. Do not ask again for customer name, email, itinerary dates, date, participant count, or transfer preference when already provided.',
           steps: selectedArgs.tourId
             ? [{ tool: 'checkAvailability', args: selectedArgs, stopOnFailure: false }]
             : [],
         };
       }
 
-      if (!transportationPreferenceKnown) {
+      if (!transferPreferenceKnown) {
         return {
-          status: 'needs_transportation_preference',
-          message: 'Ask whether the user would like transportation before creating the reservation.',
+          status: 'needs_transfer_preference',
+          message: 'Ask whether the user would like transfer before creating the reservation.',
           steps: [
             { tool: 'checkAvailability', args: selectedArgs, stopOnFailure: false },
             { tool: 'calculatePricing', args: selectedArgs, stopOnFailure: false },
@@ -592,7 +592,7 @@ export class ToolPlanner {
 
       return {
         status: 'ready',
-        transportationDeclined,
+        transferDeclined,
         steps: [
           { tool: 'checkAvailability', args: buildReservationPreviewArgs(finalReservationArgs) },
           { tool: 'calculatePricing', args: buildReservationPreviewArgs(finalReservationArgs) },
@@ -615,10 +615,10 @@ export class ToolPlanner {
         };
       }
 
-      if (!transportationPreferenceKnown) {
+      if (!transferPreferenceKnown) {
         return {
-          status: 'needs_transportation_preference',
-          message: 'Ask whether the user would like transportation before creating the reservation.',
+          status: 'needs_transfer_preference',
+          message: 'Ask whether the user would like transfer before creating the reservation.',
           steps: [
             { tool: 'checkAvailability', args, stopOnFailure: false },
             { tool: 'calculatePricing', args, stopOnFailure: false },
@@ -628,7 +628,7 @@ export class ToolPlanner {
 
       return {
         status: 'ready',
-        transportationDeclined,
+        transferDeclined,
         steps: [
           { tool: 'checkAvailability', args: buildReservationPreviewArgs(finalReservationArgs) },
           { tool: 'calculatePricing', args: buildReservationPreviewArgs(finalReservationArgs) },
@@ -642,7 +642,7 @@ export class ToolPlanner {
     if (asksForBooking) {
       return {
         status: 'needs_confirmation',
-        transportationDeclined,
+        transferDeclined,
         message: 'I can help book that. Ask once for every missing booking detail, then ask for final booking confirmation. Use customerContext and structured reservation state, and never ask again for values already provided.',
         steps: hasSelectedTour(context) || args.tourId || args.tourName || args.location
           ? [
@@ -653,11 +653,11 @@ export class ToolPlanner {
       };
     }
 
-    if (asksForTransportation && asksForPrice) {
+    if (asksForTransfer && asksForPrice) {
       if (needsPickupLocation) {
         return {
           status: 'needs_clarification',
-          message: 'Ask for the pickup location before calculating transportation or a full price. Do not assume a pickup origin.',
+          message: 'Ask for the pickup location before calculating transfer or a full price. Do not assume a pickup origin.',
           steps: [],
         };
       }
@@ -665,7 +665,7 @@ export class ToolPlanner {
       if (!hasTourSelector(args)) {
         return {
           status: 'needs_clarification',
-          message: 'Ask which tour or destination they want a full cost for before calculating transportation and pricing.',
+          message: 'Ask which tour or destination they want a full cost for before calculating transfer and pricing.',
           steps: args.location
             ? [{ tool: 'searchTours', args: compactArgs({ location: args.location, participants: args.participants, recommend: true }), stopOnFailure: false }]
             : [],
@@ -698,7 +698,7 @@ export class ToolPlanner {
       }
 
       planSteps.push(
-        { tool: 'calculateTransportation', args, stopOnFailure: false },
+        { tool: 'calculateTransfer', args, stopOnFailure: false },
         { tool: 'calculatePricing', args, stopOnFailure: false }
       );
 
@@ -708,7 +708,7 @@ export class ToolPlanner {
       };
     }
 
-    if (asksForTransportation && asksForTour) {
+    if (asksForTransfer && asksForTour) {
       const searchArgs = compactArgs({
         location: extracted.location || context.location,
         budget: extracted.budget || context.budget,
@@ -724,41 +724,41 @@ export class ToolPlanner {
         stopOnFailure: false,
       }];
 
-      if (hasTransportationSelector(args) && !needsPickupLocation) {
-        steps.push({ tool: 'calculateTransportation', args, stopOnFailure: false });
+      if (hasTransferSelector(args) && !needsPickupLocation) {
+        steps.push({ tool: 'calculateTransfer', args, stopOnFailure: false });
       }
 
       return {
-        status: hasTransportationSelector(args) && !needsPickupLocation ? 'ready' : 'needs_clarification',
+        status: hasTransferSelector(args) && !needsPickupLocation ? 'ready' : 'needs_clarification',
         message: needsPickupLocation
-          ? 'Show matching tours, then ask for the pickup location before calculating transportation. Do not assume a pickup origin.'
-          : hasTransportationSelector(args)
+          ? 'Show matching tours, then ask for the pickup location before calculating transfer. Do not assume a pickup origin.'
+          : hasTransferSelector(args)
             ? undefined
-            : 'Show matching tours first, then ask which tour or destination they want transportation for.',
+            : 'Show matching tours first, then ask which tour or destination they want transfer for.',
         steps,
       };
     }
 
-    if (asksForTransportation) {
+    if (asksForTransfer) {
       if (needsPickupLocation) {
         return {
           status: 'needs_clarification',
-          message: 'Ask for the pickup location before calculating transportation. Do not assume a pickup origin.',
+          message: 'Ask for the pickup location before calculating transfer. Do not assume a pickup origin.',
           steps: [],
         };
       }
 
-      if (!hasTransportationSelector(args)) {
+      if (!hasTransferSelector(args)) {
         return {
           status: 'needs_clarification',
-          message: 'Ask which tour or destination they need transportation for before calculating transportation.',
+          message: 'Ask which tour or destination they need transfer for before calculating transfer.',
           steps: [],
         };
       }
 
       return {
         status: 'ready',
-        steps: [{ tool: 'calculateTransportation', args }],
+        steps: [{ tool: 'calculateTransfer', args }],
       };
     }
 

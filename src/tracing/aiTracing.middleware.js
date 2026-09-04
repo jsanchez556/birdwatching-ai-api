@@ -237,9 +237,9 @@ function traceAgentPlanning(name, metadata, operation) {
       stepCount: plan.steps?.length || 0,
       tools: (plan.steps || []).map((step) => step.tool).filter(Boolean),
       hasPlannerMessage: Boolean(plan.message),
-      selectedTransportation: Boolean(plan.selectedTransportation),
-      transportationDeclined: Boolean(plan.transportationDeclined),
-      requestedTransportation: Boolean(plan.requestedTransportation),
+      selectedTransfer: Boolean(plan.selectedTransfer),
+      transferDeclined: Boolean(plan.transferDeclined),
+      requestedTransfer: Boolean(plan.requestedTransfer),
     }),
   }, operation);
 }

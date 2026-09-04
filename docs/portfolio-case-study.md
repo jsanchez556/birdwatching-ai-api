@@ -166,7 +166,7 @@ Evidence:
 ### 3. Transactional tour booking — `Tested`, not a live transaction claim
 
 **Input:** an authenticated customer selects a tour or cart entry, supplies
-customer and itinerary context, chooses participants/transportation, and
+customer and itinerary context, chooses participants/transfer, and
 explicitly confirms.
 
 1. The UI creates an ephemeral reservation chat entry rather than persisting
@@ -174,9 +174,9 @@ explicitly confirms.
    empty name, invalid email, or invalid date range.
 2. The API carries customer and recent assistant metadata into the planner.
    Planner rules require a resolved tour and participant count, preserve
-   transportation state, and require an explicit confirmation turn.
+   transfer state, and require an explicit confirmation turn.
 3. Tool schemas and handlers stay registered as a matched set. Search,
-   availability, transportation, and pricing run in order; permanent
+   availability, transfer, and pricing run in order; permanent
    user-correctable failures are not retried, while bounded retries apply to
    transient tool failures.
 4. Tour selection uses exact normalized identifiers/names/locations and stops
@@ -312,7 +312,7 @@ To reproduce the product locally:
 5. Walk through: (a) ask a bird/location question and inspect returned bird
    evidence; (b) sign in, upload a bird photo, and observe queued status through
    the uncertainty result; (c) select a tour, provide customer context, choose
-   participants/transportation, explicitly confirm, and verify the returned
+   participants/transfer, explicitly confirm, and verify the returned
    confirmation code.
 
 **Recording placeholder:** add a two-to-five-minute walkthrough plus annotated

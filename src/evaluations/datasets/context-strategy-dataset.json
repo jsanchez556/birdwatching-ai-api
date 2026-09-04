@@ -35,14 +35,14 @@
         "version": 7,
         "status": "ready_for_confirmation",
         "proposed": {},
-        "confirmed": { "tourId": "tour_quetzal", "date": "2026-09-12", "participants": 4, "transportationRequired": false }
+        "confirmed": { "tourId": "tour_quetzal", "date": "2026-09-12", "participants": 4, "transferRequired": false }
       },
       "expectedRelevantContextIds": ["m9", "summary-4", "reservation-state"],
       "mustExcludeContextIds": ["m1", "m5", "m7"],
       "deterministicAssertions": ["Use four participants and state version seven."],
       "referenceAnswer": "The current validated state is ready with four participants at version seven.",
       "assertions": {
-        "reservation": { "bookingEligible": true, "bookingArguments": { "tourId": "tour_quetzal", "date": "2026-09-12", "participants": 4, "transportationRequired": false } },
+        "reservation": { "bookingEligible": true, "bookingArguments": { "tourId": "tour_quetzal", "date": "2026-09-12", "participants": 4, "transferRequired": false } },
         "relevantMemoryIds": [], "excludedMemoryIds": [], "relevantRagChunkIds": [], "excludedRagChunkIds": []
       },
       "eligibleStrategies": ["full_history", "last_n", "dynamic"]
@@ -69,7 +69,7 @@
         "version": 9,
         "status": "collecting_information",
         "proposed": { "participants": 4, "pickupLocation": null },
-        "confirmed": { "tourId": "tour_owl", "date": "2026-10-02", "participants": 3, "pickupLocation": "Central Hotel", "transportationRequired": true }
+        "confirmed": { "tourId": "tour_owl", "date": "2026-10-02", "participants": 3, "pickupLocation": "Central Hotel", "transferRequired": true }
       },
       "expectedRelevantContextIds": ["p3", "summary-2", "reservation-state"],
       "mustExcludeContextIds": ["p1"],
@@ -189,7 +189,7 @@
         { "id": "b1", "role": "user", "content": "Old unrelated discussion about camera straps, batteries, tripods, luggage, rain covers, charging adapters, memory cards, cleaning cloths, lens caps, cases, airline baggage rules, weather packing, jacket colors, shoe brands, and several alternative equipment combinations. This historical equipment planning was completed and has no bearing on the current accessibility question. The same discussion continued with redundant comparisons of weights, fabrics, buckles, pockets, warranties, and storage layouts." },
         { "id": "b2", "role": "assistant", "content": "Old unrelated equipment response comparing many camera straps, batteries, tripods, luggage systems, rain covers, charging adapters, memory cards, cleaning supplies, cases, shoe brands, and packing combinations. It includes redundant details about weights, sizes, colors, warranties, fabrics, pockets, airline restrictions, and storage layouts. None of those completed equipment suggestions affects the current accessibility request." },
         { "id": "b3", "role": "user", "content": "Another unrelated completed discussion about restaurants, breakfast menus, dinner reservations, airport transfers, rental cars, luggage delivery, coffee shops, grocery stops, souvenir stores, and several possible driving routes. It also compared opening hours, meal options, parking layouts, waiting times, and unrelated neighborhood details that are not needed for the next outing constraint." },
-        { "id": "b4", "role": "assistant", "content": "Another long but irrelevant answer about meals, restaurant schedules, airport transportation, rental vehicles, shopping stops, coffee choices, driving routes, parking, luggage delivery, and neighborhood logistics. These historical options were informational only, are no longer active, and do not answer the current request about the single important accessibility constraint." },
+        { "id": "b4", "role": "assistant", "content": "Another long but irrelevant answer about meals, restaurant schedules, airport transfer, rental vehicles, shopping stops, coffee choices, driving routes, parking, luggage delivery, and neighborhood logistics. These historical options were informational only, are no longer active, and do not answer the current request about the single important accessibility constraint." },
         { "id": "b5", "role": "user", "content": "My accessibility requirement is a step-free trail." },
         { "id": "b6", "role": "assistant", "content": "I will keep the step-free trail requirement in mind." },
         { "id": "b7", "role": "user", "content": "Tell me about many old binocular models, including their discontinued product names, colors, neck straps, objective sizes, carrying cases, lens coatings, focus wheels, packaging, warranty cards, and historical catalog descriptions. This was general curiosity and not a preference or requirement for an outing." },

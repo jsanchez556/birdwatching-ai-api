@@ -26,9 +26,11 @@ Back to [Project Context](../CONTEXT.md). See [Memory](./memory.md) for how chat
 
 Prompt modules export both content and a semantic prompt version. Keep version changes intentional and loggable.
 
-Chat prompt version `2.5.0` broadens discovery from birdwatching-only tours to
-the maintained nature-tour categories while retaining database-grounded tool
-behavior. It also requires reservation intake to request every
+Chat prompt version `3.0.0` uses Transfer as the canonical service term and
+aligns the `calculateTransfer` tool, transfer UI actions, and transfer booking
+metadata with the public API contract. It retains discovery across the
+maintained Birdwatching, Day walk, Night walk, Day & Night Walk, Adventure,
+Excursion, Transfer, and Other categories and requires reservation intake to request every
 currently missing field in one turn. Known values from customer context,
 conversation context, and durable proposed or confirmed reservation state are
 not requested again; follow-up questions are reserved for missing, invalid,
@@ -41,7 +43,15 @@ support, expiration, duplicates, and same-category/semantic-axis conflict rules
 before writes. Explicit corrections and uncertain conflicts are separate schema
 states; uncertain conflicts require clarification and cannot supersede data.
 
-Reservation intent prompt version `2.0.0` adds `clearedFields` so an explicit user request to remove a prior value is distinct from an unstated value. Corrections contain the latest value only. The model never confirms operational state: normalized extraction becomes proposed structured state, and the deterministic application transition owns promotion.
+Reservation intent prompt version `3.1.0` uses the canonical `transferRequired`
+field and transfer terminology. It retains `clearedFields` so an explicit user
+request to remove a prior value is distinct from an unstated value. Corrections
+contain the latest value only. The model never confirms operational state:
+normalized extraction becomes proposed structured state, and the deterministic
+application transition owns promotion.
+
+Conversation summary prompt version `1.1.0` preserves transfer choices using
+the canonical product terminology.
 
 Tour recommendation response framing has two versioned prompt assets in
 `src/ai/prompts/tourRecommendation.prompt.js`. The
@@ -186,24 +196,24 @@ knowledge.
 `agent.orchestrator.js` plans booking/tool steps, `ToolExecutor` executes the
 registered tools with retry and trace metadata, and the final assistant response
 is streamed after tool work is complete. Tool steps are executed in plan order
-so availability, transportation, pricing, and reservation steps cannot race each
+so availability, transfer, pricing, and reservation steps cannot race each
 other in one model turn.
 
-Before any tour, transportation, availability, pricing, or reservation tool
+Before any tour, transfer, availability, pricing, or reservation tool
 executes, `reservationIntent.service.js` uses the OpenAI SDK Structured Outputs
 parser with the strict Zod reservation-intent schema. Refusals, absent parsed
 output, schema failures, inconsistent missing-field markers, and unknown intent
 produce a no-tool clarification plan. Extracted nulls remain explicit, including
-the distinction between an unstated transportation preference and `false`.
+the distinction between an unstated transfer preference and `false`.
 Structured extraction does not validate tour existence, dates, capacity,
-authorization, transportation rules, pricing, or discounts; the existing
+authorization, transfer rules, pricing, or discounts; the existing
 backend services and database remain authoritative for those rules.
 
 Tour discovery should happen before booking: use `searchTours` to return three
 ranked eligible tours whenever possible, clearly mark weaker alternatives, and
 ask the user to select a specific tour by ID or exact normalized name. After
 selection, require an explicit backend-validated date, then check availability,
-estimate transportation when requested, price, and create the reservation.
+estimate transfer when requested, price, and create the reservation.
 Bird-information questions are answered directly and never inherit an earlier
 booking intent merely because the conversation already contains a selected tour.
 An authenticated `featured_tour` reservation entry is an explicit structured
@@ -223,7 +233,7 @@ from ID, clear tour name, or location. Customer name, email, and itinerary dates
 should come from frontend `customerContext` when present.
 
 Reservation tool results include durable confirmation fields and optional
-frontend-safe transportation and itinerary metadata. The final assistant response
+frontend-safe transfer and itinerary metadata. The final assistant response
 should stay short when `meta.reservation` is present because the frontend renders
 the detailed confirmation card.
 

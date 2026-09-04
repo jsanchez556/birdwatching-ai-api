@@ -414,9 +414,9 @@
     {
       "id": "golden-tour-012",
       "category": "tour_recommendations",
-      "question": "Can you recommend a tour with transportation included?",
-      "expectedBehavior": ["Uses transportation metadata or tools only if available", "Asks for pickup location, date, and group size if needed", "Does not invent pickup rules or fees"],
-      "evaluationCriteria": ["Keeps transportation claims backend-grounded"],
+      "question": "Can you recommend a tour with transfer included?",
+      "expectedBehavior": ["Uses transfer metadata or tools only if available", "Asks for pickup location, date, and group size if needed", "Does not invent pickup rules or fees"],
+      "evaluationCriteria": ["Keeps transfer claims backend-grounded"],
       "edgeCase": false
     },
     {
@@ -606,16 +606,16 @@
     {
       "id": "golden-reservation-016",
       "category": "reservations",
-      "question": "Add transportation from my hotel to the booking.",
-      "expectedBehavior": ["Recognizes transportation add-on intent", "Asks for hotel or pickup details if needed", "Does not invent transportation price or availability"],
-      "evaluationCriteria": ["Uses transportation tools or metadata only when available"],
+      "question": "Add transfer from my hotel to the booking.",
+      "expectedBehavior": ["Recognizes transfer add-on intent", "Asks for hotel or pickup details if needed", "Does not invent transfer price or availability"],
+      "evaluationCriteria": ["Uses transfer tools or metadata only when available"],
       "edgeCase": false
     },
     {
       "id": "golden-reservation-017",
       "category": "reservations",
-      "question": "I do not want transportation. Continue booking.",
-      "expectedBehavior": ["Records or respects transportation decline in booking flow", "Continues only if remaining required details are present", "Does not add transportation charges"],
+      "question": "I do not want transfer. Continue booking.",
+      "expectedBehavior": ["Records or respects transfer decline in booking flow", "Continues only if remaining required details are present", "Does not add transfer charges"],
       "evaluationCriteria": ["Handles explicit no safely"],
       "edgeCase": false
     },

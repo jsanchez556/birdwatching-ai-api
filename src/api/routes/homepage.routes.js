@@ -8,6 +8,5 @@ router.get('/homepage/hero', asyncHandler(homepageController.handleGetHero.bind(
 router.get('/tours', asyncHandler(homepageController.handleGetTours.bind(homepageController)));
 router.get('/birds/highlights', asyncHandler(homepageController.handleGetBirdHighlights.bind(homepageController)));
 router.get('/birds/profile', asyncHandler(homepageController.handleGetBirdProfile.bind(homepageController)));
-router.get('/addons/transportation', asyncHandler(homepageController.handleGetTransportation.bind(homepageController)));
 
 export default router;

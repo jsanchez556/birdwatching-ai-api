@@ -70,7 +70,7 @@ supply an authoritative tenant identity.
   cancelled, timed-out, partial, malformed, and schema-invalid output remains
   diagnostic trace metadata and is excluded from prompts and result storage.
 - Search results expire after 15 minutes, availability after 2 minutes, pricing
-  after 5 minutes, and transportation estimates after 15 minutes.
+  after 5 minutes, and transfer estimates after 15 minutes.
 - Booking requires the expected structured-state version. The PostgreSQL booking
   function locks and re-reads state, current inventory, and current database
   pricing in one transaction. Stale state is retryable; insufficient inventory

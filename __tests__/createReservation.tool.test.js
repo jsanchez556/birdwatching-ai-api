@@ -15,7 +15,7 @@ describe('createReservation tool', () => {
     jest.clearAllMocks();
   });
 
-  it('adds selected transportation totals without duplicating transportation details', async () => {
+  it('adds selected transfer totals without duplicating transfer details', async () => {
     mockCreateReservation.mockResolvedValue({
       success: true,
       reservationId: 42,
@@ -25,7 +25,7 @@ describe('createReservation tool', () => {
       participants: 3,
       totalPrice: 360,
       currency: 'USD',
-      transportationRequired: true,
+      transferRequired: true,
       itineraryStartDate: '2026-05-17',
       itineraryEndDate: '2026-05-17',
     });
@@ -37,8 +37,8 @@ describe('createReservation tool', () => {
         itineraryStartDate: '2026-05-17',
         itineraryEndDate: '2026-05-17',
       },
-      selectedTransportation: {
-        transportationOption: 'shared_shuttle',
+      selectedTransfer: {
+        transferOption: 'shared_shuttle',
         label: 'Shared shuttle',
         origin: 'San Jose',
         destination: 'Monteverde',
@@ -50,7 +50,7 @@ describe('createReservation tool', () => {
     })).resolves.toMatchObject({
       success: true,
       tourTotalPrice: 360,
-      transportationPrice: 195,
+      transferPrice: 195,
       grandTotalPrice: 555,
       itineraryStartDate: '2026-05-17',
       itineraryEndDate: '2026-05-17',
@@ -58,14 +58,14 @@ describe('createReservation tool', () => {
     await expect(createReservation({
       expectedStateVersion: 4,
     }, {
-      selectedTransportation: {
-        transportationOption: 'shared_shuttle',
+      selectedTransfer: {
+        transferOption: 'shared_shuttle',
         totalPrice: 195,
       },
-    })).resolves.not.toHaveProperty('transportation');
+    })).resolves.not.toHaveProperty('transfer');
   });
 
-  it('does not add transportation totals when selected transportation is absent', async () => {
+  it('does not add transfer totals when selected transfer is absent', async () => {
     mockCreateReservation.mockResolvedValue({
       success: true,
       reservationId: 43,

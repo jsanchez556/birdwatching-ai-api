@@ -23,7 +23,7 @@ describe('tool registry', () => {
     expect(getToolSchemas()).toBe(availableTools);
     expect(availableTools.map((tool) => tool.function.name)).toEqual([
       'searchTours',
-      'calculateTransportation',
+      'calculateTransfer',
       'checkAvailability',
       'calculatePricing',
       'createReservation',

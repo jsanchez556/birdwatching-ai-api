@@ -72,9 +72,9 @@ Back to [Project Context](../CONTEXT.md). Pair this with [API Contracts](./api.m
 - Keep reservation orchestration in `src/services/reservation.service.js`; `src/db/queries/reservation.queries.js` should call PostgreSQL functions.
 - Keep discount calculation in `reservation.service.js`; keep final reservation total calculation in the database function so persisted totals match availability updates.
 - Require explicit tour selection before pricing or reservation creation in prompt/tool behavior.
-- Keep tour listing, recommendation, guided action, pricing, transportation, and reservation details in `/chat` response metadata; assistant text should not duplicate structured UI when metadata already contains it.
+- Keep tour listing, recommendation, guided action, pricing, transfer, and reservation details in `/chat` response metadata; assistant text should not duplicate structured UI when metadata already contains it.
 - Preserve tour selection by ID and clear/partial tour name.
-- Preserve frontend `customerContext`, optional `customerEmail`, itinerary dates, selected transportation, and `discountCode` handling when changing reservation tools.
+- Preserve frontend `customerContext`, optional `customerEmail`, itinerary dates, selected transfer, and `discountCode` handling when changing reservation tools.
 - Add future tool groups by providing an array of OpenAI schemas plus a handler map keyed by `function.name`; the registry validates duplicates and missing handlers.
 - Use row locks and transactions inside PostgreSQL functions for reservation availability updates.
 

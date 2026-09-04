@@ -101,9 +101,9 @@ describe('user memory extraction', () => {
   it('does not turn a one-off reservation need into a recurring constraint', () => {
     const result = validateMemoryExtraction({ memories: [candidate({
       category: 'recurring_travel_constraints',
-      content: 'Requires transportation.',
+      content: 'Requires transfer.',
     })] }, {
-      message: 'I need transportation for this tour.',
+      message: 'I need a transfer for this tour.',
     });
     expect(result.memories).toEqual([]);
   });

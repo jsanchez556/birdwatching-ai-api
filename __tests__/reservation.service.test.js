@@ -264,8 +264,8 @@ describe('ReservationService', () => {
 
   it('uses request context for itinerary dates without storing reservation metadata', async () => {
     const createdAt = new Date('2026-05-09T10:00:00.000Z');
-    const transportation = {
-      transportationOption: 'shared_shuttle',
+    const transfer = {
+      transferOption: 'shared_shuttle',
       label: 'Shared shuttle',
       origin: 'San Jose',
       destination: 'Monteverde',
@@ -313,7 +313,7 @@ describe('ReservationService', () => {
       date: '2026-06-02',
     }, {
       userId: 7,
-      selectedTransportation: transportation,
+      selectedTransfer: transfer,
       customerContext: {
         itineraryStartDate: '2026-06-01',
         itineraryEndDate: '2026-06-03',
@@ -327,8 +327,8 @@ describe('ReservationService', () => {
       itineraryStartDate: '2026-06-01',
       itineraryEndDate: '2026-06-03',
     });
-    expect(result).not.toHaveProperty('transportation');
-    expect(result).not.toHaveProperty('transportationPrice');
+    expect(result).not.toHaveProperty('transfer');
+    expect(result).not.toHaveProperty('transferPrice');
     expect(result).not.toHaveProperty('grandTotalPrice');
   });
 
@@ -510,7 +510,7 @@ describe('ReservationService', () => {
     }));
   });
 
-  it('loads latest reservation for a conversation without embedded transportation metadata', async () => {
+  it('loads latest reservation for a conversation without embedded transfer metadata', async () => {
     const createdAt = new Date('2026-05-09T10:00:00.000Z');
     mockGetLatestByConversationId.mockResolvedValue({
       reservation: {

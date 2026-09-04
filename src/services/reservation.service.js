@@ -610,7 +610,7 @@ class ReservationService {
           }),
           stateVersion: Number(raw.state_version),
           idempotent: raw.idempotent === true,
-          transportationRequired: state.confirmed.transportationRequired,
+          transferRequired: state.confirmed.transferRequired,
           ...(state.confirmed.pickupLocation
             ? { pickupLocation: state.confirmed.pickupLocation }
             : {}),

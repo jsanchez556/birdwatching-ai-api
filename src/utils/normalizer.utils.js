@@ -1,4 +1,4 @@
-import { ALLOWED_TRANSPORTATION_OPTIONS } from '../constants/business.js';
+import { ALLOWED_TRANSFER_OPTIONS } from '../constants/business.js';
 
 function normalizeOptionalText(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
@@ -41,21 +41,21 @@ function normalizeComparableText(value) {
     .toLowerCase() || '';
 }
 
-function normalizeSelectedTransportation(value) {
+function normalizeSelectedTransfer(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return undefined;
   }
 
-  const transportationOption = normalizeOptionalText(value.transportationOption);
+  const transferOption = normalizeOptionalText(value.transferOption);
   const pricePerPerson = Number(value.pricePerPerson);
   const totalPrice = Number(value.totalPrice);
 
-  if (!ALLOWED_TRANSPORTATION_OPTIONS.includes(transportationOption)) {
+  if (!ALLOWED_TRANSFER_OPTIONS.includes(transferOption)) {
     return undefined;
   }
 
   return {
-    transportationOption,
+    transferOption,
     ...(normalizeOptionalText(value.origin) ? { origin: normalizeOptionalText(value.origin) } : {}),
     ...(normalizeOptionalText(value.destination) ? { destination: normalizeOptionalText(value.destination) } : {}),
     ...(normalizeOptionalText(value.label) ? { label: normalizeOptionalText(value.label) } : {}),
@@ -72,7 +72,7 @@ export {
   normalizeComparableText,
   normalizeNumberOrNull,
   normalizeOptionalText,
-  normalizeSelectedTransportation,
+  normalizeSelectedTransfer,
   normalizeText,
   normalizeTextOrEmpty,
   parseDateTime,

@@ -6,7 +6,7 @@ Back to [Project Context](../CONTEXT.md). Conversation transcript behavior is do
 
 Chat messages remain conversational context, but reservation side effects never reconstruct arguments from them. `reservation_conversation_states` stores one current row per conversation with a monotonically increasing `version`, lifecycle `status`, separate `proposed_values` and `confirmed_values`, the successful reservation/idempotency references, and timestamps.
 
-The initial operational fields are `tourId`, `date`, `participants`, `pickupLocation`, and `transportationRequired`. The existing workflow also keeps `customerName`, `customerEmail`, `itineraryStartDate`, `itineraryEndDate`, and optional `discountCode` in the same state so booking does not recover them from message text or response metadata.
+The initial operational fields are `tourId`, `date`, `participants`, `pickupLocation`, and `transferRequired`. The existing workflow also keeps `customerName`, `customerEmail`, `itineraryStartDate`, `itineraryEndDate`, and optional `discountCode` in the same state so booking does not recover them from message text or response metadata.
 
 `reservation_state_audit_events` is append-only. Every accepted version records previous/new versions, event type, changed fields, previous/resulting operational snapshots, confirmation state, source category, optional source message/request/trace identifier, and a database timestamp. Direct customer name/email values, transcript text, secrets, and unrelated data are omitted from audit snapshots.
 
@@ -23,7 +23,7 @@ again.
 
 Confirmation is narrow and testable: the user must send an explicit confirmation action or a recognized phrase such as `Confirm` or `Yes` while the immediately previous assistant metadata offers `reservation_confirmation`. Explicit standalone phrases such as `confirm_reservation`, `Confirm reservation`, `Confirm booking`, `Yes, book it`, or `Go ahead and book it` remain supported. That transition promotes the complete latest proposal set atomically. Proposed corrections never overwrite confirmed values before promotion; a proposed `null` deletes the confirmed field only during promotion.
 
-`ready_for_confirmation` is derived only when no proposals remain and all required confirmed fields exist. Transportation requires a pickup location when `transportationRequired` is true. A correction after readiness returns the state to `collecting_information`.
+`ready_for_confirmation` is derived only when no proposals remain and all required confirmed fields exist. Transfer requires a pickup location when `transferRequired` is true. A correction after readiness returns the state to `collecting_information`.
 
 ## Transitions And Booking Safety
 

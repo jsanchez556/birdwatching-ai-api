@@ -11,29 +11,6 @@ const heroContent = {
   heroVideo: 'https://www.youtube-nocookie.com/embed/o02Dq_DaY-U?autoplay=1&mute=1&controls=0&loop=1&playlist=o02Dq_DaY-U&start=54&end=84&playsinline=1&modestbranding=1&rel=0',
 };
 
-const transportation = [
-  {
-    id: 'shared-shuttle',
-    title: 'Shared birding shuttle',
-    description: 'Scheduled transfers from San Jose toward key birding regions with space for daypacks and optics.',
-    coverage: 'San Jose, Monteverde, Sarapiqui',
-    startingPrice: 'From $55 per person',
-  },
-  {
-    id: 'private-transfer',
-    title: 'Private lodge-to-lodge transfer',
-    description: 'Door-to-door transport timed around early checkouts, guide meetups, and longer birding days.',
-    coverage: 'All tour regions',
-    startingPrice: 'From $180 per vehicle',
-  },
-  {
-    id: 'canal-connection',
-    title: 'Tortuguero canal connection',
-    description: 'Combined road and boat logistics for Tortuguero birding itineraries and wetland departures.',
-    coverage: 'San Jose to Tortuguero',
-    startingPrice: 'From $85 per person',
-  },
-];
 
 function getTourPortraitUrl(tour) {
   const key = resolveTourImageKey({ tourId: tour.tourId || tour.id, imagePath: tour.imagePath });
@@ -148,9 +125,6 @@ class HomepageService {
     return ragService.getBirdProfile({ speciesCode, name });
   }
 
-  getTransportationAddOns() {
-    return transportation;
-  }
 }
 
 export default new HomepageService();

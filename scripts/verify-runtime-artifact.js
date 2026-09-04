@@ -12,6 +12,8 @@ const requiredFiles = [
   'db/migrations/002_seed.sql',
   'db/migrations/003_functions.sql',
   'db/migrations/004_tour_image_path.sql',
+  'db/migrations/005_transfer_domain_rename.sql',
+  'db/migrations/006_transportation_service.sql',
   'ai/prompts/system.prompt.js',
   'config/mediaAssets.json',
   'services/documentIngestion.service.js',

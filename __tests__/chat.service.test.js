@@ -132,7 +132,7 @@ describe('ChatService streaming orchestration', () => {
       sources: [],
       meta: {
         promptVersions: {
-          chat: '2.5.0',
+          chat: '3.0.0',
         },
       },
     });
@@ -172,7 +172,7 @@ describe('ChatService streaming orchestration', () => {
       unavailableCapabilities: [],
       meta: {
         promptVersions: {
-          chat: '2.5.0',
+          chat: '3.0.0',
         },
       },
     });
@@ -428,8 +428,8 @@ describe('ChatService streaming orchestration', () => {
         plan: { tools: ['searchTours'] },
         executions: [{ tool: 'searchTours' }],
       };
-      metadata.selectedTransportation = {
-        transportationOption: 'shared_shuttle',
+      metadata.selectedTransfer = {
+        transferOption: 'shared_shuttle',
         origin: 'San Jose',
         destination: 'Monteverde',
       };
@@ -454,7 +454,7 @@ describe('ChatService streaming orchestration', () => {
 
     expect(result.meta).toEqual({
       promptVersions: {
-        chat: '2.5.0',
+        chat: '3.0.0',
       },
       customerContext: {
         customerEmail: 'logged@example.com',
@@ -481,8 +481,8 @@ describe('ChatService streaming orchestration', () => {
         assumptions: [],
         followUpQuestion: null,
       },
-      selectedTransportation: {
-        transportationOption: 'shared_shuttle',
+      selectedTransfer: {
+        transferOption: 'shared_shuttle',
         origin: 'San Jose',
         destination: 'Monteverde',
       },
@@ -499,8 +499,8 @@ describe('ChatService streaming orchestration', () => {
             customerEmail: 'logged@example.com',
             customerName: undefined,
           },
-          selectedTransportation: {
-            transportationOption: 'shared_shuttle',
+          selectedTransfer: {
+            transferOption: 'shared_shuttle',
             origin: 'San Jose',
             destination: 'Monteverde',
           },

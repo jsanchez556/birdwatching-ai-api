@@ -15,7 +15,7 @@ Example debug trace:
 
 PLAN:
 1. searchTours
-2. calculateTransportation
+2. calculateTransfer
 
 TOOL EXECUTION:
 tool: searchTours
@@ -27,16 +27,16 @@ result:
   selected_tour_id: "tour_123"
 
 TOOL EXECUTION:
-tool: calculateTransportation
+tool: calculateTransfer
 input:
   tour_id: "tour_123"
   pickup_location: "San Jose"
 result:
-  transportation_cost: 120
+  transfer_cost: 120
 
 INTERMEDIATE STATE:
 selected_tour_id = "tour_123"
-transportation_cost = 120
+transfer_cost = 120
 
 The stored trace should be used only for debugging and observability. Do not expose private chain-of-thought or sensitive internal reasoning to end users; store concise reasoning summaries instead.
 

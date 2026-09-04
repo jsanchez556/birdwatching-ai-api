@@ -84,7 +84,7 @@ orchestration suite. The safe migration sequence is:
 
 1. add table-driven characterization cases for every current branch and branch precedence;
 2. extract guided booking/confirmation planning with a single immutable planning-input contract;
-3. extract transportation/pricing planning, then discovery planning;
+3. extract transfer/pricing planning, then discovery planning;
 4. retain `ToolPlanner.plan` as the sole precedence coordinator and remove each old branch in the same change that adds its replacement.
 
 Billing is intentionally distributed by technical responsibility rather than
@@ -343,12 +343,12 @@ aborted streams are not saved as completed exchanges.
 
 The current tour tool set is:
 - `searchTours`
-- `calculateTransportation`
+- `calculateTransfer`
 - `checkAvailability`
 - `calculatePricing`
 - `createReservation`
 
-Tour listing, recommendation, guided action, transportation, pricing, and
+Tour listing, recommendation, guided action, transfer, pricing, and
 reservation results are returned through stream `done` event metadata, so
 assistant text can stay short, such as `I found 2 tours that match your
 preferences.` Recommendation ranking uses explicit filters plus the original
@@ -359,16 +359,16 @@ database-backed tour before selection validation.
 
 When a selected tour has multiple missing reservation fields, tool metadata
 includes one `reservation_details` `uiAction`. It contains only unresolved
-date, participant, transportation, conditional pickup, customer, and itinerary
+date, participant, transfer, conditional pickup, customer, and itinerary
 fields, and the UI submits them in one message. A lone unresolved date,
-participant count, or transportation preference may retain its focused legacy
+participant count, or transfer preference may retain its focused legacy
 action. Submitted values become proposed structured state and are not requested
-again unless invalid, unavailable, or ambiguous. `calculateTransportation`
-can return a `transportation_selection` action; the selected option is stored as
-`selectedTransportation`, and an explicit no is stored as
-`transportationDeclined`. These inputs are normalized into versioned proposed
+again unless invalid, unavailable, or ambiguous. `calculateTransfer`
+can return a `transfer_selection` action; the selected option is stored as
+`selectedTransfer`, and an explicit no is stored as
+`transferDeclined`. These inputs are normalized into versioned proposed
 state. `createReservation` runs only after the booking details are complete,
-transportation is either selected or declined, and an explicit confirmation
+transfer is either selected or declined, and an explicit confirmation
 transition has promoted the latest values.
 
 Tour data, availability, reservations, and structured workflow state are stored
@@ -383,7 +383,7 @@ version. `book_reservation_from_state(...)` locks and revalidates the latest
 confirmed values, then invokes `create_tour_reservation(...)`, which locks the
 tour, verifies slots, updates availability, calculates the total, and inserts
 the reservation. Only a successful insert advances state to `confirmed`.
-Transportation totals and itinerary dates remain frontend-safe result metadata.
+Transfer totals and itinerary dates remain frontend-safe result metadata.
 
 Future tools should be added as a group with schemas and handlers keyed by the
 OpenAI `function.name`. The registry rejects duplicate names and schemas without
@@ -531,7 +531,7 @@ The `conversations` table stores one row per conversation:
 `conversations.user_id` is converted to `BIGINT` by the ownership migration and
 references `users(id)` with `ON DELETE SET NULL`. `conversations.metadata`
 defaults to `{}` and stores frontend-safe chat-level booking state such as
-customer context, participant count, selected tour, transportation choice, and
+customer context, participant count, selected tour, transfer choice, and
 reservation metadata.
 
 The `messages` table stores one row per exchange:

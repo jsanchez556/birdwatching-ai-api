@@ -92,16 +92,16 @@ export function compactPlanningArgs(args) {
   );
 }
 
-export function extractTransportationSelection(message, context = {}) {
+export function extractTransferSelection(message, context = {}) {
   const normalized = normalizeForMatch(message);
   const action = context.recentMetadata?.uiAction;
-  if (action?.type === 'transportation_selection' && Array.isArray(action.options)) {
+  if (action?.type === 'transfer_selection' && Array.isArray(action.options)) {
     const selectedOption = action.options.find((option) => [
       option.label,
-      option.value?.transportationOption,
-      option.value?.transportationOption?.replace(/_/g, ' '),
+      option.value?.transferOption,
+      option.value?.transferOption?.replace(/_/g, ' '),
     ].map(normalizeForMatch).filter(Boolean).some((candidate) => normalized.includes(candidate)));
-    if (selectedOption?.value?.transportationOption) {
+    if (selectedOption?.value?.transferOption) {
       return compactPlanningArgs({
         ...selectedOption.value,
         label: selectedOption.value.label || selectedOption.label,
@@ -112,19 +112,19 @@ export function extractTransportationSelection(message, context = {}) {
       });
     }
   }
-  const transportationOption = /shared shuttle/i.test(message)
+  const transferOption = /shared shuttle/i.test(message)
     ? 'shared_shuttle'
     : /private transfer/i.test(message) ? 'private_transfer' : undefined;
-  if (!transportationOption) return undefined;
+  if (!transferOption) return undefined;
   return compactPlanningArgs({
-    transportationOption,
+    transferOption,
     origin: /san jos[eé]/i.test(message) ? 'San Jose' : undefined,
     destination: extractLocation(message),
   });
 }
 
-export function extractTransportationDecline(message) {
-  return /\b(no transportation|no transport|own car|drive myself|driving myself|i'?ll drive|do not need (?:transport|transportation)|don'?t need (?:transport|transportation)|have my own (?:transport|transportation))\b/i
+export function extractTransferDecline(message) {
+  return /\b(no transfer|no transport|own car|drive myself|driving myself|i'?ll drive|do not need (?:a )?(?:transport|transfer)|don'?t need (?:a )?(?:transport|transfer)|have my own (?:transport|transfer))\b/i
     .test(normalizeTextOrEmpty(message));
 }
 
@@ -136,24 +136,24 @@ export function extractFromRecentUserMessages(messages = [], extractor) {
   return undefined;
 }
 
-export function hasTransportationPreference(context = {}) {
+export function hasTransferPreference(context = {}) {
   return Boolean(
-    context.selectedTransportation
-      || context.transportationDeclined
-      || context.recentMetadata?.selectedTransportation
-      || context.recentMetadata?.transportationDeclined
-      || extractFromRecentUserMessages(context.messages, extractTransportationDecline)
+    context.selectedTransfer
+      || context.transferDeclined
+      || context.recentMetadata?.selectedTransfer
+      || context.recentMetadata?.transferDeclined
+      || extractFromRecentUserMessages(context.messages, extractTransferDecline)
   );
 }
 
-export function hasTransportationRequest(context = {}) {
+export function hasTransferRequest(context = {}) {
   const requestedInHistory = getRecentUserMessages(context.messages).some((message) => (
-    /\b(transport|transportation|transfer|shuttle|pickup)\b/i.test(message)
-      && !extractTransportationDecline(message)
+    /\b(transport|transfer|shuttle|pickup)\b/i.test(message)
+      && !extractTransferDecline(message)
   ));
   return Boolean(
-    context.requestedTransportation
-      || context.recentMetadata?.requestedTransportation
+    context.requestedTransfer
+      || context.recentMetadata?.requestedTransfer
       || requestedInHistory
   );
 }

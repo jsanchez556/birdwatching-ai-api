@@ -796,7 +796,7 @@ CREATE TABLE public.tour_cart_items (
     tour_id integer NOT NULL,
     scheduled_date date,
     participants integer DEFAULT 1 NOT NULL,
-    needs_transportation boolean,
+    needs_transfer boolean,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -964,25 +964,25 @@ ALTER SEQUENCE public.tours_id_seq OWNED BY public.tours.id;
 
 
 --
--- Name: transportation_by_node; Type: TABLE; Schema: public; Owner: -
+-- Name: transfer_by_node; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE public.transportation_by_node (
-    node_id bigint CONSTRAINT transportation_by_node_tmp_node_id_not_null NOT NULL,
-    transportation_id integer CONSTRAINT transportation_by_node_tmp_transportation_id_not_null NOT NULL,
-    price numeric(10,2) CONSTRAINT transportation_by_node_tmp_price_not_null NOT NULL,
-    min_rate numeric(10,2) CONSTRAINT transportation_by_node_tmp_min_rate_not_null NOT NULL,
-    is_active boolean DEFAULT true CONSTRAINT transportation_by_node_tmp_is_active_not_null NOT NULL,
-    CONSTRAINT transportation_by_node_min_rate_check CHECK ((min_rate >= (0)::numeric)),
-    CONSTRAINT transportation_by_node_price_check CHECK ((price >= (0)::numeric))
+CREATE TABLE public.transfer_by_node (
+    node_id bigint CONSTRAINT transfer_by_node_tmp_node_id_not_null NOT NULL,
+    transfer_id integer CONSTRAINT transfer_by_node_tmp_transfer_id_not_null NOT NULL,
+    price numeric(10,2) CONSTRAINT transfer_by_node_tmp_price_not_null NOT NULL,
+    min_rate numeric(10,2) CONSTRAINT transfer_by_node_tmp_min_rate_not_null NOT NULL,
+    is_active boolean DEFAULT true CONSTRAINT transfer_by_node_tmp_is_active_not_null NOT NULL,
+    CONSTRAINT transfer_by_node_min_rate_check CHECK ((min_rate >= (0)::numeric)),
+    CONSTRAINT transfer_by_node_price_check CHECK ((price >= (0)::numeric))
 );
 
 
 --
--- Name: transportations; Type: TABLE; Schema: public; Owner: -
+-- Name: transfers; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE public.transportations (
+CREATE TABLE public.transfers (
     id integer NOT NULL,
     title text NOT NULL,
     description text NOT NULL,
@@ -990,17 +990,17 @@ CREATE TABLE public.transportations (
     lat numeric(9,6),
     lon numeric(9,6),
     is_active boolean DEFAULT true NOT NULL,
-    CONSTRAINT chk_transportations_lat_range CHECK (((lat IS NULL) OR ((lat >= ('-90'::integer)::numeric) AND (lat <= (90)::numeric)))),
-    CONSTRAINT chk_transportations_lon_range CHECK (((lon IS NULL) OR ((lon >= ('-180'::integer)::numeric) AND (lon <= (180)::numeric)))),
-    CONSTRAINT transportations_charge_type_check CHECK ((charge_type = ANY (ARRAY['pp'::text, 'pv'::text])))
+    CONSTRAINT chk_transfers_lat_range CHECK (((lat IS NULL) OR ((lat >= ('-90'::integer)::numeric) AND (lat <= (90)::numeric)))),
+    CONSTRAINT chk_transfers_lon_range CHECK (((lon IS NULL) OR ((lon >= ('-180'::integer)::numeric) AND (lon <= (180)::numeric)))),
+    CONSTRAINT transfers_charge_type_check CHECK ((charge_type = ANY (ARRAY['pp'::text, 'pv'::text])))
 );
 
 
 --
--- Name: transportations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+-- Name: transfers_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
-CREATE SEQUENCE public.transportations_id_seq
+CREATE SEQUENCE public.transfers_id_seq
     AS integer
     START WITH 1
     INCREMENT BY 1
@@ -1010,10 +1010,10 @@ CREATE SEQUENCE public.transportations_id_seq
 
 
 --
--- Name: transportations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+-- Name: transfers_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
-ALTER SEQUENCE public.transportations_id_seq OWNED BY public.transportations.id;
+ALTER SEQUENCE public.transfers_id_seq OWNED BY public.transfers.id;
 
 
 --
@@ -1344,10 +1344,10 @@ ALTER TABLE ONLY public.tours ALTER COLUMN id SET DEFAULT nextval('public.tours_
 
 
 --
--- Name: transportations id; Type: DEFAULT; Schema: public; Owner: -
+-- Name: transfers id; Type: DEFAULT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.transportations ALTER COLUMN id SET DEFAULT nextval('public.transportations_id_seq'::regclass);
+ALTER TABLE ONLY public.transfers ALTER COLUMN id SET DEFAULT nextval('public.transfers_id_seq'::regclass);
 
 
 --
@@ -1762,19 +1762,19 @@ ALTER TABLE ONLY public.tours
 
 
 --
--- Name: transportation_by_node transportation_by_node_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: transfer_by_node transfer_by_node_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.transportation_by_node
-    ADD CONSTRAINT transportation_by_node_pkey PRIMARY KEY (node_id, transportation_id);
+ALTER TABLE ONLY public.transfer_by_node
+    ADD CONSTRAINT transfer_by_node_pkey PRIMARY KEY (node_id, transfer_id);
 
 
 --
--- Name: transportations transportations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: transfers transfers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.transportations
-    ADD CONSTRAINT transportations_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.transfers
+    ADD CONSTRAINT transfers_pkey PRIMARY KEY (id);
 
 
 --
@@ -2516,19 +2516,19 @@ ALTER TABLE ONLY public.tours
 
 
 --
--- Name: transportation_by_node transportation_by_node_node_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: transfer_by_node transfer_by_node_node_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.transportation_by_node
-    ADD CONSTRAINT transportation_by_node_node_id_fkey FOREIGN KEY (node_id) REFERENCES public.node(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.transfer_by_node
+    ADD CONSTRAINT transfer_by_node_node_id_fkey FOREIGN KEY (node_id) REFERENCES public.node(id) ON DELETE CASCADE;
 
 
 --
--- Name: transportation_by_node transportation_by_node_transportation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: transfer_by_node transfer_by_node_transfer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.transportation_by_node
-    ADD CONSTRAINT transportation_by_node_transportation_id_fkey FOREIGN KEY (transportation_id) REFERENCES public.transportations(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.transfer_by_node
+    ADD CONSTRAINT transfer_by_node_transfer_id_fkey FOREIGN KEY (transfer_id) REFERENCES public.transfers(id) ON DELETE CASCADE;
 
 
 --

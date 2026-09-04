@@ -33,12 +33,12 @@ const BOOKING_TOOLS = new Set([
 ]);
 const BUSINESS_TOOLS = new Set([
   'searchTours',
-  'calculateTransportation',
+  'calculateTransfer',
   'calculatePricing',
   'checkAvailability',
   'createReservation',
 ]);
-const RESERVATION_LANGUAGE = /\b(book|booking|reserve|reservation|tour|availability|available|price|pricing|cost|transport|transportation|transfer|shuttle|pickup|participants?|people|persons?|adults?|children|actually|instead|clear|remove|forget)\b|\b\d{4}-\d{2}-\d{2}\b/i;
+const RESERVATION_LANGUAGE = /\b(book|booking|reserve|reservation|tour|availability|available|price|pricing|cost|transport|transfer|shuttle|pickup|participants?|people|persons?|adults?|children|actually|instead|clear|remove|forget)\b|\b\d{4}-\d{2}-\d{2}\b/i;
 
 function safeJson(value) {
   return JSON.stringify(value, null, 2);
@@ -152,7 +152,7 @@ function buildVisitorScopeMessage(metadata = {}) {
     content: [
       'The current user is an unauthenticated visitor.',
       'Answer only bird-related questions.',
-      'Do not discuss tours, pricing, transportation, reservations, booking steps, or customer-specific planning.',
+      'Do not discuss tours, pricing, transfer, reservations, booking steps, or customer-specific planning.',
       'If the user asks for restricted help, tell them to log in.',
     ].join('\n'),
   };
@@ -223,9 +223,9 @@ function buildKnownBookingContextMessage(metadata = {}) {
   const knownContext = {
     ...(metadata.customerContext ? { customerContext: metadata.customerContext } : {}),
     ...(recentMetadata.reservationEntry ? { reservationEntry: recentMetadata.reservationEntry } : {}),
-    ...(metadata.selectedTransportation ? { selectedTransportation: metadata.selectedTransportation } : {}),
-    ...(metadata.transportationDeclined ? { transportationDeclined: metadata.transportationDeclined } : {}),
-    ...(metadata.requestedTransportation ? { requestedTransportation: metadata.requestedTransportation } : {}),
+    ...(metadata.selectedTransfer ? { selectedTransfer: metadata.selectedTransfer } : {}),
+    ...(metadata.transferDeclined ? { transferDeclined: metadata.transferDeclined } : {}),
+    ...(metadata.requestedTransfer ? { requestedTransfer: metadata.requestedTransfer } : {}),
     ...(metadata.selectedTour ? { selectedTour: metadata.selectedTour } : {}),
     ...(metadata.selectedTourId ? { selectedTourId: metadata.selectedTourId } : {}),
     ...(metadata.participants ? { participants: metadata.participants } : {}),
@@ -291,9 +291,9 @@ function buildConversationContext(messages = [], metadata = {}) {
     selectedTour: metadata.selectedTour || recentMetadata.selectedTour || singleEntryTour,
     selectedTourId: metadata.selectedTourId || recentMetadata.selectedTourId || singleEntryTour?.tourId,
     participants: metadata.participants || recentMetadata.participants || singleEntryTour?.participants,
-    selectedTransportation: metadata.selectedTransportation || recentMetadata.selectedTransportation,
-    transportationDeclined: metadata.transportationDeclined || recentMetadata.transportationDeclined,
-    requestedTransportation: metadata.requestedTransportation || recentMetadata.requestedTransportation,
+    selectedTransfer: metadata.selectedTransfer || recentMetadata.selectedTransfer,
+    transferDeclined: metadata.transferDeclined || recentMetadata.transferDeclined,
+    requestedTransfer: metadata.requestedTransfer || recentMetadata.requestedTransfer,
     recentMetadata,
     recentTours,
     recentToolsCalled: recentMetadata.toolsCalled || [],
@@ -369,8 +369,8 @@ export class AgentOrchestrator {
       conversationId: metadata.conversationId,
       messageCount: messages.length,
       hasSelectedTour: Boolean(conversationContext.selectedTour || conversationContext.selectedTourId),
-      hasSelectedTransportation: Boolean(conversationContext.selectedTransportation),
-      transportationDeclined: Boolean(conversationContext.transportationDeclined),
+      hasSelectedTransfer: Boolean(conversationContext.selectedTransfer),
+      transferDeclined: Boolean(conversationContext.transferDeclined),
       recentToolCount: conversationContext.recentToolsCalled.length,
       aiTraceId: metadata.aiTraceId,
     });
@@ -381,14 +381,14 @@ export class AgentOrchestrator {
       role: metadata.role,
       messageLength: userMessage.length,
       hasSelectedTour: Boolean(conversationContext.selectedTour || conversationContext.selectedTourId),
-      hasSelectedTransportation: Boolean(conversationContext.selectedTransportation),
-      transportationDeclined: Boolean(conversationContext.transportationDeclined),
+      hasSelectedTransfer: Boolean(conversationContext.selectedTransfer),
+      transferDeclined: Boolean(conversationContext.transferDeclined),
       recentToolCount: conversationContext.recentToolsCalled.length,
     }, async () => (metadata.role === 'visitor'
       ? {
         status: 'visitor_bird_answer',
         steps: [],
-        message: 'Answer the visitor question with bird information only. Do not offer tours, bookings, reservations, prices, or transportation.',
+        message: 'Answer the visitor question with bird information only. Do not offer tours, bookings, reservations, prices, or transfer.',
       }
       : this.agent.planner.plan({
         message: userMessage,
@@ -421,14 +421,14 @@ export class AgentOrchestrator {
           tourId: extraction.data.tourId ?? selectedStateTour.tourId ?? conversationContext.selectedTourId ?? null,
           date: extraction.data.date ?? selectedStateTour.scheduledDate ?? null,
           participants: extraction.data.participants ?? conversationContext.participants ?? null,
-          transportationRequired: extraction.data.transportationRequired
-            ?? (conversationContext.selectedTransportation
+          transferRequired: extraction.data.transferRequired
+            ?? (conversationContext.selectedTransfer
               ? true
-              : conversationContext.transportationDeclined
+              : conversationContext.transferDeclined
                 ? false
                 : null),
           pickupLocation: extraction.data.pickupLocation
-            ?? conversationContext.selectedTransportation?.origin
+            ?? conversationContext.selectedTransfer?.origin
             ?? null,
         };
         let stateUpdate;
@@ -553,17 +553,17 @@ export class AgentOrchestrator {
       hasPlannerMessage: Boolean(plan.message),
     });
 
-    if (plan.selectedTransportation || conversationContext.selectedTransportation) {
-      metadata.selectedTransportation = plan.selectedTransportation
-        || conversationContext.selectedTransportation;
+    if (plan.selectedTransfer || conversationContext.selectedTransfer) {
+      metadata.selectedTransfer = plan.selectedTransfer
+        || conversationContext.selectedTransfer;
     }
 
-    if (plan.transportationDeclined || conversationContext.transportationDeclined) {
-      metadata.transportationDeclined = true;
+    if (plan.transferDeclined || conversationContext.transferDeclined) {
+      metadata.transferDeclined = true;
     }
 
-    if (plan.requestedTransportation || conversationContext.requestedTransportation) {
-      metadata.requestedTransportation = true;
+    if (plan.requestedTransfer || conversationContext.requestedTransfer) {
+      metadata.requestedTransfer = true;
     }
 
     this.logger.info('Birdwatching agent tool execution starting', {

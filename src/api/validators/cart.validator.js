@@ -40,8 +40,8 @@ export function validateAddCartItemBody(req) {
       tourId,
       ...(participants ? { participants } : {}),
       ...(scheduledDate ? { scheduledDate } : {}),
-      ...(typeof req.body.needsTransportation === 'boolean'
-        ? { needsTransportation: req.body.needsTransportation }
+      ...(typeof req.body.needsTransfer === 'boolean'
+        ? { needsTransfer: req.body.needsTransfer }
         : {}),
       ...(req.body.metadata && typeof req.body.metadata === 'object' && !Array.isArray(req.body.metadata)
         ? { metadata: req.body.metadata }
@@ -61,8 +61,8 @@ export function validateUpdateCartItemBody(req) {
     value: {
       ...(participants ? { participants } : {}),
       ...(scheduledDate ? { scheduledDate } : {}),
-      ...(typeof req.body.needsTransportation === 'boolean'
-        ? { needsTransportation: req.body.needsTransportation }
+      ...(typeof req.body.needsTransfer === 'boolean'
+        ? { needsTransfer: req.body.needsTransfer }
         : {}),
     },
   };

@@ -51,10 +51,6 @@ class HomepageController {
     return sendSuccess(res, { bird });
   }
 
-  async handleGetTransportation(req, res) {
-    const transportation = homepageService.getTransportationAddOns();
-    return sendSuccess(res, { transportation });
-  }
 }
 
 export default new HomepageController();

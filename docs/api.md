@@ -3,9 +3,11 @@
 ## Nature tour categories and admin maintenance
 
 Tours expose two distinct fields: `type` is the required customer-facing
-activity category (`Birdwatching`, `Day walk`, `Night walk`, `Parks`, or
-`Other`), while `tourType` remains the `scheduled`/`unscheduled` booking mode.
-Legacy rows are backfilled to `Birdwatching`.
+activity category (`Birdwatching`, `Day walk`, `Night walk`,
+`Day & Night Walk`, `Adventure`, `Excursion`, `Transfer`, or `Other`), while
+`tourType` remains the `scheduled`/`unscheduled` booking mode. Rows that
+predate the activity-category field were backfilled to `Birdwatching`;
+retired category labels are not accepted for new writes or filters.
 
 `GET /tours` accepts an optional exact `type` query and returns
 `data: { tours, tourTypes }`. Invalid categories return `422 validation_error`.
@@ -1214,8 +1216,8 @@ Validation:
 - Uploaded images are stored in S3 under `bird-identification/`, converted to a CloudFront URL, and then passed into the same image-analysis pipeline as URL requests.
 - Unknown JSON body fields are rejected.
 
-### `GET /addons/transportation`
-Returns public transportation add-on cards for the homepage. Booking-specific transportation selection remains part of the chat/tool flow.
+### `GET /addons/transfers`
+Returns public transfer add-on cards for the homepage. Booking-specific transfer selection remains part of the chat/tool flow.
 
 ## `POST /auth/signup`
 Creates a user account with a bcrypt-hashed password and returns an access token, refresh token, expiry timestamps, and safe profile data.
@@ -1335,10 +1337,10 @@ Returns the authenticated user cart:
 ```
 
 ### `POST /cart/items`
-Adds or updates one cart tour. Body fields are `tourId`, optional `scheduledDate`, optional `participants`, optional `needsTransportation`, and optional safe `metadata`. Cart items may be added without itinerary dates; reservation creation still requires each selected item to have a scheduled date.
+Adds or updates one cart tour. Body fields are `tourId`, optional `scheduledDate`, optional `participants`, optional `needsTransfer`, and optional safe `metadata`. Cart items may be added without itinerary dates; reservation creation still requires each selected item to have a scheduled date.
 
 ### `PATCH /cart/items/:itemId`
-Updates `scheduledDate`, `participants`, or `needsTransportation` for one owned cart item.
+Updates `scheduledDate`, `participants`, or `needsTransfer` for one owned cart item.
 
 ### `DELETE /cart/items/:itemId`
 Removes one owned cart item.
@@ -1350,7 +1352,7 @@ Creates reservations from the authenticated user cart. With no `itemIds`, all ca
 Returns the authenticated user latest five reservations ordered by reservation creation date. Reservation rows do not persist extra metadata; itinerary dates are supplied during active cart/chat reservation flows when needed.
 
 ## `POST /chat`
-Streams an assistant response with Server-Sent Events. Authenticated customer/admin requests include `Authorization: Bearer <token>` and existing authenticated conversations can only be continued by their owner. Unauthenticated visitor requests are accepted for bird-only questions and are blocked from tour planning, pricing, transportation, and reservations.
+Streams an assistant response with Server-Sent Events. Authenticated customer/admin requests include `Authorization: Bearer <token>` and existing authenticated conversations can only be continued by their owner. Unauthenticated visitor requests are accepted for bird-only questions and are blocked from tour planning, pricing, transfer, and reservations.
 
 Body:
 ```json
@@ -1385,7 +1387,7 @@ Validation:
 - `conversationContext` is optional and must be an object when provided. The validator only preserves safe recent assistant metadata used by guided booking flows.
 - `responseMode` is optional. Set it to `"field_assistant"` for concise, voice-friendly field guidance capped at two sentences.
 - Homepage/cart reservation entry points may send `conversationType: "reservation_entry"`, `conversationSource`/`entrySource` of `featured_tour` or `tour_cart`, and a safe `reservationEntry` object containing selected tour/cart summaries. These values are treated as already provided context, not authoritative reservation records.
-- A featured-tour entry includes the exact `selectedTour` and `selectedTourId`. This does not create a reservation; it resumes the normal date, participant, transportation, and confirmation workflow.
+- A featured-tour entry includes the exact `selectedTour` and `selectedTourId`. This does not create a reservation; it resumes the normal date, participant, transfer, and confirmation workflow.
 
 SSE events:
 ```text
@@ -1532,7 +1534,7 @@ not treated as UI static files. The frontend integration contract is:
 - bucket credentials, S3 endpoints, and object-existence checks remain backend-only
 
 `meta.customerContext`, `meta.reservation`, `meta.selectedTour`,
-`meta.selectedTourId`, `meta.selectedTransportation`, and `meta.participants`
+`meta.selectedTourId`, `meta.selectedTransfer`, and `meta.participants`
 are chat-level fields.
 They are merged into `conversations.metadata` and should not be duplicated onto
 individual message records by clients. Per-turn UI fields such as `uiAction`,
@@ -1545,23 +1547,23 @@ Tour tool notes:
 - `reservations` store customer details, optional authenticated `user_id`, `conversation_id`, `tour_id`, explicit Costa Rica calendar `tour_date`, optional occurrence ID, participant count, unique confirmation code, persisted tour total, and creation time.
 - Birding location/reference data is modeled separately from RAG in `country`, `zone`, `node`, `birds`, and `birds_by_node`. Zones and nodes are ranked, nodes can be hierarchical, birds may have optional `species_code` and `tags`, and each of those tables has `is_active DEFAULT true`.
 - The pgvector RAG tables are `knowledge_documents` and `knowledge_chunks`; they are the source for retrieved text and `birdMatches`, while the birding reference graph supports structured tour/location relationships and seed data.
-- Available tour tools are `searchTours`, `calculateTransportation`, `checkAvailability`, `calculatePricing`, and `createReservation`.
+- Available tour tools are `searchTours`, `calculateTransfer`, `checkAvailability`, `calculatePricing`, and `createReservation`.
 - Users should receive available or recommended tours through response metadata and explicitly select one before pricing or reservation creation.
 - Recommendation mode requests three results by default. Strong deterministic matches rank first; remaining slots are filled by the best eligible alternatives and marked with `matchStrength: "alternative"` plus an alternative reason. If fewer than three eligible tours exist, all are returned with `fewerThanRequestedReason`.
 - Recommendation-mode results expose `done.meta.tourRecommendation`; legacy
   `meta.tours` remains available for existing guided booking controls.
 - `searchTours` supports broad listing and recommendation mode. `checkAvailability` and `calculatePricing` use the latest validated structured selection. `createReservation` does not accept operational booking details from message-derived tool arguments; it accepts only `expectedStateVersion` and re-reads confirmed state in PostgreSQL.
 - Species or topic queries such as `where can I see quetzals?` are passed into tour ranking so direct name/location matches like `Monteverde Quetzal Tour` outrank weak generic availability matches.
-- When more than one reservation value is unresolved, `done.meta.uiAction` contains a `reservation_details` action with only the missing fields. Its `fields` may include `date`, `participants`, `transportationRequired`, conditional `pickupLocation`, `customerName`, `customerEmail`, `itineraryStartDate`, and `itineraryEndDate`; clients submit all visible values in one message. A lone missing participant count may retain the backward-compatible `participant_count` action with numeric options from `1` through the tour limit.
+- When more than one reservation value is unresolved, `done.meta.uiAction` contains a `reservation_details` action with only the missing fields. Its `fields` may include `date`, `participants`, `transferRequired`, conditional `pickupLocation`, `customerName`, `customerEmail`, `itineraryStartDate`, and `itineraryEndDate`; clients submit all visible values in one message. A lone missing participant count may retain the backward-compatible `participant_count` action with numeric options from `1` through the tour limit.
 - Availability requires an explicit `YYYY-MM-DD` date. Scheduled choices come only from live occurrences within the itinerary and with sufficient remaining capacity; unscheduled choices may use any calendar date within the itinerary. A lone missing date may retain the backward-compatible `date_picker` action rather than choosing a date automatically.
 - Once supplied, participant count is persisted as proposed structured state and may also remain in safe response metadata for UI continuity. Only its latest confirmed structured value is eligible for reservation creation.
-- Before final reservation confirmation, an unknown transportation preference is included in the combined reservation-details request (with pickup conditionally required when transportation is requested). A lone missing preference may retain the backward-compatible choice action. Requesting transportation triggers concrete options; declining it persists `meta.transportationDeclined: true` for the booking flow.
-- `calculateTransportation` estimates shared shuttle and private transfer options for supported tour regions and returns a `transportation_selection` `uiAction` when options are available.
+- Before final reservation confirmation, an unknown transfer preference is included in the combined reservation-details request (with pickup conditionally required when transfer is requested). A lone missing preference may retain the backward-compatible choice action. Requesting transfer triggers concrete options; declining it persists `meta.transferDeclined: true` for the booking flow.
+- `calculateTransfer` estimates shared shuttle and private transfer options for supported tour regions and returns a `transfer_selection` `uiAction` when options are available.
 - `calculatePricing` supports optional `discountCode`. Recognized codes are currently `EARLYBIRD`, `STUDENT`, and `LOCAL`; group discounts can also apply.
 - `createReservation` requires `expectedStateVersion`. The atomic database wrapper rejects proposed, missing, invalid, stale, or out-of-itinerary state and supplies only confirmed values to `create_tour_reservation_for_date(...)`. That function locks scheduled inventory, decrements capacity atomically, rejects overbooking and participant-limit violations, and enforces one reservation per customer per Costa Rica calendar day.
-- A combined reservation-details reply can complete the booking context in one turn. The backend follows up only for missing, invalid, unavailable, or ambiguous values and calls `createReservation` only after transportation is selected or declined and final confirmation is received.
+- A combined reservation-details reply can complete the booking context in one turn. The backend follows up only for missing, invalid, unavailable, or ambiguous values and calls `createReservation` only after transfer is selected or declined and final confirmation is received.
 - Final confirmation accepts the structured `confirm_reservation` action and affirmative text such as `Confirm` or `Yes` only when the previous assistant metadata contained the final confirmation action. This deterministic transition promotes proposals; assistant text alone never changes confirmation state, and an `unknown` intent classification cannot override a valid guided confirmation transition.
-- Successful reservation tool results include `id`, `reservationId`, `userId`, `customerName`, `customerEmail`, `conversationId`, `tourId`, `tourName`, `tourDate`, `participants`, `confirmationCode`, `createdAt`, `totalPrice`, `tourTotalPrice`, itinerary dates, `currency`, `remainingSlots`, `discountRate`, and `discountReason`. Transportation selection and transportation-derived totals are calculated from chat-level `meta.selectedTransportation`, not embedded as `meta.reservation.transportation`.
+- Successful reservation tool results include `id`, `reservationId`, `userId`, `customerName`, `customerEmail`, `conversationId`, `tourId`, `tourName`, `tourDate`, `participants`, `confirmationCode`, `createdAt`, `totalPrice`, `tourTotalPrice`, itinerary dates, `currency`, `remainingSlots`, `discountRate`, and `discountReason`. Transfer selection and transfer-derived totals are calculated from chat-level `meta.selectedTransfer`, not embedded as `meta.reservation.transfer`.
 - Reservations are associated with the active chat `conversationId` internally.
 - Reservation-entry chat exchanges are saved with `conversation_type = "reservation_entry"` and optional `conversation_source` so they can support server-side reservation flow without becoming the user's regular latest chat.
 - The public stream does not expose raw tool messages, but safe structured tool data is returned in the `done` event `meta` object for frontend rendering.
@@ -1586,10 +1588,10 @@ Success data when a conversation exists:
 
 The response `meta` includes persisted chat-level metadata from
 `conversations.metadata`, such as `customerContext`, participants, selected
-tour state, and selected transportation. If the latest owned conversation has an associated
+tour state, and selected transfer. If the latest owned conversation has an associated
 reservation, `meta.reservation` contains the same frontend-safe reservation
-shape used by the `POST /chat` stream `done` event. Transportation is exposed
-through `meta.selectedTransportation`, not `meta.reservation.transportation`:
+shape used by the `POST /chat` stream `done` event. Transfer is exposed
+through `meta.selectedTransfer`, not `meta.reservation.transfer`:
 ```json
 {
   "success": true,
@@ -1599,8 +1601,8 @@ through `meta.selectedTransportation`, not `meta.reservation.transportation`:
   },
   "meta": {
     "participants": 2,
-    "selectedTransportation": {
-      "transportationOption": "shared_shuttle",
+    "selectedTransfer": {
+      "transferOption": "shared_shuttle",
       "origin": "San Jose",
       "destination": "Monteverde",
       "totalPrice": 130,

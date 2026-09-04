@@ -9,8 +9,8 @@ The agent may use the following tools:
 - `searchTours`
   - Finds relevant birdwatching tours based on user preferences, location, dates, interests, group size, or budget.
 
-- `calculateTransportation`
-  - Estimates transportation options, routes, travel time, and transportation costs when needed.
+- `calculateTransfer`
+  - Estimates transfer options, routes, travel time, and transfer costs when needed.
 
 - `calculatePricing`
   - Calculates tour pricing, discounts, taxes, fees, totals, and per-person costs.
@@ -54,12 +54,12 @@ Expected behavior:
 - Use `calculatePricing`
 - Return clear pricing breakdown
 
-### Transportation + Pricing
-User asks for the full cost including transportation.
+### Transfer + Pricing
+User asks for the full cost including transfer.
 
 Expected behavior:
 - Use `searchTours` if needed
-- Use `calculateTransportation`
+- Use `calculateTransfer`
 - Use `calculatePricing`
 - Combine both outputs into a single estimate
 
@@ -87,7 +87,7 @@ src/ai/
     agent.orchestrator.js
   tools/
     searchTours.tool.js
-    calculateTransportation.tool.js
+    calculateTransfer.tool.js
     calculatePricing.tool.js
     checkAvailability.tool.js
     createReservation.tool.js

@@ -177,7 +177,7 @@ describe('admin routes', () => {
       const updateBody = resource === 'countries'
         ? { name: 'Costa Rica updated', latitude: 9.8, longitude: -84.1, zoom: 8 }
         : resource === 'tours'
-          ? { type: 'Parks' }
+          ? { type: 'Adventure' }
           : resource === 'birds'
             ? { name: 'Quetzal updated' }
             : { rank: 2 };

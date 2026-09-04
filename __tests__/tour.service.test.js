@@ -184,7 +184,7 @@ describe('TourService', () => {
 
     const result = await tourService.recommendTours({
       location: 'Tenorio-Bijagua and Rio Celeste',
-      query: 'I want a birdwatching tour in bijagua of upala for 3 people with transportation from San Jose.',
+      query: 'I want a birdwatching tour in bijagua of upala for 3 people with transfer from San Jose.',
       participants: 3,
       limit: 3,
     });

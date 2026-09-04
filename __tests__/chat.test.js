@@ -66,7 +66,7 @@ describe('POST /chat', () => {
         sources: [],
         meta: {
           promptVersions: {
-            chat: '2.5.0',
+            chat: '3.0.0',
           },
         },
       });
@@ -79,7 +79,7 @@ describe('POST /chat', () => {
         sources: [],
         meta: {
           promptVersions: {
-            chat: '2.5.0',
+            chat: '3.0.0',
           },
         },
       };
@@ -312,11 +312,11 @@ describe('GET /chat/latest', () => {
         reservation: {
           reservationId: 42,
           tourName: 'Monteverde Quetzal Tour',
-          transportation: {
-            transportationOption: 'shared_shuttle',
+          transfer: {
+            transferOption: 'shared_shuttle',
             totalPrice: 130,
           },
-          transportationPrice: 130,
+          transferPrice: 130,
           grandTotalPrice: 370,
         },
       },
@@ -338,11 +338,11 @@ describe('GET /chat/latest', () => {
       reservation: {
         reservationId: 42,
         tourName: 'Monteverde Quetzal Tour',
-        transportation: {
-          transportationOption: 'shared_shuttle',
+        transfer: {
+          transferOption: 'shared_shuttle',
           totalPrice: 130,
         },
-        transportationPrice: 130,
+        transferPrice: 130,
         grandTotalPrice: 370,
       },
     });

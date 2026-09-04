@@ -198,11 +198,11 @@ describe('ConversationService', () => {
       customerName: 'Ana Gomez',
       tourId: 1,
       tourName: 'Monteverde Quetzal Tour',
-      transportation: {
-        transportationOption: 'shared_shuttle',
+      transfer: {
+        transferOption: 'shared_shuttle',
         totalPrice: 130,
       },
-      transportationPrice: 130,
+      transferPrice: 130,
       grandTotalPrice: 370,
     };
 

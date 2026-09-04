@@ -40,7 +40,7 @@ const confirmed = {
   tourId: 9,
   date: '2026-08-12',
   participants: 4,
-  transportationRequired: false,
+  transferRequired: false,
   customerName: 'Ana Gomez',
   customerEmail: 'ana@example.com',
   itineraryStartDate: '2026-08-12',

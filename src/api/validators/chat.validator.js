@@ -1,6 +1,6 @@
 import {
   normalizeOptionalText,
-  normalizeSelectedTransportation,
+  normalizeSelectedTransfer,
 } from '../../utils/normalizer.utils.js';
 import { FIELD_ASSISTANT_RESPONSE_MODE } from '../../ai/prompts/system.prompt.js';
 
@@ -88,7 +88,7 @@ function normalizeTourSummary(tour) {
     participants: Number.isInteger(Number(tour.participants)) && Number(tour.participants) > 0
       ? Number(tour.participants)
       : undefined,
-    needsTransportation: tour.needsTransportation === true ? true : undefined,
+    needsTransfer: tour.needsTransfer === true ? true : undefined,
   };
 
   return Object.fromEntries(
@@ -175,14 +175,14 @@ function normalizeConversationContext(rawContext, errors) {
       ...(Number.isInteger(Number(metadata.participants)) && Number(metadata.participants) > 0
         ? { participants: Number(metadata.participants) }
         : {}),
-      ...(normalizeSelectedTransportation(metadata.selectedTransportation)
-        ? { selectedTransportation: normalizeSelectedTransportation(metadata.selectedTransportation) }
+      ...(normalizeSelectedTransfer(metadata.selectedTransfer)
+        ? { selectedTransfer: normalizeSelectedTransfer(metadata.selectedTransfer) }
         : {}),
-      ...(metadata.transportationDeclined === true
-        ? { transportationDeclined: true }
+      ...(metadata.transferDeclined === true
+        ? { transferDeclined: true }
         : {}),
-      ...(metadata.requestedTransportation === true
-        ? { requestedTransportation: true }
+      ...(metadata.requestedTransfer === true
+        ? { requestedTransfer: true }
         : {}),
       ...(metadata.uiAction && typeof metadata.uiAction === 'object'
         ? { uiAction: metadata.uiAction }

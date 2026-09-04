@@ -1,3 +1,5 @@
+import { TOUR_TYPES } from '../../constants/tourTypes.js';
+
 export const tourSchema = [
   {
     type: 'function',
@@ -22,7 +24,7 @@ export const tourSchema = [
           },
           type: {
             type: 'string',
-            enum: ['Birdwatching', 'Day walk', 'Night walk', 'Parks', 'Other'],
+            enum: TOUR_TYPES,
             description: 'Optional nature-tour activity category.',
           },
           maxPrice: {
@@ -56,8 +58,8 @@ export const tourSchema = [
   {
     type: 'function',
     function: {
-      name: 'calculateTransportation',
-      description: 'Estimate transportation options, route timing, and transportation costs for a tour location.',
+      name: 'calculateTransfer',
+      description: 'Estimate transfer options, route timing, and transfer costs for a tour location.',
       parameters: {
         type: 'object',
         properties: {
@@ -79,7 +81,7 @@ export const tourSchema = [
           },
           participants: {
             type: 'integer',
-            description: 'Optional group size for per-person transportation estimates.',
+            description: 'Optional group size for per-person transfer estimates.',
           },
         },
       },

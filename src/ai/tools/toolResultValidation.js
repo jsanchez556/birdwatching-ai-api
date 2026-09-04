@@ -2,7 +2,7 @@ const OPERATIONAL_TTL_MS = Object.freeze({
   searchTours: 15 * 60 * 1000,
   checkAvailability: 2 * 60 * 1000,
   calculatePricing: 5 * 60 * 1000,
-  calculateTransportation: 15 * 60 * 1000,
+  calculateTransfer: 15 * 60 * 1000,
 });
 
 const INVALID_STATUSES = new Set([
@@ -36,7 +36,7 @@ function validateKnownToolSchema(toolName, result = {}) {
       && isFiniteNumber(result.totalPrice ?? result.total)
       && typeof result.currency === 'string';
   }
-  if (toolName === 'calculateTransportation') {
+  if (toolName === 'calculateTransfer') {
     return typeof result.origin === 'string'
       && typeof result.destination === 'string'
       && Array.isArray(result.options)
